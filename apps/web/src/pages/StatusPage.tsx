@@ -69,7 +69,32 @@ function formatPct(v: number): string {
   return `${v.toFixed(3)}%`;
 }
 
+function formatLatency(v: number | null): string {
+  return v === null ? '-' : `${v}ms`;
+}
+
+function getHeartbeatLatencyStats(heartbeats: PublicMonitor['heartbeats']): {
+  fastestMs: number | null;
+  avgMs: number | null;
+  slowestMs: number | null;
+} {
+  const latencies = heartbeats
+    .filter((hb) => hb.status === 'up' && hb.latency_ms !== null)
+    .map((hb) => hb.latency_ms as number);
+
+  if (latencies.length === 0) {
+    return { fastestMs: null, avgMs: null, slowestMs: null };
+  }
+
+  const fastestMs = Math.min(...latencies);
+  const slowestMs = Math.max(...latencies);
+  const avgMs = Math.round(latencies.reduce((sum, latency) => sum + latency, 0) / latencies.length);
+
+  return { fastestMs, avgMs, slowestMs };
+}
+
 const HEARTBEAT_BARS = 60;
+const AVAILABILITY_BARS = 60;
 
 type UptimeTier = 'emerald' | 'green' | 'lime' | 'yellow' | 'amber' | 'orange' | 'red' | 'rose' | 'slate';
 
@@ -152,65 +177,103 @@ function MonitorCard({ monitor, onSelect, onDayClick, timeZone }: { monitor: Pub
   const checkedAt = monitor.last_checked_at
     ? (timeZone ? formatTime(monitor.last_checked_at, { timeZone }) : formatTime(monitor.last_checked_at))
     : 'Never checked';
+  const latencyStats = useMemo(
+    () => getHeartbeatLatencyStats(monitor.heartbeats ?? []),
+    [monitor.heartbeats],
+  );
 
   return (
-    <Card hover onClick={onSelect} className="p-4 sm:p-5">
-      <div className="mb-2.5 flex items-start justify-between gap-2">
+    <Card hover onClick={onSelect} className="p-4">
+      <div className="mb-3 flex items-start justify-between gap-2">
         <div className="min-w-0 flex items-center gap-2.5">
           <StatusDot status={monitor.status} pulse={monitor.status === 'down'} size="sm" />
           <div className="min-w-0">
-            <h3 className="truncate text-base font-semibold text-slate-900 dark:text-slate-100 sm:text-lg">
+            <h3 className="truncate text-base font-semibold leading-tight text-slate-900 dark:text-slate-100 sm:text-[1.05rem]">
               {monitor.name}
             </h3>
-            <span className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
-              {monitor.type}
-            </span>
+            <div className="mt-0.5 flex items-center gap-1.5 text-[11px] uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
+              <span>{monitor.type}</span>
+              {monitor.is_stale && (
+                <span className="rounded bg-amber-100 px-1.5 py-[1px] text-[10px] font-semibold text-amber-800 dark:bg-amber-900/50 dark:text-amber-200">
+                  stale
+                </span>
+              )}
+            </div>
           </div>
         </div>
-        <Badge variant={getStatusBadgeVariant(monitor.status)}>{monitor.status}</Badge>
-      </div>
 
-      <div className="mb-1.5 flex items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400">
-        <span className="uppercase tracking-wide">Availability (30d)</span>
-        {uptime30d ? (
-          <span
-            className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-medium tabular-nums ${getAvailabilityPillClasses(uptime30d.uptime_pct, monitor.uptime_rating_level)}`}
-            title="Average availability over the last 30 days"
-          >
+        <div className="flex shrink-0 items-center gap-1.5">
+          {uptime30d ? (
             <span
-              className={`h-1.5 w-1.5 rounded-full ${getUptimeDotBgClasses(uptime30d.uptime_pct, monitor.uptime_rating_level)}`}
-            />
-            {formatPct(uptime30d.uptime_pct)}
-          </span>
-        ) : (
-          <span className="text-slate-400 dark:text-slate-500">-</span>
-        )}
-      </div>
-
-      <UptimeBar30d
-        days={monitor.uptime_days}
-        ratingLevel={monitor.uptime_rating_level}
-        maxBars={30}
-        timeZone={timeZone}
-        onDayClick={onDayClick}
-        density="compact"
-      />
-
-      <div className="mt-2.5">
-        <div className="mb-1.5 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-          <span className="uppercase tracking-wide">Heartbeat</span>
-          <span>Last {HEARTBEAT_BARS} checks</span>
+              className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium tabular-nums ${getAvailabilityPillClasses(uptime30d.uptime_pct, monitor.uptime_rating_level)}`}
+              title="Average availability over the last 30 days"
+            >
+              <span
+                className={`h-1.5 w-1.5 rounded-full ${getUptimeDotBgClasses(uptime30d.uptime_pct, monitor.uptime_rating_level)}`}
+              />
+              {formatPct(uptime30d.uptime_pct)}
+            </span>
+          ) : (
+            <span className="text-xs text-slate-400 dark:text-slate-500">30d -</span>
+          )}
+          <div className="leading-none">
+            <Badge variant={getStatusBadgeVariant(monitor.status)}>{monitor.status}</Badge>
+          </div>
         </div>
-        <HeartbeatBar
-          heartbeats={monitor.heartbeats ?? []}
-          maxBars={HEARTBEAT_BARS}
-          density="compact"
-        />
       </div>
 
-      <div className="mt-2.5 flex items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400">
-        <span className="tabular-nums">{monitor.last_latency_ms !== null ? `${monitor.last_latency_ms}ms` : '-'}</span>
-        <span className="truncate text-slate-400 dark:text-slate-500">{checkedAt}</span>
+      <div className="space-y-2.5">
+        <div>
+          <div className="mb-1 flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
+            <span className="uppercase tracking-[0.12em]">Availability (30d)</span>
+            <span>Last 30 days</span>
+          </div>
+          <UptimeBar30d
+            days={monitor.uptime_days}
+            ratingLevel={monitor.uptime_rating_level}
+            maxBars={AVAILABILITY_BARS}
+            timeZone={timeZone}
+            onDayClick={onDayClick}
+            fillMode="stretch"
+            density="compact"
+          />
+        </div>
+
+        <div>
+          <div className="mb-1 flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
+            <span className="uppercase tracking-[0.12em]">Heartbeat</span>
+            <span>Last {HEARTBEAT_BARS} checks</span>
+          </div>
+          <HeartbeatBar
+            heartbeats={monitor.heartbeats ?? []}
+            maxBars={HEARTBEAT_BARS}
+            density="compact"
+          />
+        </div>
+      </div>
+
+      <div className="mt-3 grid grid-cols-3 gap-1.5">
+        {[
+          { label: 'Fastest', value: latencyStats.fastestMs },
+          { label: 'Avg', value: latencyStats.avgMs },
+          { label: 'Slowest', value: latencyStats.slowestMs },
+        ].map((item) => (
+          <div
+            key={item.label}
+            className="rounded-md border border-slate-200/80 bg-slate-50/85 px-2 py-1 dark:border-slate-700/80 dark:bg-slate-800/70"
+          >
+            <div className="text-[10px] uppercase tracking-[0.1em] text-slate-500 dark:text-slate-400">
+              {item.label}
+            </div>
+            <div className="mt-0.5 text-sm font-semibold tabular-nums text-slate-900 dark:text-slate-100">
+              {formatLatency(item.value)}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-2 flex items-center justify-end text-[11px] text-slate-400 dark:text-slate-500">
+        {monitor.last_checked_at ? `Updated ${checkedAt}` : checkedAt}
       </div>
     </Card>
   );

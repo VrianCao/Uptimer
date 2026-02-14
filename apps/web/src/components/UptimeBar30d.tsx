@@ -13,6 +13,7 @@ interface UptimeBar30dProps {
   timeZone: string;
   onDayClick?: (dayStartAt: number) => void;
   density?: 'default' | 'compact';
+  fillMode?: 'pad' | 'stretch';
 }
 
 function formatDay(ts: number, timeZone: string): string {
@@ -109,6 +110,7 @@ function mergeIntervals(intervals: DowntimeInterval[]): DowntimeInterval[] {
 
 interface TooltipState {
   day: UptimeDay;
+  slotKey: string;
   position: { x: number; y: number };
 }
 
@@ -143,23 +145,43 @@ export function UptimeBar30d({
   timeZone,
   onDayClick,
   density = 'default',
+  fillMode = 'pad',
 }: UptimeBar30dProps) {
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
   const compact = density === 'compact';
 
-  const displayDays = useMemo(() => {
+  const sourceDays = useMemo(() => {
     if (!Array.isArray(days)) return [];
     // Backend returns oldest -> newest; we want newest on the right.
     return days.slice(-maxBars);
   }, [days, maxBars]);
 
-  // Ensure stable layout even with fewer than maxBars days.
-  const emptyCount = Math.max(0, maxBars - displayDays.length);
+  const displayBars = useMemo(() => {
+    if (sourceDays.length === 0) return [];
 
-  const handleMouseEnter = (d: UptimeDay, e: React.MouseEvent) => {
+    if (fillMode === 'stretch' && sourceDays.length < maxBars) {
+      return Array.from({ length: maxBars }, (_, slot) => {
+        const mappedIndex = Math.min(
+          sourceDays.length - 1,
+          Math.floor((slot * sourceDays.length) / maxBars),
+        );
+        const day = sourceDays[mappedIndex];
+        if (!day) return null;
+        return { day, slotKey: `${day.day_start_at}-${slot}` };
+      }).filter((entry): entry is { day: UptimeDay; slotKey: string } => entry !== null);
+    }
+
+    return sourceDays.map((day) => ({ day, slotKey: `${day.day_start_at}` }));
+  }, [fillMode, maxBars, sourceDays]);
+
+  // Ensure stable layout in default mode when fewer bars are available.
+  const emptyCount = fillMode === 'stretch' ? 0 : Math.max(0, maxBars - displayBars.length);
+
+  const handleMouseEnter = (d: UptimeDay, slotKey: string, e: React.MouseEvent) => {
     const rect = e.currentTarget.getBoundingClientRect();
     setTooltip({
       day: d,
+      slotKey,
       position: { x: rect.left + rect.width / 2, y: rect.top },
     });
   };
@@ -182,21 +204,21 @@ export function UptimeBar30d({
             />
           ))}
 
-        {displayDays.map((d) => {
+        {displayBars.map(({ day: d, slotKey }) => {
           const pct = d.uptime_pct;
 
           return (
             <button
-              key={d.day_start_at}
+              key={slotKey}
               type="button"
               aria-label={`Uptime ${formatDay(d.day_start_at, timeZone)}`}
               className={`${compact
                 ? 'max-w-[6px] min-w-[3px] flex-1'
                 : 'max-w-[6px] min-w-[3px] flex-1 sm:max-w-[8px] sm:min-w-[4px]'} rounded-sm transition-all duration-150
                 ${getUptimeColorClasses(pct, ratingLevel)}
-                ${compact ? 'hover:scale-y-105' : 'hover:scale-y-110'} hover:shadow-md ${tooltip?.day.day_start_at === d.day_start_at ? getUptimeGlow(pct, ratingLevel) : ''}`}
+                ${compact ? 'hover:scale-y-105' : 'hover:scale-y-110'} hover:shadow-md ${tooltip?.slotKey === slotKey ? getUptimeGlow(pct, ratingLevel) : ''}`}
               style={{ height: '100%' }}
-              onMouseEnter={(e) => handleMouseEnter(d, e)}
+              onMouseEnter={(e) => handleMouseEnter(d, slotKey, e)}
               onMouseLeave={() => setTooltip(null)}
               onClick={(e) => {
                 e.stopPropagation();

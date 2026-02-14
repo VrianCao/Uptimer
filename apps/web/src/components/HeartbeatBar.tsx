@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { Heartbeat, CheckStatus } from '../api/types';
 
 interface HeartbeatBarProps {
   heartbeats: Heartbeat[];
   maxBars?: number;
+  visualBars?: number;
   density?: 'default' | 'compact';
 }
 
@@ -47,16 +48,55 @@ function getStatusGlow(status: CheckStatus): string {
   }
 }
 
+interface LatencyScale {
+  min: number;
+  span: number;
+}
+
+interface DisplayHeartbeat extends Heartbeat {
+  from_checked_at: number;
+  to_checked_at: number;
+  sample_count: number;
+}
+
+function buildLatencyScale(heartbeats: DisplayHeartbeat[]): LatencyScale | null {
+  const latencies = heartbeats
+    .filter((hb) => hb.status === 'up' && hb.latency_ms !== null)
+    .map((hb) => hb.latency_ms as number);
+
+  if (latencies.length === 0) return null;
+
+  const min = Math.min(...latencies);
+  const max = Math.max(...latencies);
+  return { min, span: Math.max(1, max - min) };
+}
+
+function getBarHeight(heartbeat: DisplayHeartbeat, scale: LatencyScale | null, compact: boolean): string {
+  if (heartbeat.status === 'down') return '100%';
+  if (heartbeat.status === 'maintenance') return compact ? '62%' : '65%';
+  if (heartbeat.status === 'unknown') return compact ? '48%' : '52%';
+
+  if (heartbeat.latency_ms === null || !scale) return compact ? '74%' : '78%';
+
+  const normalized = (heartbeat.latency_ms - scale.min) / scale.span;
+  const clamped = Math.max(0, Math.min(1, normalized));
+  const minHeight = compact ? 36 : 38;
+  const pct = minHeight + clamped * (100 - minHeight);
+  return `${pct.toFixed(1)}%`;
+}
+
 function formatTime(timestamp: number): string {
   return new Date(timestamp * 1000).toLocaleString();
 }
 
 interface TooltipProps {
-  heartbeat: Heartbeat;
+  heartbeat: DisplayHeartbeat;
   position: { x: number; y: number };
 }
 
 function Tooltip({ heartbeat, position }: TooltipProps) {
+  const hasWindow = heartbeat.sample_count > 1 && heartbeat.from_checked_at !== heartbeat.to_checked_at;
+
   return (
     <div
       className="fixed z-50 px-3 py-2 text-xs bg-slate-900 dark:bg-slate-700 text-white rounded-lg shadow-lg pointer-events-none animate-fade-in"
@@ -66,7 +106,11 @@ function Tooltip({ heartbeat, position }: TooltipProps) {
         transform: 'translate(-50%, -100%) translateY(-8px)',
       }}
     >
-      <div className="font-medium mb-1">{formatTime(heartbeat.checked_at)}</div>
+      <div className="font-medium mb-1">
+        {hasWindow
+          ? `${formatTime(heartbeat.from_checked_at)} - ${formatTime(heartbeat.to_checked_at)}`
+          : formatTime(heartbeat.checked_at)}
+      </div>
       <div className="flex items-center gap-2">
         <span className={`w-2 h-2 rounded-full ${getStatusColor(heartbeat.status)}`} />
         <span className="capitalize">{heartbeat.status}</span>
@@ -74,19 +118,93 @@ function Tooltip({ heartbeat, position }: TooltipProps) {
           <span className="text-slate-400 dark:text-slate-300">• {heartbeat.latency_ms}ms</span>
         )}
       </div>
+      {heartbeat.sample_count > 1 && (
+        <div className="mt-1 text-slate-300">{heartbeat.sample_count} checks</div>
+      )}
       <div className="absolute left-1/2 -bottom-1 -translate-x-1/2 w-2 h-2 bg-slate-900 dark:bg-slate-700 rotate-45" />
     </div>
   );
 }
 
-export function HeartbeatBar({ heartbeats, maxBars = 60, density = 'default' }: HeartbeatBarProps) {
-  const [tooltip, setTooltip] = useState<{ heartbeat: Heartbeat; position: { x: number; y: number } } | null>(null);
+function statusPriority(status: CheckStatus): number {
+  switch (status) {
+    case 'down':
+      return 4;
+    case 'unknown':
+      return 3;
+    case 'maintenance':
+      return 2;
+    case 'up':
+    default:
+      return 1;
+  }
+}
+
+function aggregateHeartbeats(
+  heartbeats: Heartbeat[],
+  slots: number,
+): DisplayHeartbeat[] {
+  if (heartbeats.length === 0) return [];
+
+  const chronological = [...heartbeats].reverse();
+  if (slots >= chronological.length) {
+    return chronological.map((hb) => ({
+      ...hb,
+      from_checked_at: hb.checked_at,
+      to_checked_at: hb.checked_at,
+      sample_count: 1,
+    }));
+  }
+
+  const groupSize = Math.ceil(chronological.length / slots);
+  const groups: DisplayHeartbeat[] = [];
+
+  for (let i = 0; i < chronological.length; i += groupSize) {
+    const group = chronological.slice(i, i + groupSize);
+    if (group.length === 0) continue;
+    const first = group[0];
+    const last = group[group.length - 1];
+    if (!first || !last) continue;
+
+    const worst = group.reduce((currentWorst, hb) => (
+      statusPriority(hb.status) > statusPriority(currentWorst.status) ? hb : currentWorst
+    ));
+    const latencySamples = group
+      .filter((hb) => hb.status === 'up' && hb.latency_ms !== null)
+      .map((hb) => hb.latency_ms as number);
+    const avgLatency = latencySamples.length > 0
+      ? Math.round(latencySamples.reduce((sum, latency) => sum + latency, 0) / latencySamples.length)
+      : null;
+
+    groups.push({
+      checked_at: last.checked_at,
+      status: worst.status,
+      latency_ms: avgLatency,
+      from_checked_at: first.checked_at,
+      to_checked_at: last.checked_at,
+      sample_count: group.length,
+    });
+  }
+
+  return groups;
+}
+
+export function HeartbeatBar({ heartbeats, maxBars = 60, visualBars, density = 'default' }: HeartbeatBarProps) {
+  const [tooltip, setTooltip] = useState<{ heartbeat: DisplayHeartbeat; position: { x: number; y: number } } | null>(null);
   const compact = density === 'compact';
 
-  const displayHeartbeats = heartbeats.slice(0, maxBars);
-  const reversed = [...displayHeartbeats].reverse();
+  const sourceHeartbeats = useMemo(() => heartbeats.slice(0, maxBars), [heartbeats, maxBars]);
+  const slotCount = useMemo(() => {
+    if (!visualBars || visualBars < 1) return maxBars;
+    return Math.min(maxBars, visualBars);
+  }, [maxBars, visualBars]);
+  const displayHeartbeats = useMemo(
+    () => aggregateHeartbeats(sourceHeartbeats, slotCount),
+    [sourceHeartbeats, slotCount],
+  );
+  const latencyScale = useMemo(() => buildLatencyScale(displayHeartbeats), [displayHeartbeats]);
 
-  const handleMouseEnter = (hb: Heartbeat, e: React.MouseEvent) => {
+  const handleMouseEnter = (hb: DisplayHeartbeat, e: React.MouseEvent) => {
     const rect = e.currentTarget.getBoundingClientRect();
     setTooltip({
       heartbeat: hb,
@@ -102,28 +220,28 @@ export function HeartbeatBar({ heartbeats, maxBars = 60, density = 'default' }: 
           ? 'flex h-5 items-end gap-[2px] sm:h-6'
           : 'flex h-6 items-end gap-[2px] sm:h-8 sm:gap-[3px]'}
       >
-        {reversed.map((hb) => (
+        {displayHeartbeats.map((hb) => (
           <div
-            key={hb.checked_at}
+            key={`${hb.from_checked_at}-${hb.to_checked_at}`}
             role="img"
-            aria-label={`${statusToAccessibleLabel(hb.status)} ${formatTime(hb.checked_at)}${hb.latency_ms !== null ? ` ${hb.latency_ms}ms` : ''}`}
+            aria-label={`${statusToAccessibleLabel(hb.status)} ${formatTime(hb.from_checked_at)}${hb.to_checked_at !== hb.from_checked_at ? ` to ${formatTime(hb.to_checked_at)}` : ''}${hb.latency_ms !== null ? ` ${hb.latency_ms}ms` : ''}`}
             className={`${compact
               ? 'max-w-[6px] min-w-[3px] flex-1'
               : 'max-w-[6px] min-w-[3px] flex-1 sm:max-w-[8px] sm:min-w-[4px]'} rounded-sm transition-all duration-150 cursor-pointer
               ${getStatusColor(hb.status)}
               ${compact ? 'hover:scale-y-105' : 'hover:scale-y-110'} hover:shadow-md ${tooltip?.heartbeat === hb ? getStatusGlow(hb.status) : ''}`}
-            style={{ height: hb.status === 'up' || hb.status === 'down' ? '100%' : compact ? '58%' : '60%' }}
+            style={{ height: getBarHeight(hb, latencyScale, compact) }}
             onMouseEnter={(e) => handleMouseEnter(hb, e)}
             onMouseLeave={() => setTooltip(null)}
           />
         ))}
-        {reversed.length < maxBars &&
-          Array.from({ length: maxBars - reversed.length }).map((_, idx) => (
+        {displayHeartbeats.length < slotCount &&
+          Array.from({ length: slotCount - displayHeartbeats.length }).map((_, idx) => (
             <div
               key={`empty-${idx}`}
               className={compact
-                ? 'h-[58%] max-w-[6px] min-w-[3px] flex-1 rounded-sm bg-slate-200 dark:bg-slate-700'
-                : 'h-[60%] max-w-[6px] min-w-[3px] flex-1 rounded-sm bg-slate-200 dark:bg-slate-700 sm:max-w-[8px] sm:min-w-[4px]'}
+                ? 'h-[46%] max-w-[6px] min-w-[3px] flex-1 rounded-sm bg-slate-200 dark:bg-slate-700'
+                : 'h-[48%] max-w-[6px] min-w-[3px] flex-1 rounded-sm bg-slate-200 dark:bg-slate-700 sm:max-w-[8px] sm:min-w-[4px]'}
             />
           ))}
       </div>
