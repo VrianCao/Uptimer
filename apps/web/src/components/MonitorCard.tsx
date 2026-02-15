@@ -14,7 +14,7 @@ import {
 } from '../utils/uptime';
 
 const HEARTBEAT_BARS = 60;
-const AVAILABILITY_BARS = 60;
+const AVAILABILITY_BARS = 30;
 
 export interface MonitorCardProps {
   monitor: PublicMonitor;
@@ -101,7 +101,6 @@ export function MonitorCard({ monitor, onSelect, onDayClick, timeZone }: Monitor
           maxBars={AVAILABILITY_BARS}
           timeZone={timeZone}
           onDayClick={onDayClick}
-          fillMode="stretch"
           density="compact"
         />
       </div>
