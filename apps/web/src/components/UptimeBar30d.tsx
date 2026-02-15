@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 
 import type { UptimeDay, UptimeRatingLevel } from '../api/types';
 import { formatDate } from '../utils/datetime';
+import { getUptimeBgClasses, getUptimeTier } from '../utils/uptime';
 
 type DowntimeInterval = { start: number; end: number };
 
@@ -33,27 +34,7 @@ function formatSec(totalSeconds: number): string {
 
 function getUptimeColorClasses(uptimePct: number | null, level: UptimeRatingLevel): string {
   if (uptimePct === null) return 'bg-slate-300 dark:bg-slate-600';
-
-  // Five-level uptime rating thresholds (user-defined). Each level maps to 8 color tiers.
-  // Levels are intentionally more lenient for hobby projects and stricter for mission-critical systems.
-  const thresholdsByLevel: Record<UptimeRatingLevel, { emerald: number; green: number; lime: number; yellow: number; amber: number; orange: number; red: number }> = {
-    1: { emerald: 99.0, green: 98.0, lime: 97.0, yellow: 96.0, amber: 95.0, orange: 90.0, red: 80.0 },
-    2: { emerald: 99.9, green: 99.5, lime: 99.0, yellow: 98.5, amber: 98.0, orange: 97.0, red: 95.0 },
-    3: { emerald: 99.99, green: 99.95, lime: 99.9, yellow: 99.5, amber: 99.0, orange: 98.0, red: 97.0 },
-    4: { emerald: 99.999, green: 99.995, lime: 99.99, yellow: 99.95, amber: 99.9, orange: 99.5, red: 99.0 },
-    5: { emerald: 100.0, green: 99.999, lime: 99.995, yellow: 99.99, amber: 99.95, orange: 99.9, red: 99.5 },
-  };
-
-  const t = thresholdsByLevel[level] ?? thresholdsByLevel[3];
-
-  if (uptimePct >= t.emerald) return 'bg-emerald-500 dark:bg-emerald-400';
-  if (uptimePct >= t.green) return 'bg-green-500 dark:bg-green-400';
-  if (uptimePct >= t.lime) return 'bg-lime-500 dark:bg-lime-400';
-  if (uptimePct >= t.yellow) return 'bg-yellow-500 dark:bg-yellow-400';
-  if (uptimePct >= t.amber) return 'bg-amber-500 dark:bg-amber-400';
-  if (uptimePct >= t.orange) return 'bg-orange-500 dark:bg-orange-400';
-  if (uptimePct >= t.red) return 'bg-red-500 dark:bg-red-400';
-  return 'bg-rose-600 dark:bg-rose-400';
+  return getUptimeBgClasses(getUptimeTier(uptimePct, level));
 }
 
 function getUptimeGlow(uptimePct: number | null, level: UptimeRatingLevel): string {

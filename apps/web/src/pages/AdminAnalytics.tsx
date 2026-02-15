@@ -17,14 +17,10 @@ import { DailyUptimeChart } from '../components/DailyUptimeChart';
 import { LatencyChart } from '../components/LatencyChart';
 import { Button, Card, ThemeToggle, cn } from '../components/ui';
 import { formatDateTime } from '../utils/datetime';
+import { formatPct } from '../utils/uptime';
 
 const overviewRanges: AnalyticsOverviewRange[] = ['24h', '7d'];
 const monitorRanges: AnalyticsRange[] = ['24h', '7d', '30d', '90d'];
-
-function formatPct(v: number): string {
-  if (!Number.isFinite(v)) return '-';
-  return `${v.toFixed(3)}%`;
-}
 
 function formatSec(v: number): string {
   if (!Number.isFinite(v)) return '-';
