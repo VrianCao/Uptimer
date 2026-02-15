@@ -14,7 +14,7 @@ import {
 } from '../utils/uptime';
 
 const HEARTBEAT_BARS = 60;
-const AVAILABILITY_BARS = 30;
+const AVAILABILITY_BARS = 60;
 
 export interface MonitorCardProps {
   monitor: PublicMonitor;
