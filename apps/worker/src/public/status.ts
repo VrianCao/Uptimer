@@ -373,16 +373,20 @@ async function readUptimeRatingLevel(db: D1Database): Promise<1 | 2 | 3 | 4 | 5>
 
 async function computeTodayPartialUptimeBatch(
   db: D1Database,
-  monitors: Array<{ id: number; interval_sec: number }>,
+  monitors: Array<{ id: number; interval_sec: number; created_at: number }>,
   rangeStart: number,
   now: number,
 ): Promise<Map<number, UptimeWindowTotals>> {
   const out = new Map<number, UptimeWindowTotals>();
 
-  const monitorById = new Map<number, { id: number; interval_sec: number }>();
+  const monitorById = new Map<number, { id: number; interval_sec: number; created_at: number }>();
   for (const monitor of monitors) {
     if (!Number.isFinite(monitor.id)) continue;
-    monitorById.set(monitor.id, monitor);
+    monitorById.set(monitor.id, {
+      id: monitor.id,
+      interval_sec: monitor.interval_sec,
+      created_at: monitor.created_at,
+    });
   }
   const ids = [...monitorById.keys()];
   if (ids.length === 0) return out;
@@ -399,8 +403,6 @@ async function computeTodayPartialUptimeBatch(
     }
     return out;
   }
-
-  const total_sec = Math.max(0, now - rangeStart);
 
   const placeholders = ids.map((_, idx) => `?${idx + 3}`).join(', ');
   const { results } = await db
@@ -459,11 +461,32 @@ async function computeTodayPartialUptimeBatch(
     const monitor = monitorById.get(id);
     if (!monitor) continue;
 
-    const downtimeIntervals = mergeIntervals(downtimeById.get(id) ?? []);
+    const monitorRangeStart = Math.max(rangeStart, monitor.created_at);
+    if (now <= monitorRangeStart) {
+      out.set(id, {
+        total_sec: 0,
+        downtime_sec: 0,
+        unknown_sec: 0,
+        uptime_sec: 0,
+        uptime_pct: null,
+      });
+      continue;
+    }
+
+    const total_sec = now - monitorRangeStart;
+
+    const downtimeIntervals = mergeIntervals(
+      (downtimeById.get(id) ?? [])
+        .map((it) => ({
+          start: Math.max(it.start, monitorRangeStart),
+          end: Math.min(it.end, now),
+        }))
+        .filter((it) => it.end > it.start),
+    );
     const downtime_sec = sumIntervals(downtimeIntervals);
 
     const unknownIntervals = buildUnknownIntervals(
-      rangeStart,
+      monitorRangeStart,
       now,
       monitor.interval_sec,
       checksById.get(id) ?? [],
@@ -614,6 +637,7 @@ export async function computePublicStatusPayload(
           rawMonitors.map((monitor) => ({
             id: monitor.id,
             interval_sec: monitor.interval_sec,
+            created_at: monitor.created_at,
           })),
           Math.max(todayStartAt, rangeStart),
           rangeEnd,
