@@ -485,11 +485,16 @@ async function computeTodayPartialUptimeBatch(
     );
     const downtime_sec = sumIntervals(downtimeIntervals);
 
+    const checks = checksById.get(id) ?? [];
+    const checksForUnknown =
+      monitorRangeStart > rangeStart
+        ? checks.filter((check) => check.checked_at >= monitorRangeStart)
+        : checks;
     const unknownIntervals = buildUnknownIntervals(
       monitorRangeStart,
       now,
       monitor.interval_sec,
-      checksById.get(id) ?? [],
+      checksForUnknown,
     );
     const unknown_sec = Math.max(
       0,
