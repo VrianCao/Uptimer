@@ -317,7 +317,14 @@ export function MonitorForm(props: CreateProps | EditProps) {
         </div>
       )}
       <div>
-        <label className={labelClass}>{t('monitor_form.name')}</label>
+        <div className="mb-1 flex items-center justify-between gap-2">
+          <label className={labelClass}>{t('monitor_form.name')}</label>
+          <span className="text-[11px] text-slate-400 dark:text-slate-500">
+            {monitor
+              ? t('monitor_form.id_inline_edit', { id: `#${monitor.id}` })
+              : t('monitor_form.id_inline_create')}
+          </span>
+        </div>
         <input
           type="text"
           value={name}

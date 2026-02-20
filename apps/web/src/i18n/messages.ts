@@ -299,6 +299,8 @@ const en = {
   'maintenance_form.message': 'Message (Markdown, optional)',
   'maintenance_form.message_placeholder': 'Optional details...',
 
+  'monitor_form.id_inline_create': 'ID assigned after save',
+  'monitor_form.id_inline_edit': 'ID {id}',
   'monitor_form.name': 'Name',
   'monitor_form.group_optional': 'Group (optional)',
   'monitor_form.group_placeholder': 'e.g. Core Services',
@@ -698,6 +700,8 @@ const zhCn: LocaleMessages = {
   'maintenance_form.message': '说明（Markdown，可选）',
   'maintenance_form.message_placeholder': '可选补充说明...',
 
+  'monitor_form.id_inline_create': 'ID 会在保存后自动分配',
+  'monitor_form.id_inline_edit': 'ID {id}',
   'monitor_form.name': '名称',
   'monitor_form.group_optional': '分组（可选）',
   'monitor_form.group_placeholder': '例如：核心服务',

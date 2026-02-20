@@ -213,6 +213,15 @@ function normalizeGroupInput(value: string, ungroupedLabel: string): string | nu
   return trimmed;
 }
 
+function formatMonitorDisplayName(monitor: Pick<AdminMonitor, 'id' | 'name'>): string {
+  return `${monitor.name} (#${monitor.id})`;
+}
+
+function formatMonitorDisplayNameById(monitorId: number, monitorNameById: Map<number, string>): string {
+  const monitorName = monitorNameById.get(monitorId);
+  return monitorName ? `${monitorName} (#${monitorId})` : `#${monitorId}`;
+}
+
 function monitorStatusRank(status: AdminMonitor['status']): number {
   switch (status) {
     case 'down':
@@ -1022,7 +1031,7 @@ export function AdminDashboard() {
               <Card className="p-3 border-blue-200 bg-blue-50/70 dark:bg-blue-500/10 dark:border-blue-400/30">
                 <div className="text-sm text-blue-700 dark:text-blue-300">
                   {t('admin_dashboard.monitor_test_running', {
-                    name: monitorNameById.get(testingMonitorId) ?? `#${testingMonitorId}`,
+                    name: formatMonitorDisplayNameById(testingMonitorId, monitorNameById),
                   })}
                 </div>
               </Card>
@@ -1033,7 +1042,7 @@ export function AdminDashboard() {
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="text-sm font-medium text-slate-900 dark:text-slate-100">
                     {t('admin_dashboard.monitor_test_last', {
-                      name: monitorTestFeedback.monitor.name,
+                      name: formatMonitorDisplayName(monitorTestFeedback.monitor),
                     })}
                   </div>
                   <Badge
@@ -1092,9 +1101,10 @@ export function AdminDashboard() {
               <Card className="p-3 border-red-200 bg-red-50/70 dark:bg-red-500/10 dark:border-red-400/30">
                 <div className="text-sm font-medium text-red-700 dark:text-red-300">
                   {t('admin_dashboard.monitor_test_failed', {
-                    name:
-                      monitorNameById.get(monitorTestError.monitorId) ??
-                      `#${monitorTestError.monitorId}`,
+                    name: formatMonitorDisplayNameById(
+                      monitorTestError.monitorId,
+                      monitorNameById,
+                    ),
                   })}
                 </div>
                 <div className="mt-1 text-xs text-red-600 dark:text-red-400">
@@ -1483,13 +1493,18 @@ export function AdminDashboard() {
                                           });
                                         }}
                                         aria-label={t('admin_dashboard.monitor_select_row', {
-                                          name: m.name,
+                                          name: formatMonitorDisplayName(m),
                                         })}
                                         className="h-4 w-4 rounded border-slate-300 text-slate-700 focus:ring-slate-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200"
                                       />
                                     </td>
                                     <td className="px-3 sm:px-4 py-3 text-sm font-medium text-slate-900 dark:text-slate-100">
-                                      {m.name}
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="truncate">{m.name}</span>
+                                        <span className="text-xs font-normal text-slate-500 dark:text-slate-400">
+                                          #{m.id}
+                                        </span>
+                                      </div>
                                     </td>
                                     <td className="px-3 sm:px-4 py-3 text-xs text-slate-600 dark:text-slate-300">
                                       {toUiGroupLabel(groupLabel)}
@@ -2255,7 +2270,7 @@ export function AdminDashboard() {
                           </td>
                           <td className="px-3 sm:px-4 py-3 text-sm text-slate-500 dark:text-slate-400 truncate max-w-[150px]">
                             {it.monitor_ids
-                              .map((id) => monitorNameById.get(id) ?? `#${id}`)
+                              .map((id) => formatMonitorDisplayNameById(id, monitorNameById))
                               .join(', ')}
                           </td>
                           <td className="px-3 sm:px-4 py-3">
@@ -2384,7 +2399,7 @@ export function AdminDashboard() {
                             </td>
                             <td className="px-3 sm:px-4 py-3 text-sm text-slate-500 dark:text-slate-400 truncate max-w-[120px]">
                               {w.monitor_ids
-                                .map((id) => monitorNameById.get(id) ?? `#${id}`)
+                                .map((id) => formatMonitorDisplayNameById(id, monitorNameById))
                                 .join(', ')}
                             </td>
                             <td className="px-3 sm:px-4 py-3 text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
@@ -2500,7 +2515,7 @@ export function AdminDashboard() {
               <IncidentForm
                 monitors={(monitorsQuery.data?.monitors ?? []).map((m) => ({
                   id: m.id,
-                  name: m.name,
+                  name: formatMonitorDisplayName(m),
                 }))}
                 onSubmit={(data) => createIncidentMut.mutate(data)}
                 onCancel={closeModal}
@@ -2525,7 +2540,7 @@ export function AdminDashboard() {
               <MaintenanceWindowForm
                 monitors={(monitorsQuery.data?.monitors ?? []).map((m) => ({
                   id: m.id,
-                  name: m.name,
+                  name: formatMonitorDisplayName(m),
                 }))}
                 onSubmit={(data) => createMaintenanceMut.mutate(data)}
                 onCancel={closeModal}
@@ -2536,7 +2551,7 @@ export function AdminDashboard() {
               <MaintenanceWindowForm
                 monitors={(monitorsQuery.data?.monitors ?? []).map((m) => ({
                   id: m.id,
-                  name: m.name,
+                  name: formatMonitorDisplayName(m),
                 }))}
                 window={modal.window}
                 onSubmit={(data) => updateMaintenanceMut.mutate({ id: modal.window.id, data })}
