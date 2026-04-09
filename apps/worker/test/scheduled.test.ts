@@ -235,7 +235,9 @@ describe('scheduler/scheduled regression', () => {
         http_body: null,
         expected_status_json: null,
         response_keyword: null,
+        response_keyword_mode: null,
         response_forbidden_keyword: null,
+        response_forbidden_keyword_mode: null,
         state_status: 'up',
         state_last_error: null,
         last_changed_at: 1700000000,
@@ -263,7 +265,9 @@ describe('scheduler/scheduled regression', () => {
       body: null,
       expectedStatus: null,
       responseKeyword: null,
+      responseKeywordMode: null,
       responseForbiddenKeyword: null,
+      responseForbiddenKeywordMode: null,
     });
 
     const checkInsertIndex = runSql.findIndex((sql) => sql.includes('insert into check_results'));
@@ -289,6 +293,48 @@ describe('scheduler/scheduled regression', () => {
     expect(waitUntil).toHaveBeenCalledTimes(1);
   });
 
+  it('passes explicit response assertion modes through scheduled HTTP checks', async () => {
+    const dueRows = [
+      {
+        id: 102,
+        name: 'Regex API',
+        type: 'http',
+        target: 'https://example.com/regex',
+        interval_sec: 60,
+        timeout_ms: 5000,
+        http_method: 'GET',
+        http_headers_json: null,
+        http_body: null,
+        expected_status_json: null,
+        response_keyword: '^ready:\\\\d+$',
+        response_keyword_mode: 'regex',
+        response_forbidden_keyword: 'error',
+        response_forbidden_keyword_mode: 'contains',
+        state_status: 'up',
+        state_last_error: null,
+        last_changed_at: 1700000000,
+        consecutive_failures: 0,
+        consecutive_successes: 2,
+      },
+    ];
+    const env = createEnv({ dueRows });
+
+    await runScheduledTick(env, { waitUntil: vi.fn() } as unknown as ExecutionContext);
+
+    expect(runHttpCheck).toHaveBeenCalledWith({
+      url: 'https://example.com/regex',
+      timeoutMs: 5000,
+      method: 'GET',
+      headers: null,
+      body: null,
+      expectedStatus: null,
+      responseKeyword: '^ready:\\\\d+$',
+      responseKeywordMode: 'regex',
+      responseForbiddenKeyword: 'error',
+      responseForbiddenKeywordMode: 'contains',
+    });
+  });
+
   it('batches persistence for multiple due monitors', async () => {
     const dueRows = [
       {
@@ -303,7 +349,9 @@ describe('scheduler/scheduled regression', () => {
         http_body: null,
         expected_status_json: null,
         response_keyword: null,
+        response_keyword_mode: null,
         response_forbidden_keyword: null,
+        response_forbidden_keyword_mode: null,
         state_status: 'up',
         state_last_error: null,
         last_changed_at: 1700000000,
@@ -322,7 +370,9 @@ describe('scheduler/scheduled regression', () => {
         http_body: null,
         expected_status_json: null,
         response_keyword: null,
+        response_keyword_mode: null,
         response_forbidden_keyword: null,
+        response_forbidden_keyword_mode: null,
         state_status: 'up',
         state_last_error: null,
         last_changed_at: 1700000000,
@@ -361,7 +411,9 @@ describe('scheduler/scheduled regression', () => {
         http_body: null,
         expected_status_json: null,
         response_keyword: null,
+        response_keyword_mode: null,
         response_forbidden_keyword: null,
+        response_forbidden_keyword_mode: null,
         state_status: 'up',
         state_last_error: null,
         last_changed_at: 1700000000,
@@ -432,7 +484,9 @@ describe('scheduler/scheduled regression', () => {
         http_body: null,
         expected_status_json: null,
         response_keyword: null,
+        response_keyword_mode: null,
         response_forbidden_keyword: null,
+        response_forbidden_keyword_mode: null,
         state_status: 'unknown',
         state_last_error: null,
         last_changed_at: null,
@@ -486,7 +540,9 @@ describe('scheduler/scheduled regression', () => {
         http_body: null,
         expected_status_json: null,
         response_keyword: null,
+        response_keyword_mode: null,
         response_forbidden_keyword: null,
+        response_forbidden_keyword_mode: null,
         state_status: 'down',
         state_last_error: 'HTTP 503',
         last_changed_at: 1700000000,
@@ -546,7 +602,9 @@ describe('scheduler/scheduled regression', () => {
         http_body: null,
         expected_status_json: null,
         response_keyword: null,
+        response_keyword_mode: null,
         response_forbidden_keyword: null,
+        response_forbidden_keyword_mode: null,
         state_status: 'up',
         state_last_error: null,
         last_changed_at: 1700000000,
@@ -588,7 +646,9 @@ describe('scheduler/scheduled regression', () => {
         http_body: null,
         expected_status_json: null,
         response_keyword: null,
+        response_keyword_mode: null,
         response_forbidden_keyword: null,
+        response_forbidden_keyword_mode: null,
         state_status: 'up',
         last_changed_at: 1700000000,
         consecutive_failures: 0,
@@ -643,7 +703,9 @@ describe('scheduler/scheduled regression', () => {
         http_body: null,
         expected_status_json: null,
         response_keyword: null,
+        response_keyword_mode: null,
         response_forbidden_keyword: null,
+        response_forbidden_keyword_mode: null,
         state_status: 'up',
         state_last_error: null,
         last_changed_at: 1700000000,

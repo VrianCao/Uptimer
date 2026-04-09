@@ -23,6 +23,10 @@ import { requireAdminRateLimit } from '../middleware/rate-limit';
 import { computePublicHomepagePayload } from '../public/homepage';
 import { refreshPublicHomepageSnapshotIfNeeded } from '../snapshots';
 import { runHttpCheck } from '../monitor/http';
+import {
+  validateHttpResponseAssertionConfig,
+  type HttpResponseMatchMode,
+} from '../monitor/http-assertions';
 import { validateHttpTarget, validateTcpTarget } from '../monitor/targets';
 import { runTcpCheck } from '../monitor/tcp';
 import {
@@ -89,6 +93,25 @@ function queuePublicHomepageSnapshotRefresh(c: { env: Env; executionCtx: Executi
 function normalizeMonitorGroupName(groupName: string | null | undefined): string | null {
   const trimmed = groupName?.trim() ?? '';
   return trimmed.length > 0 ? trimmed : null;
+}
+
+function normalizeAssertionModeForStorage(
+  value: string | null | undefined,
+  mode: HttpResponseMatchMode | null | undefined,
+): HttpResponseMatchMode | null {
+  return typeof value === 'string' ? (mode ?? null) : null;
+}
+
+function throwOnInvalidHttpResponseAssertionConfig(input: {
+  responseKeyword: string | null | undefined;
+  responseKeywordMode: HttpResponseMatchMode | null | undefined;
+  responseForbiddenKeyword: string | null | undefined;
+  responseForbiddenKeywordMode: HttpResponseMatchMode | null | undefined;
+}) {
+  const issues = validateHttpResponseAssertionConfig(input);
+  if (issues.length === 0) return;
+
+  throw new AppError(400, 'INVALID_ARGUMENT', issues[0]!.message);
 }
 
 async function findGroupSortOrder(
@@ -241,7 +264,9 @@ function monitorRowToApi(
       field: 'expected_status_json',
     }),
     response_keyword: row.responseKeyword,
+    response_keyword_mode: row.responseKeywordMode,
     response_forbidden_keyword: row.responseForbiddenKeyword,
+    response_forbidden_keyword_mode: row.responseForbiddenKeywordMode,
     group_name: groupName,
     group_sort_order: row.groupSortOrder,
     sort_order: row.sortOrder,
@@ -413,8 +438,19 @@ adminRoutes.post('/monitors', async (c) => {
             })
           : null,
       responseKeyword: input.type === 'http' ? (input.response_keyword ?? null) : null,
+      responseKeywordMode:
+        input.type === 'http'
+          ? normalizeAssertionModeForStorage(input.response_keyword ?? null, input.response_keyword_mode)
+          : null,
       responseForbiddenKeyword:
         input.type === 'http' ? (input.response_forbidden_keyword ?? null) : null,
+      responseForbiddenKeywordMode:
+        input.type === 'http'
+          ? normalizeAssertionModeForStorage(
+              input.response_forbidden_keyword ?? null,
+              input.response_forbidden_keyword_mode,
+            )
+          : null,
 
       groupName,
       groupSortOrder,
@@ -468,7 +504,9 @@ adminRoutes.patch('/monitors/:id', async (c) => {
       'http_body',
       'expected_status_json',
       'response_keyword',
+      'response_keyword_mode',
       'response_forbidden_keyword',
+      'response_forbidden_keyword_mode',
     ] as const;
     for (const field of httpFields) {
       if (input[field] !== undefined) {
@@ -490,6 +528,29 @@ adminRoutes.patch('/monitors/:id', async (c) => {
     input.group_sort_order !== undefined
       ? input.group_sort_order
       : ((await findGroupSortOrder(c.env.DB, nextGroupName)) ?? existing.groupSortOrder);
+  const nextResponseKeyword =
+    input.response_keyword !== undefined ? input.response_keyword : existing.responseKeyword;
+  const nextResponseKeywordMode = normalizeAssertionModeForStorage(
+    nextResponseKeyword,
+    input.response_keyword_mode !== undefined ? input.response_keyword_mode : existing.responseKeywordMode,
+  );
+  const nextResponseForbiddenKeyword =
+    input.response_forbidden_keyword !== undefined
+      ? input.response_forbidden_keyword
+      : existing.responseForbiddenKeyword;
+  const nextResponseForbiddenKeywordMode = normalizeAssertionModeForStorage(
+    nextResponseForbiddenKeyword,
+    input.response_forbidden_keyword_mode !== undefined
+      ? input.response_forbidden_keyword_mode
+      : existing.responseForbiddenKeywordMode,
+  );
+
+  throwOnInvalidHttpResponseAssertionConfig({
+    responseKeyword: nextResponseKeyword,
+    responseKeywordMode: nextResponseKeywordMode,
+    responseForbiddenKeyword: nextResponseForbiddenKeyword,
+    responseForbiddenKeywordMode: nextResponseForbiddenKeywordMode,
+  });
 
   const updated = await db
     .update(monitors)
@@ -512,12 +573,10 @@ adminRoutes.patch('/monitors/:id', async (c) => {
               field: 'expected_status_json',
             })
           : existing.expectedStatusJson,
-      responseKeyword:
-        input.response_keyword !== undefined ? input.response_keyword : existing.responseKeyword,
-      responseForbiddenKeyword:
-        input.response_forbidden_keyword !== undefined
-          ? input.response_forbidden_keyword
-          : existing.responseForbiddenKeyword,
+      responseKeyword: nextResponseKeyword,
+      responseKeywordMode: nextResponseKeywordMode,
+      responseForbiddenKeyword: nextResponseForbiddenKeyword,
+      responseForbiddenKeywordMode: nextResponseForbiddenKeywordMode,
       groupName: nextGroupName,
       groupSortOrder: nextGroupSortOrder,
       sortOrder: input.sort_order ?? existing.sortOrder,
@@ -594,7 +653,9 @@ adminRoutes.post('/monitors/:id/test', async (c) => {
         field: 'expected_status_json',
       }),
       responseKeyword: monitor.responseKeyword,
+      responseKeywordMode: monitor.responseKeywordMode,
       responseForbiddenKeyword: monitor.responseForbiddenKeyword,
+      responseForbiddenKeywordMode: monitor.responseForbiddenKeywordMode,
     });
   } else {
     outcome = await runTcpCheck({

@@ -332,10 +332,15 @@ const en = {
   'monitor_form.body_optional': 'Body (optional)',
   'monitor_form.body_placeholder_get_head': '(usually empty for GET/HEAD)',
   'monitor_form.body_placeholder_default': '...',
+  'monitor_form.match_mode': 'Match Mode',
+  'monitor_form.match_mode_contains': 'Contains',
+  'monitor_form.match_mode_regex': 'Regex',
   'monitor_form.response_must_contain_optional': 'Response Must Contain (optional)',
   'monitor_form.response_must_contain_placeholder': 'e.g. ok',
   'monitor_form.response_must_not_contain_optional': 'Response Must Not Contain (optional)',
   'monitor_form.response_must_not_contain_placeholder': 'e.g. error',
+  'monitor_form.response_regex_help':
+    'Uses JavaScript RegExp syntax. Enter the pattern only, without surrounding /slashes/.',
   'monitor_form.clear_help': 'Clearing a field will reset it to default behavior.',
   'monitor_form.error_headers_invalid_json':
     'Headers must be valid JSON (e.g. {"Authorization":"Bearer ..."})',
@@ -347,6 +352,7 @@ const en = {
   'monitor_form.error_expected_status_json_or_list':
     'Expected status codes must be a JSON array like [200,204] or a list like "200, 204"',
   'monitor_form.error_expected_status_must_array': 'Expected status codes must be an array',
+  'monitor_form.error_regex_invalid': 'Invalid regex: {message}',
 
   'notification_form.name': 'Name',
   'notification_form.webhook_url': 'Webhook URL',
@@ -737,10 +743,14 @@ const zhCn: LocaleMessages = {
   'monitor_form.body_optional': '请求体（可选）',
   'monitor_form.body_placeholder_get_head': '（GET/HEAD 通常留空）',
   'monitor_form.body_placeholder_default': '...',
+  'monitor_form.match_mode': '匹配模式',
+  'monitor_form.match_mode_contains': '包含',
+  'monitor_form.match_mode_regex': '正则',
   'monitor_form.response_must_contain_optional': '响应必须包含（可选）',
   'monitor_form.response_must_contain_placeholder': '例如：ok',
   'monitor_form.response_must_not_contain_optional': '响应不能包含（可选）',
   'monitor_form.response_must_not_contain_placeholder': '例如：error',
+  'monitor_form.response_regex_help': '使用 JavaScript 正则语法。只输入模式本身，不要包裹 /斜杠/。',
   'monitor_form.clear_help': '清空字段会恢复默认行为。',
   'monitor_form.error_headers_invalid_json':
     '请求头必须是合法 JSON（例如 {"Authorization":"Bearer ..."}）',
@@ -751,6 +761,7 @@ const zhCn: LocaleMessages = {
   'monitor_form.error_expected_status_json_or_list':
     '期望状态码必须是 JSON 数组（如 [200,204]）或列表（如 "200, 204"）',
   'monitor_form.error_expected_status_must_array': '期望状态码必须是数组',
+  'monitor_form.error_regex_invalid': '正则表达式无效：{message}',
 
   'notification_form.name': '名称',
   'notification_form.webhook_url': 'Webhook URL',
@@ -963,6 +974,13 @@ const zhTw: LocaleMessages = {
   'admin_dashboard.edit_maintenance': '編輯維護',
   'admin_dashboard.monitor_visibility_hidden': '已隱藏',
 
+  'monitor_form.match_mode': '匹配方式',
+  'monitor_form.match_mode_contains': '包含',
+  'monitor_form.match_mode_regex': '正則',
+  'monitor_form.response_regex_help':
+    '使用 JavaScript 正則語法。只輸入模式本身，不要加上前後的 / 斜線。',
+  'monitor_form.error_regex_invalid': '正則表達式無效：{message}',
+
   'admin_analytics.analytics_title': '分析',
   'admin_analytics.overview_title': '總覽',
   'admin_analytics.overview_desc': '所選時間範圍內的整體可用性。',
@@ -1137,6 +1155,13 @@ const ja: LocaleMessages = {
   'admin_dashboard.create_maintenance': 'メンテナンスを作成',
   'admin_dashboard.edit_maintenance': 'メンテナンスを編集',
   'admin_dashboard.monitor_visibility_hidden': '非公開',
+
+  'monitor_form.match_mode': 'マッチ方式',
+  'monitor_form.match_mode_contains': '部分一致',
+  'monitor_form.match_mode_regex': '正規表現',
+  'monitor_form.response_regex_help':
+    'JavaScript の正規表現構文を使用します。前後の / は付けずにパターンだけを入力してください。',
+  'monitor_form.error_regex_invalid': '無効な正規表現です: {message}',
 
   'admin_analytics.analytics_title': '分析',
   'admin_analytics.overview_title': '概要',
@@ -1313,6 +1338,13 @@ const es: LocaleMessages = {
   'admin_dashboard.create_maintenance': 'Crear mantenimiento',
   'admin_dashboard.edit_maintenance': 'Editar mantenimiento',
   'admin_dashboard.monitor_visibility_hidden': 'Oculto',
+
+  'monitor_form.match_mode': 'Modo de coincidencia',
+  'monitor_form.match_mode_contains': 'Contiene',
+  'monitor_form.match_mode_regex': 'Regex',
+  'monitor_form.response_regex_help':
+    'Usa la sintaxis RegExp de JavaScript. Escribe solo el patron, sin barras /.../.',
+  'monitor_form.error_regex_invalid': 'Regex invalida: {message}',
 
   'admin_analytics.analytics_title': 'Analitica',
   'admin_analytics.overview_title': 'Resumen',

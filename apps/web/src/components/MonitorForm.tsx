@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import type {
   AdminMonitor,
   CreateMonitorInput,
+  HttpResponseMatchMode,
   MonitorType,
   PatchMonitorInput,
 } from '../api/types';
@@ -40,6 +41,12 @@ const selectClass = SELECT_CLASS;
 const textareaClass = TEXTAREA_CLASS;
 const labelClass = FIELD_LABEL_CLASS;
 type TranslateFn = ReturnType<typeof useI18n>['t'];
+
+function normalizeHttpResponseMatchMode(
+  value: HttpResponseMatchMode | null | undefined,
+): HttpResponseMatchMode {
+  return value ?? 'contains';
+}
 
 function safeJsonStringify(value: unknown): string {
   try {
@@ -175,6 +182,28 @@ function parseOptionalSortOrderInput(
   return { ok: true, value: n };
 }
 
+function parseRegexPatternInput(
+  pattern: string,
+  mode: HttpResponseMatchMode,
+  t: TranslateFn,
+): { ok: true } | { ok: false; error: string } {
+  if (mode !== 'regex' || pattern.trim().length === 0) {
+    return { ok: true };
+  }
+
+  try {
+    void new RegExp(pattern);
+    return { ok: true };
+  } catch (err) {
+    return {
+      ok: false,
+      error: t('monitor_form.error_regex_invalid', {
+        message: err instanceof Error ? err.message : String(err),
+      }),
+    };
+  }
+}
+
 export function MonitorForm(props: CreateProps | EditProps) {
   const { t } = useI18n();
   const monitor = props.monitor;
@@ -228,14 +257,31 @@ export function MonitorForm(props: CreateProps | EditProps) {
   const [responseKeyword, setResponseKeyword] = useState(() =>
     monitor?.type === 'http' ? (monitor.response_keyword ?? '') : '',
   );
+  const [responseKeywordMode, setResponseKeywordMode] = useState<HttpResponseMatchMode>(() =>
+    monitor?.type === 'http' ? normalizeHttpResponseMatchMode(monitor.response_keyword_mode) : 'contains',
+  );
   const [responseForbiddenKeyword, setResponseForbiddenKeyword] = useState(() =>
     monitor?.type === 'http' ? (monitor.response_forbidden_keyword ?? '') : '',
   );
+  const [responseForbiddenKeywordMode, setResponseForbiddenKeywordMode] =
+    useState<HttpResponseMatchMode>(() =>
+      monitor?.type === 'http'
+        ? normalizeHttpResponseMatchMode(monitor.response_forbidden_keyword_mode)
+        : 'contains',
+    );
 
   const headersParse = useMemo(() => parseHeadersJson(httpHeadersJson, t), [httpHeadersJson, t]);
   const expectedStatusParse = useMemo(
     () => parseExpectedStatusInput(expectedStatusInput, t),
     [expectedStatusInput, t],
+  );
+  const responseKeywordRegexParse = useMemo(
+    () => parseRegexPatternInput(responseKeyword, responseKeywordMode, t),
+    [responseKeyword, responseKeywordMode, t],
+  );
+  const responseForbiddenKeywordRegexParse = useMemo(
+    () => parseRegexPatternInput(responseForbiddenKeyword, responseForbiddenKeywordMode, t),
+    [responseForbiddenKeyword, responseForbiddenKeywordMode, t],
   );
   const groupSortOrderParse = useMemo(
     () => parseOptionalSortOrderInput(groupSortOrderInput),
@@ -246,7 +292,12 @@ export function MonitorForm(props: CreateProps | EditProps) {
     name.trim().length > 0 &&
     target.trim().length > 0 &&
     groupSortOrderParse.ok &&
-    (type !== 'http' || !showAdvancedHttp || (headersParse.ok && expectedStatusParse.ok));
+    (type !== 'http' ||
+      !showAdvancedHttp ||
+      (headersParse.ok &&
+        expectedStatusParse.ok &&
+        responseKeywordRegexParse.ok &&
+        responseForbiddenKeywordRegexParse.ok));
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -286,15 +337,21 @@ export function MonitorForm(props: CreateProps | EditProps) {
 
           data.http_body = httpBody.trim().length > 0 ? httpBody : null;
           data.response_keyword = responseKeyword.trim().length > 0 ? responseKeyword.trim() : null;
+          data.response_keyword_mode =
+            responseKeyword.trim().length > 0 ? responseKeywordMode : null;
           data.response_forbidden_keyword =
             responseForbiddenKeyword.trim().length > 0 ? responseForbiddenKeyword.trim() : null;
+          data.response_forbidden_keyword_mode =
+            responseForbiddenKeyword.trim().length > 0 ? responseForbiddenKeywordMode : null;
         } else {
           // In edit mode, hiding advanced options means reset all persisted advanced HTTP settings.
           data.http_headers_json = null;
           data.expected_status_json = null;
           data.http_body = null;
           data.response_keyword = null;
+          data.response_keyword_mode = null;
           data.response_forbidden_keyword = null;
+          data.response_forbidden_keyword_mode = null;
         }
       }
 
@@ -326,10 +383,12 @@ export function MonitorForm(props: CreateProps | EditProps) {
 
         if (responseKeyword.trim().length > 0) {
           data.response_keyword = responseKeyword.trim();
+          data.response_keyword_mode = responseKeywordMode;
         }
 
         if (responseForbiddenKeyword.trim().length > 0) {
           data.response_forbidden_keyword = responseForbiddenKeyword.trim();
+          data.response_forbidden_keyword_mode = responseForbiddenKeywordMode;
         }
       }
     }
@@ -566,30 +625,74 @@ export function MonitorForm(props: CreateProps | EditProps) {
                 />
               </div>
 
-              <div>
-                <label className={labelClass}>
-                  {t('monitor_form.response_must_contain_optional')}
-                </label>
-                <input
-                  type="text"
-                  value={responseKeyword}
-                  onChange={(e) => setResponseKeyword(e.target.value)}
-                  className={inputClass}
-                  placeholder={t('monitor_form.response_must_contain_placeholder')}
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="sm:col-span-2">
+                  <label className={labelClass}>
+                    {t('monitor_form.response_must_contain_optional')}
+                  </label>
+                  <input
+                    type="text"
+                    value={responseKeyword}
+                    onChange={(e) => setResponseKeyword(e.target.value)}
+                    className={inputClass}
+                    placeholder={t('monitor_form.response_must_contain_placeholder')}
+                  />
+                  {!responseKeywordRegexParse.ok && (
+                    <div className="mt-1 text-xs text-red-600 dark:text-red-400">
+                      {responseKeywordRegexParse.error}
+                    </div>
+                  )}
+                  {responseKeywordMode === 'regex' && (
+                    <div className={FIELD_HELP_CLASS}>{t('monitor_form.response_regex_help')}</div>
+                  )}
+                </div>
+                <div>
+                  <label className={labelClass}>{t('monitor_form.match_mode')}</label>
+                  <select
+                    value={responseKeywordMode}
+                    onChange={(e) => setResponseKeywordMode(e.target.value as HttpResponseMatchMode)}
+                    className={selectClass}
+                  >
+                    <option value="contains">{t('monitor_form.match_mode_contains')}</option>
+                    <option value="regex">{t('monitor_form.match_mode_regex')}</option>
+                  </select>
+                </div>
               </div>
 
-              <div>
-                <label className={labelClass}>
-                  {t('monitor_form.response_must_not_contain_optional')}
-                </label>
-                <input
-                  type="text"
-                  value={responseForbiddenKeyword}
-                  onChange={(e) => setResponseForbiddenKeyword(e.target.value)}
-                  className={inputClass}
-                  placeholder={t('monitor_form.response_must_not_contain_placeholder')}
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="sm:col-span-2">
+                  <label className={labelClass}>
+                    {t('monitor_form.response_must_not_contain_optional')}
+                  </label>
+                  <input
+                    type="text"
+                    value={responseForbiddenKeyword}
+                    onChange={(e) => setResponseForbiddenKeyword(e.target.value)}
+                    className={inputClass}
+                    placeholder={t('monitor_form.response_must_not_contain_placeholder')}
+                  />
+                  {!responseForbiddenKeywordRegexParse.ok && (
+                    <div className="mt-1 text-xs text-red-600 dark:text-red-400">
+                      {responseForbiddenKeywordRegexParse.error}
+                    </div>
+                  )}
+                  {responseForbiddenKeywordMode === 'regex' && (
+                    <div className={FIELD_HELP_CLASS}>{t('monitor_form.response_regex_help')}</div>
+                  )}
+                </div>
+                <div>
+                  <label className={labelClass}>{t('monitor_form.match_mode')}</label>
+                  <select
+                    value={responseForbiddenKeywordMode}
+                    onChange={(e) =>
+                      setResponseForbiddenKeywordMode(e.target.value as HttpResponseMatchMode)
+                    }
+                    className={selectClass}
+                  >
+                    <option value="contains">{t('monitor_form.match_mode_contains')}</option>
+                    <option value="regex">{t('monitor_form.match_mode_regex')}</option>
+                  </select>
+                </div>
               </div>
 
               {monitor && <div className={FIELD_HELP_CLASS}>{t('monitor_form.clear_help')}</div>}

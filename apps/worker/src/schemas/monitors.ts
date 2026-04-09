@@ -1,11 +1,16 @@
 import { expectedStatusJsonSchema, httpHeadersJsonSchema } from '@uptimer/db';
 import { z } from 'zod';
 
+import {
+  HTTP_RESPONSE_MATCH_MODES,
+  validateHttpResponseAssertionConfig,
+} from '../monitor/http-assertions';
 import { validateHttpTarget, validateTcpTarget } from '../monitor/targets';
 
 const monitorGroupNameSchema = z.string().trim().min(1).max(64);
 const monitorGroupSortOrderSchema = z.number().int().min(-100_000).max(100_000);
 const monitorSortOrderSchema = z.number().int().min(-100_000).max(100_000);
+const httpResponseMatchModeSchema = z.enum(HTTP_RESPONSE_MATCH_MODES);
 
 export const createMonitorInputSchema = z
   .object({
@@ -21,7 +26,9 @@ export const createMonitorInputSchema = z
     http_body: z.string().optional(),
     expected_status_json: expectedStatusJsonSchema.optional(),
     response_keyword: z.string().min(1).optional(),
+    response_keyword_mode: httpResponseMatchModeSchema.optional(),
     response_forbidden_keyword: z.string().min(1).optional(),
+    response_forbidden_keyword_mode: httpResponseMatchModeSchema.optional(),
 
     group_name: monitorGroupNameSchema.optional(),
     group_sort_order: monitorGroupSortOrderSchema.optional(),
@@ -43,11 +50,26 @@ export const createMonitorInputSchema = z
         val.http_body !== undefined ||
         val.expected_status_json !== undefined ||
         val.response_keyword !== undefined ||
-        val.response_forbidden_keyword !== undefined)
+        val.response_keyword_mode !== undefined ||
+        val.response_forbidden_keyword !== undefined ||
+        val.response_forbidden_keyword_mode !== undefined)
     ) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: 'http_* fields are not allowed for tcp monitors',
+      });
+    }
+
+    for (const issue of validateHttpResponseAssertionConfig({
+      responseKeyword: val.response_keyword,
+      responseKeywordMode: val.response_keyword_mode,
+      responseForbiddenKeyword: val.response_forbidden_keyword,
+      responseForbiddenKeywordMode: val.response_forbidden_keyword_mode,
+    })) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: issue.path,
+        message: issue.message,
       });
     }
   });
@@ -67,13 +89,29 @@ export const patchMonitorInputSchema = z
     http_body: z.string().nullable().optional(),
     expected_status_json: expectedStatusJsonSchema.nullable().optional(),
     response_keyword: z.string().min(1).nullable().optional(),
+    response_keyword_mode: httpResponseMatchModeSchema.nullable().optional(),
     response_forbidden_keyword: z.string().min(1).nullable().optional(),
+    response_forbidden_keyword_mode: httpResponseMatchModeSchema.nullable().optional(),
 
     group_name: monitorGroupNameSchema.nullable().optional(),
     group_sort_order: monitorGroupSortOrderSchema.optional(),
     sort_order: monitorSortOrderSchema.optional(),
     show_on_status_page: z.boolean().optional(),
     is_active: z.boolean().optional(),
+  })
+  .superRefine((val, ctx) => {
+    for (const issue of validateHttpResponseAssertionConfig({
+      responseKeyword: val.response_keyword,
+      responseKeywordMode: val.response_keyword_mode,
+      responseForbiddenKeyword: val.response_forbidden_keyword,
+      responseForbiddenKeywordMode: val.response_forbidden_keyword_mode,
+    })) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: issue.path,
+        message: issue.message,
+      });
+    }
   })
   .refine((val) => Object.keys(val).length > 0, {
     message: 'At least one field must be provided',

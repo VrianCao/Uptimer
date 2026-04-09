@@ -10,7 +10,9 @@ const BASE_CONFIG = {
   body: null,
   expectedStatus: null,
   responseKeyword: null,
+  responseKeywordMode: null,
   responseForbiddenKeyword: null,
+  responseForbiddenKeywordMode: null,
 };
 
 describe('monitor/http', () => {
@@ -111,6 +113,44 @@ describe('monitor/http', () => {
     expect(forbidden.attempts).toBe(3);
   });
 
+  it('supports regex assertions for required and forbidden response bodies', async () => {
+    vi.useFakeTimers();
+
+    globalThis.fetch = vi.fn(async () => new Response('status=ready version=42', { status: 200 })) as unknown as typeof fetch;
+    const requiredSuccess = await runHttpCheck({
+      ...BASE_CONFIG,
+      responseKeyword: 'status=ready\\s+version=\\d+',
+      responseKeywordMode: 'regex',
+    });
+    expect(requiredSuccess.status).toBe('up');
+    expect(requiredSuccess.error).toBeNull();
+    expect(requiredSuccess.attempts).toBe(1);
+
+    globalThis.fetch = vi.fn(async () => new Response('status=starting', { status: 200 })) as unknown as typeof fetch;
+    const requiredFailurePromise = runHttpCheck({
+      ...BASE_CONFIG,
+      responseKeyword: 'status=ready\\s+version=\\d+',
+      responseKeywordMode: 'regex',
+    });
+    await vi.advanceTimersByTimeAsync(1_200);
+    const requiredFailure = await requiredFailurePromise;
+    expect(requiredFailure.status).toBe('down');
+    expect(requiredFailure.error).toBe('Required response regex not matched');
+    expect(requiredFailure.attempts).toBe(3);
+
+    globalThis.fetch = vi.fn(async () => new Response('status=ready secret=token-123', { status: 200 })) as unknown as typeof fetch;
+    const forbiddenFailurePromise = runHttpCheck({
+      ...BASE_CONFIG,
+      responseForbiddenKeyword: 'secret=token-\\d+',
+      responseForbiddenKeywordMode: 'regex',
+    });
+    await vi.advanceTimersByTimeAsync(1_200);
+    const forbiddenFailure = await forbiddenFailurePromise;
+    expect(forbiddenFailure.status).toBe('down');
+    expect(forbiddenFailure.error).toBe('Forbidden response regex matched');
+    expect(forbiddenFailure.attempts).toBe(3);
+  });
+
   it('returns unknown when body assertions are requested but response has no readable body', async () => {
     globalThis.fetch = vi.fn(async () => new Response(null, { status: 200 })) as unknown as typeof fetch;
 
@@ -149,6 +189,44 @@ describe('monitor/http', () => {
     expect(forbiddenKeyword.status).toBe('unknown');
     expect(forbiddenKeyword.error).toMatch(/cannot assert forbidden keyword absence/i);
     expect(forbiddenKeyword.attempts).toBe(1);
+
+    globalThis.fetch = vi.fn(async () => makeLargeResponse()) as unknown as typeof fetch;
+    const requiredRegex = await runHttpCheck({
+      ...BASE_CONFIG,
+      responseKeyword: 'needle-\\d+',
+      responseKeywordMode: 'regex',
+    });
+    expect(requiredRegex.status).toBe('unknown');
+    expect(requiredRegex.error).toMatch(/cannot assert required response regex/i);
+    expect(requiredRegex.attempts).toBe(1);
+
+    globalThis.fetch = vi.fn(async () => makeLargeResponse()) as unknown as typeof fetch;
+    const forbiddenRegex = await runHttpCheck({
+      ...BASE_CONFIG,
+      responseForbiddenKeyword: 'forbidden-\\d+',
+      responseForbiddenKeywordMode: 'regex',
+    });
+    expect(forbiddenRegex.status).toBe('unknown');
+    expect(forbiddenRegex.error).toMatch(/cannot assert forbidden response regex absence/i);
+    expect(forbiddenRegex.attempts).toBe(1);
+  });
+
+  it('fails safely when runtime regex compilation is invalid', async () => {
+    const fetchMock = vi.fn();
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const outcome = await runHttpCheck({
+      ...BASE_CONFIG,
+      responseKeyword: '(',
+      responseKeywordMode: 'regex',
+    });
+
+    expect(outcome.status).toBe('unknown');
+    expect(outcome.latencyMs).toBeNull();
+    expect(outcome.httpStatus).toBeNull();
+    expect(outcome.error).toMatch(/invalid regex/i);
+    expect(outcome.attempts).toBe(1);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('retries transient failures and returns success when a later attempt passes', async () => {

@@ -4,6 +4,7 @@ export type FakeD1QueryHandler = {
   match: QueryMatcher;
   all?: (args: unknown[], normalizedSql: string) => unknown[] | Promise<unknown[]>;
   first?: (args: unknown[], normalizedSql: string) => unknown | null | Promise<unknown | null>;
+  raw?: (args: unknown[], normalizedSql: string) => unknown[] | Promise<unknown[]>;
   run?: (
     args: unknown[],
     normalizedSql: string,
@@ -74,6 +75,30 @@ class FakePreparedStatement {
     return (row ?? null) as T | null;
   }
 
+  async raw<T = unknown>(): Promise<T[]> {
+    const rawHandler = this.handlers.find((item) => item.raw && matchesQuery(this.normalizedSql, item.match));
+    if (rawHandler?.raw) {
+      const rows = await rawHandler.raw(this.args, this.normalizedSql);
+      return (rows ?? []) as T[];
+    }
+
+    const allHandler = this.handlers.find((item) => item.all && matchesQuery(this.normalizedSql, item.match));
+    if (allHandler?.all) {
+      const rows = await allHandler.all(this.args, this.normalizedSql);
+      return (rows ?? []).map(toRawRow) as T[];
+    }
+
+    const firstHandler = this.handlers.find(
+      (item) => item.first && matchesQuery(this.normalizedSql, item.match),
+    );
+    if (firstHandler?.first) {
+      const row = await firstHandler.first(this.args, this.normalizedSql);
+      return row === null ? [] : ([toRawRow(row)] as T[]);
+    }
+
+    throw new Error(`No fake D1 raw() handler matched SQL: ${this.sql}`);
+  }
+
   async run<T = unknown>(): Promise<D1Result<T>> {
     const handler = this.handlers.find((item) => item.run && matchesQuery(this.normalizedSql, item.match));
     if (!handler || !handler.run) {
@@ -100,6 +125,16 @@ class FakePreparedStatement {
       meta,
     } as unknown as D1Result<T>;
   }
+}
+
+function toRawRow(row: unknown): unknown {
+  if (Array.isArray(row)) {
+    return row;
+  }
+  if (row && typeof row === 'object') {
+    return Object.values(row);
+  }
+  return [row];
 }
 
 export function createFakeD1Database(handlers: FakeD1QueryHandler[]): D1Database {

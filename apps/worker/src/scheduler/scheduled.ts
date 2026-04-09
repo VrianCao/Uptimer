@@ -6,6 +6,7 @@ import {
   parseDbJson,
   parseDbJsonNullable,
   webhookChannelConfigSchema,
+  type HttpResponseMatchMode,
   type MonitorStatus,
 } from '@uptimer/db';
 
@@ -46,7 +47,9 @@ type DueMonitorRow = {
   http_body: string | null;
   expected_status_json: string | null;
   response_keyword: string | null;
+  response_keyword_mode: HttpResponseMatchMode | null;
   response_forbidden_keyword: string | null;
+  response_forbidden_keyword_mode: HttpResponseMatchMode | null;
   state_status: string | null;
   state_last_error: string | null;
   last_changed_at: number | null;
@@ -270,7 +273,9 @@ async function listDueMonitors(db: D1Database, checkedAt: number): Promise<DueMo
         m.http_body,
         m.expected_status_json,
         m.response_keyword,
+        m.response_keyword_mode,
         m.response_forbidden_keyword,
+        m.response_forbidden_keyword_mode,
         s.status AS state_status,
         s.last_error AS state_last_error,
         s.last_changed_at,
@@ -464,7 +469,9 @@ async function runDueMonitor(
           body: row.http_body,
           expectedStatus,
           responseKeyword: row.response_keyword,
+          responseKeywordMode: row.response_keyword_mode,
           responseForbiddenKeyword: row.response_forbidden_keyword,
+          responseForbiddenKeywordMode: row.response_forbidden_keyword_mode,
         });
       }
     } else if (row.type === 'tcp') {

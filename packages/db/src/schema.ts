@@ -11,6 +11,7 @@ import {
 export type MonitorType = 'http' | 'tcp';
 export type MonitorStatus = 'up' | 'down' | 'maintenance' | 'paused' | 'unknown';
 export type CheckStatus = 'up' | 'down' | 'maintenance' | 'unknown';
+export type HttpResponseMatchMode = 'contains' | 'regex';
 export type IncidentStatus = 'investigating' | 'identified' | 'monitoring' | 'resolved';
 export type IncidentImpact = 'none' | 'minor' | 'major' | 'critical';
 export type NotificationChannelType = 'webhook';
@@ -32,7 +33,9 @@ export const monitors = sqliteTable(
     httpBody: text('http_body'),
     expectedStatusJson: text('expected_status_json'),
     responseKeyword: text('response_keyword'),
+    responseKeywordMode: text('response_keyword_mode').$type<HttpResponseMatchMode>(),
     responseForbiddenKeyword: text('response_forbidden_keyword'),
+    responseForbiddenKeywordMode: text('response_forbidden_keyword_mode').$type<HttpResponseMatchMode>(),
 
     groupName: text('group_name'),
     groupSortOrder: integer('group_sort_order').notNull().default(0),

@@ -3,6 +3,7 @@
 export type MonitorStatus = 'up' | 'down' | 'maintenance' | 'paused' | 'unknown';
 export type CheckStatus = 'up' | 'down' | 'maintenance' | 'unknown';
 export type MonitorType = 'http' | 'tcp';
+export type HttpResponseMatchMode = 'contains' | 'regex';
 export type SupportedLocale = 'en' | 'zh-CN' | 'zh-TW' | 'ja' | 'es';
 export type LocaleSetting = 'auto' | SupportedLocale;
 
@@ -337,7 +338,9 @@ export interface AdminMonitor {
   http_body: string | null;
   expected_status_json: number[] | null;
   response_keyword: string | null;
+  response_keyword_mode: HttpResponseMatchMode | null;
   response_forbidden_keyword: string | null;
+  response_forbidden_keyword_mode: HttpResponseMatchMode | null;
   is_active: boolean;
   created_at: number;
   updated_at: number;
@@ -364,7 +367,9 @@ export interface CreateMonitorInput {
   http_body?: string;
   expected_status_json?: number[];
   response_keyword?: string;
+  response_keyword_mode?: HttpResponseMatchMode;
   response_forbidden_keyword?: string;
+  response_forbidden_keyword_mode?: HttpResponseMatchMode;
   is_active?: boolean;
 }
 
@@ -382,7 +387,9 @@ export interface PatchMonitorInput {
   http_body?: string | null;
   expected_status_json?: number[] | null;
   response_keyword?: string | null;
+  response_keyword_mode?: HttpResponseMatchMode | null;
   response_forbidden_keyword?: string | null;
+  response_forbidden_keyword_mode?: HttpResponseMatchMode | null;
   is_active?: boolean;
 }
 

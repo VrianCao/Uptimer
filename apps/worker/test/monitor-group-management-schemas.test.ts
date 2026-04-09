@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
   assignMonitorsToGroupInputSchema,
+  createMonitorInputSchema,
+  patchMonitorInputSchema,
   reorderMonitorGroupsInputSchema,
 } from '../src/schemas/monitors';
 
@@ -33,5 +35,37 @@ describe('monitor group management schemas', () => {
     });
 
     expect(result.success).toBe(true);
+  });
+
+  it('rejects invalid regex monitor assertions', () => {
+    const result = createMonitorInputSchema.safeParse({
+      name: 'Regex API',
+      type: 'http',
+      target: 'https://example.com/health',
+      response_keyword: '(',
+      response_keyword_mode: 'regex',
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects HTTP-only assertion mode fields for tcp monitors', () => {
+    const createResult = createMonitorInputSchema.safeParse({
+      name: 'TCP Service',
+      type: 'tcp',
+      target: 'example.com:443',
+      response_keyword_mode: 'regex',
+    });
+    expect(createResult.success).toBe(false);
+
+  });
+
+  it('rejects assertion modes without a corresponding response value', () => {
+    const patchResult = patchMonitorInputSchema.safeParse({
+      response_keyword: null,
+      response_keyword_mode: 'regex',
+    });
+
+    expect(patchResult.success).toBe(false);
   });
 });
