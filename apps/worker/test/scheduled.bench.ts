@@ -85,7 +85,7 @@ function createEnvForScenario(scenario: Scenario): {
     waitUntilCalls: 0,
   };
   const dueRows = makeDueRows(scenario.monitorCount);
-  let homepageSnapshotGeneratedAt = 0;
+  let homepageArtifactGeneratedAt = 0;
   const channels = scenario.withChannel
     ? [
         {
@@ -155,7 +155,7 @@ function createEnvForScenario(scenario: Scenario): {
     {
       match: 'row_number() over',
       all: () =>
-        dueRows.flatMap((row) =>
+        dueRows.slice(0, 12).flatMap((row) =>
           Array.from({ length: 30 }, (_, index) => ({
             monitor_id: row.id,
             checked_at: 1_700_000_000 - (index + 1) * 60,
@@ -167,7 +167,7 @@ function createEnvForScenario(scenario: Scenario): {
     {
       match: 'from monitor_daily_rollups',
       all: () =>
-        dueRows.flatMap((row) =>
+        dueRows.slice(0, 12).flatMap((row) =>
           Array.from({ length: 14 }, (_, index) => ({
             monitor_id: row.id,
             day_start_at: 1_700_000_000 - (14 - index) * 86_400,
@@ -181,9 +181,9 @@ function createEnvForScenario(scenario: Scenario): {
     {
       match: 'from public_snapshots',
       first: (args) =>
-        args[0] === 'homepage' && homepageSnapshotGeneratedAt > 0
+        args[0] === 'homepage:artifact' && homepageArtifactGeneratedAt > 0
           ? {
-              generated_at: homepageSnapshotGeneratedAt,
+              generated_at: homepageArtifactGeneratedAt,
               body_json: '{"generated_at":0}',
             }
           : null,
@@ -207,8 +207,8 @@ function createEnvForScenario(scenario: Scenario): {
     {
       match: 'insert into public_snapshots',
       run: (args) => {
-        if (args[0] === 'homepage') {
-          homepageSnapshotGeneratedAt = Number(args[1]);
+        if (args[0] === 'homepage:artifact') {
+          homepageArtifactGeneratedAt = Number(args[1]);
         }
         return { meta: { changes: 1 } };
       },
