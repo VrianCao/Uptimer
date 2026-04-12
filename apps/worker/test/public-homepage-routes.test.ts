@@ -445,6 +445,281 @@ describe('public homepage route', () => {
     });
   });
 
+  it('reuses fresh artifact history previews when the full homepage snapshot is missing', async () => {
+    const now = 200;
+    const homepagePayload = {
+      ...samplePayload(190),
+      bootstrap_mode: 'partial' as const,
+      resolved_incident_preview: {
+        id: 9,
+        title: 'Old incident',
+        status: 'resolved' as const,
+        impact: 'minor' as const,
+        message: null,
+        started_at: 100,
+        resolved_at: 120,
+      },
+      maintenance_history_preview: {
+        id: 7,
+        title: 'Old maintenance',
+        message: null,
+        starts_at: 80,
+        ends_at: 90,
+        monitor_ids: [1],
+      },
+    };
+    const render = {
+      generated_at: homepagePayload.generated_at,
+      preload_html: '<div id="uptimer-preload">hello</div>',
+      snapshot: homepagePayload,
+      meta_title: 'Status Hub',
+      meta_description: 'Production services',
+    };
+
+    vi.spyOn(Date, 'now').mockReturnValue(now * 1000);
+
+    const res = await requestHomepage([
+      {
+        match: 'from public_snapshots',
+        first: (args) => {
+          if (args[0] === 'status') {
+            return {
+              generated_at: 190,
+              body_json: JSON.stringify({
+                generated_at: 190,
+                site_title: 'Status Hub',
+                site_description: 'Production services',
+                site_locale: 'en',
+                site_timezone: 'UTC',
+                uptime_rating_level: 4,
+                overall_status: 'up',
+                banner: {
+                  source: 'monitors',
+                  status: 'operational',
+                  title: 'All Systems Operational',
+                  down_ratio: null,
+                },
+                summary: {
+                  up: 1,
+                  down: 0,
+                  maintenance: 0,
+                  paused: 0,
+                  unknown: 0,
+                },
+                monitors: [
+                  {
+                    id: 1,
+                    name: 'API',
+                    type: 'http',
+                    group_name: null,
+                    group_sort_order: 0,
+                    sort_order: 0,
+                    uptime_rating_level: 4,
+                    status: 'up',
+                    is_stale: false,
+                    last_checked_at: 180,
+                    last_latency_ms: 42,
+                    heartbeats: [{ checked_at: 180, status: 'up', latency_ms: 42 }],
+                    uptime_30d: {
+                      range_start_at: 0,
+                      range_end_at: 190,
+                      total_sec: 190,
+                      downtime_sec: 0,
+                      unknown_sec: 0,
+                      uptime_sec: 190,
+                      uptime_pct: 100,
+                    },
+                    uptime_days: [
+                      {
+                        day_start_at: 0,
+                        total_sec: 190,
+                        downtime_sec: 0,
+                        unknown_sec: 0,
+                        uptime_sec: 190,
+                        uptime_pct: 100,
+                      },
+                    ],
+                  },
+                ],
+                active_incidents: [],
+                maintenance_windows: {
+                  active: [],
+                  upcoming: [],
+                },
+              }),
+            };
+          }
+
+          if (args[0] === 'homepage:artifact') {
+            return {
+              generated_at: 190,
+              body_json: JSON.stringify(render),
+            };
+          }
+
+          return null;
+        },
+      },
+    ]);
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      resolved_incident_preview: homepagePayload.resolved_incident_preview,
+      maintenance_history_preview: homepagePayload.maintenance_history_preview,
+    });
+  });
+
+  it('falls back to live history preview queries when fresh artifact previews are blank', async () => {
+    const now = 200;
+    const render = {
+      generated_at: 190,
+      preload_html: '<div id="uptimer-preload">hello</div>',
+      snapshot: {
+        ...samplePayload(190),
+        bootstrap_mode: 'partial' as const,
+      },
+      meta_title: 'Status Hub',
+      meta_description: 'Production services',
+    };
+
+    vi.spyOn(Date, 'now').mockReturnValue(now * 1000);
+
+    const res = await requestHomepage([
+      {
+        match: 'from public_snapshots',
+        first: (args) => {
+          if (args[0] === 'status') {
+            return {
+              generated_at: 190,
+              body_json: JSON.stringify({
+                generated_at: 190,
+                site_title: 'Status Hub',
+                site_description: 'Production services',
+                site_locale: 'en',
+                site_timezone: 'UTC',
+                uptime_rating_level: 4,
+                overall_status: 'up',
+                banner: {
+                  source: 'monitors',
+                  status: 'operational',
+                  title: 'All Systems Operational',
+                  down_ratio: null,
+                },
+                summary: {
+                  up: 1,
+                  down: 0,
+                  maintenance: 0,
+                  paused: 0,
+                  unknown: 0,
+                },
+                monitors: [
+                  {
+                    id: 1,
+                    name: 'API',
+                    type: 'http',
+                    group_name: null,
+                    group_sort_order: 0,
+                    sort_order: 0,
+                    uptime_rating_level: 4,
+                    status: 'up',
+                    is_stale: false,
+                    last_checked_at: 180,
+                    last_latency_ms: 42,
+                    heartbeats: [{ checked_at: 180, status: 'up', latency_ms: 42 }],
+                    uptime_30d: {
+                      range_start_at: 0,
+                      range_end_at: 190,
+                      total_sec: 190,
+                      downtime_sec: 0,
+                      unknown_sec: 0,
+                      uptime_sec: 190,
+                      uptime_pct: 100,
+                    },
+                    uptime_days: [
+                      {
+                        day_start_at: 0,
+                        total_sec: 190,
+                        downtime_sec: 0,
+                        unknown_sec: 0,
+                        uptime_sec: 190,
+                        uptime_pct: 100,
+                      },
+                    ],
+                  },
+                ],
+                active_incidents: [],
+                maintenance_windows: {
+                  active: [],
+                  upcoming: [],
+                },
+              }),
+            };
+          }
+
+          if (args[0] === 'homepage:artifact') {
+            return {
+              generated_at: 190,
+              body_json: JSON.stringify(render),
+            };
+          }
+
+          return null;
+        },
+      },
+      {
+        match: 'from incidents',
+        all: () => [
+          {
+            id: 9,
+            title: 'Old incident',
+            status: 'resolved',
+            impact: 'minor',
+            message: null,
+            started_at: 100,
+            resolved_at: 120,
+          },
+        ],
+      },
+      {
+        match: 'from incident_monitors',
+        all: () => [{ incident_id: 9, monitor_id: 1 }],
+      },
+      {
+        match: 'select id from monitors',
+        all: () => [{ id: 1 }],
+      },
+      {
+        match: 'from maintenance_windows',
+        all: () => [
+          {
+            id: 7,
+            title: 'Old maintenance',
+            message: null,
+            starts_at: 80,
+            ends_at: 90,
+            created_at: 70,
+          },
+        ],
+      },
+      {
+        match: 'from maintenance_window_monitors',
+        all: () => [{ maintenance_window_id: 7, monitor_id: 1 }],
+      },
+    ]);
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      resolved_incident_preview: {
+        id: 9,
+        title: 'Old incident',
+      },
+      maintenance_history_preview: {
+        id: 7,
+        title: 'Old maintenance',
+      },
+    });
+  });
+
   it('returns 503 when no homepage snapshot is available', async () => {
     vi.spyOn(Date, 'now').mockReturnValue(200_000);
 

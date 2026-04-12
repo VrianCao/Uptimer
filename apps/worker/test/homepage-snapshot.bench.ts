@@ -51,6 +51,17 @@ type RouteReadSample = {
   bodyKB: number;
 };
 
+type StatusSnapshotFallbackScenario = {
+  name: string;
+};
+
+type StatusSnapshotFallbackSample = {
+  elapsedMs: number;
+  bodyKB: number;
+  snapshotReads: number;
+  previewQueries: number;
+};
+
 const BENCH_LABEL = process.env.HOMEPAGE_BENCH_LABEL ?? 'current-working-tree';
 const OUTPUT_PATH = process.env.HOMEPAGE_BENCH_OUTPUT ?? null;
 
@@ -70,6 +81,10 @@ const ROUTE_READ_SCENARIOS: RouteReadScenario[] = [
   { name: 'homepage / 1000 monitors', endpoint: 'homepage', monitorCount: 1000 },
   { name: 'homepage-artifact / 250 monitors', endpoint: 'homepage-artifact', monitorCount: 250 },
   { name: 'homepage-artifact / 1000 monitors', endpoint: 'homepage-artifact', monitorCount: 1000 },
+];
+
+const STATUS_SNAPSHOT_FALLBACK_SCENARIOS: StatusSnapshotFallbackScenario[] = [
+  { name: 'homepage via status snapshot + artifact present' },
 ];
 
 function parsePositiveIntEnv(name: string, fallback: number): number {
@@ -479,12 +494,305 @@ function summarizeRouteRead(scenario: RouteReadScenario, samples: RouteReadSampl
   };
 }
 
+function buildStatusSnapshotFallbackStatusPayload(now: number) {
+  return {
+    generated_at: now,
+    site_title: 'Status Hub',
+    site_description: 'Production services',
+    site_locale: 'en',
+    site_timezone: 'UTC',
+    uptime_rating_level: 4 as const,
+    overall_status: 'up' as const,
+    banner: {
+      source: 'monitors' as const,
+      status: 'operational' as const,
+      title: 'All Systems Operational',
+      down_ratio: null,
+    },
+    summary: {
+      up: 1,
+      down: 0,
+      maintenance: 0,
+      paused: 0,
+      unknown: 0,
+    },
+    monitors: [
+      {
+        id: 1,
+        name: 'API',
+        type: 'http' as const,
+        group_name: null,
+        group_sort_order: 0,
+        sort_order: 0,
+        uptime_rating_level: 4 as const,
+        status: 'up' as const,
+        is_stale: false,
+        last_checked_at: now - 10,
+        last_latency_ms: 42,
+        heartbeats: [{ checked_at: now - 10, status: 'up' as const, latency_ms: 42 }],
+        uptime_30d: {
+          range_start_at: now - 30 * 86_400,
+          range_end_at: now,
+          total_sec: 30 * 86_400,
+          downtime_sec: 0,
+          unknown_sec: 0,
+          uptime_sec: 30 * 86_400,
+          uptime_pct: 100,
+        },
+        uptime_days: [
+          {
+            day_start_at: now - 86_400,
+            total_sec: 86_400,
+            downtime_sec: 0,
+            unknown_sec: 0,
+            uptime_sec: 86_400,
+            uptime_pct: 100,
+          },
+        ],
+      },
+    ],
+    active_incidents: [],
+    maintenance_windows: {
+      active: [],
+      upcoming: [],
+    },
+  };
+}
+
+function buildStatusSnapshotFallbackHomepagePayload(now: number) {
+  return {
+    generated_at: now,
+    bootstrap_mode: 'partial' as const,
+    monitor_count_total: 1,
+    site_title: 'Status Hub',
+    site_description: 'Production services',
+    site_locale: 'en' as const,
+    site_timezone: 'UTC',
+    uptime_rating_level: 4 as const,
+    overall_status: 'up' as const,
+    banner: {
+      source: 'monitors' as const,
+      status: 'operational' as const,
+      title: 'All Systems Operational',
+      down_ratio: null,
+    },
+    summary: {
+      up: 1,
+      down: 0,
+      maintenance: 0,
+      paused: 0,
+      unknown: 0,
+    },
+    monitors: [
+      {
+        id: 1,
+        name: 'API',
+        type: 'http' as const,
+        group_name: null,
+        status: 'up' as const,
+        is_stale: false,
+        last_checked_at: now - 10,
+        heartbeat_strip: {
+          checked_at: [now - 10],
+          status_codes: 'u',
+          latency_ms: [42],
+        },
+        uptime_30d: { uptime_pct: 100 },
+        uptime_day_strip: {
+          day_start_at: [now - 86_400],
+          downtime_sec: [0],
+          unknown_sec: [0],
+          uptime_pct_milli: [100_000],
+        },
+      },
+    ],
+    active_incidents: [],
+    maintenance_windows: {
+      active: [],
+      upcoming: [],
+    },
+    resolved_incident_preview: {
+      id: 9,
+      title: 'Old incident',
+      status: 'resolved' as const,
+      impact: 'minor' as const,
+      message: null,
+      started_at: now - 3600,
+      resolved_at: now - 3500,
+    },
+    maintenance_history_preview: {
+      id: 7,
+      title: 'Old maintenance',
+      message: null,
+      starts_at: now - 7200,
+      ends_at: now - 7100,
+      monitor_ids: [1],
+    },
+  };
+}
+
+async function runOneStatusSnapshotFallbackRoute(
+  _scenario: StatusSnapshotFallbackScenario,
+): Promise<StatusSnapshotFallbackSample> {
+  const now = Math.floor(Date.now() / 1000);
+  const statusPayload = buildStatusSnapshotFallbackStatusPayload(now);
+  const homepagePayload = buildStatusSnapshotFallbackHomepagePayload(now);
+  const render = buildHomepageRenderArtifact(homepagePayload);
+  const originalCaches = globalThis.caches;
+
+  let snapshotReads = 0;
+  let previewQueries = 0;
+
+  Object.defineProperty(globalThis, 'caches', {
+    configurable: true,
+    value: {
+      open: async () => ({
+        match: async () => undefined,
+        put: async () => undefined,
+      }),
+    },
+  });
+
+  try {
+    const env = {
+      DB: createFakeD1Database([
+        {
+          match: 'from public_snapshots',
+          first: (args) => {
+            snapshotReads += 1;
+            if (args[0] === 'status') {
+              return {
+                generated_at: now,
+                body_json: JSON.stringify(statusPayload),
+              };
+            }
+            if (args[0] === 'homepage:artifact') {
+              return {
+                generated_at: now,
+                body_json: JSON.stringify(render),
+              };
+            }
+            return null;
+          },
+        },
+        {
+          match: 'from incidents',
+          all: () => {
+            previewQueries += 1;
+            return [
+              {
+                id: 9,
+                title: 'Old incident',
+                status: 'resolved',
+                impact: 'minor',
+                message: null,
+                started_at: now - 3600,
+                resolved_at: now - 3500,
+              },
+            ];
+          },
+        },
+        {
+          match: 'from incident_monitors',
+          all: () => {
+            previewQueries += 1;
+            return [{ incident_id: 9, monitor_id: 1 }];
+          },
+        },
+        {
+          match: 'select id from monitors',
+          all: () => {
+            previewQueries += 1;
+            return [{ id: 1 }];
+          },
+        },
+        {
+          match: 'from maintenance_windows',
+          all: () => {
+            previewQueries += 1;
+            return [
+              {
+                id: 7,
+                title: 'Old maintenance',
+                message: null,
+                starts_at: now - 7200,
+                ends_at: now - 7100,
+                created_at: now - 7300,
+              },
+            ];
+          },
+        },
+        {
+          match: 'from maintenance_window_monitors',
+          all: () => {
+            previewQueries += 1;
+            return [{ maintenance_window_id: 7, monitor_id: 1 }];
+          },
+        },
+      ]),
+      ADMIN_TOKEN: 'test-admin-token',
+    } as unknown as Env;
+
+    const app = new Hono<{ Bindings: Env }>();
+    app.onError(handleError);
+    app.notFound(handleNotFound);
+    app.route('/api/v1/public', publicRoutes);
+
+    const started = performance.now();
+    const response = await app.fetch(
+      new Request('https://status.example.com/api/v1/public/homepage'),
+      env,
+      { waitUntil: () => undefined } as ExecutionContext,
+    );
+    const responseBody = await response.text();
+    const elapsedMs = performance.now() - started;
+    expect(response.ok).toBe(true);
+
+    return {
+      elapsedMs,
+      bodyKB: Number((responseBody.length / 1024).toFixed(1)),
+      snapshotReads,
+      previewQueries,
+    };
+  } finally {
+    Object.defineProperty(globalThis, 'caches', {
+      configurable: true,
+      value: originalCaches,
+    });
+  }
+}
+
+function summarizeStatusSnapshotFallback(
+  scenario: StatusSnapshotFallbackScenario,
+  samples: StatusSnapshotFallbackSample[],
+) {
+  const elapsed = samples.map((sample) => sample.elapsedMs).sort((a, b) => a - b);
+  const totalElapsed = elapsed.reduce((sum, value) => sum + value, 0);
+  const snapshotReads =
+    samples.reduce((sum, sample) => sum + sample.snapshotReads, 0) / samples.length;
+  const previewQueries =
+    samples.reduce((sum, sample) => sum + sample.previewQueries, 0) / samples.length;
+  const first = samples[0];
+
+  return {
+    scenario: scenario.name,
+    runs: samples.length,
+    meanMs: Number((totalElapsed / samples.length).toFixed(3)),
+    medianMs: Number(percentile(elapsed, 0.5).toFixed(3)),
+    p95Ms: Number(percentile(elapsed, 0.95).toFixed(3)),
+    snapshotReadsAvg: Number(snapshotReads.toFixed(1)),
+    previewQueriesAvg: Number(previewQueries.toFixed(1)),
+    bodyKB: first?.bodyKB ?? 0,
+  };
+}
+
 describe('homepage snapshot benchmark', () => {
   it('measures homepage snapshot compute cost', async () => {
     const rows = [];
     const artifactRows = [];
     const rootMissRows = [];
     const routeReadRows = [];
+    const statusSnapshotFallbackRows = [];
 
     for (const scenario of SCENARIOS) {
       for (let index = 0; index < WARMUP_RUNS; index += 1) {
@@ -538,6 +846,19 @@ describe('homepage snapshot benchmark', () => {
       routeReadRows.push(summarizeRouteRead(scenario, samples));
     }
 
+    for (const scenario of STATUS_SNAPSHOT_FALLBACK_SCENARIOS) {
+      for (let index = 0; index < WARMUP_RUNS; index += 1) {
+        await runOneStatusSnapshotFallbackRoute(scenario);
+      }
+
+      const samples: StatusSnapshotFallbackSample[] = [];
+      for (let index = 0; index < MEASURE_RUNS; index += 1) {
+        samples.push(await runOneStatusSnapshotFallbackRoute(scenario));
+      }
+
+      statusSnapshotFallbackRows.push(summarizeStatusSnapshotFallback(scenario, samples));
+    }
+
     console.log('Homepage snapshot benchmark');
     console.log(`Label: ${BENCH_LABEL}`);
     if (process.env.HOMEPAGE_BENCH_RUNS || process.env.HOMEPAGE_BENCH_WARMUPS) {
@@ -556,6 +877,9 @@ describe('homepage snapshot benchmark', () => {
     console.log('');
     console.log('Worker homepage route read benchmark');
     console.table(routeReadRows);
+    console.log('');
+    console.log('Worker homepage status-snapshot fallback benchmark');
+    console.table(statusSnapshotFallbackRows);
 
     if (OUTPUT_PATH) {
       await writeFile(
@@ -566,6 +890,7 @@ describe('homepage snapshot benchmark', () => {
             artifactCompute: artifactRows,
             rootMiss: rootMissRows,
             routeRead: routeReadRows,
+            statusSnapshotFallback: statusSnapshotFallbackRows,
           },
           null,
           2,
