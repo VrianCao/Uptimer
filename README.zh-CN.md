@@ -219,4 +219,6 @@ pnpm format:check  # Prettier 格式检查
 
 基于 [Cloudflare Workers](https://workers.cloudflare.com/) + [Hono](https://hono.dev/) + [React](https://react.dev/) 构建
 
+感谢 [UptimeFlare](https://github.com/lyc8503/UptimeFlare) 在 Cloudflare 原生可用性监控模式上带来的启发。
+
 </div>

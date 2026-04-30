@@ -4,7 +4,7 @@
 
 ---
 
-## 1. 顶层目录（规划）
+## 1. 顶层目录（当前）
 
 ```
 .
@@ -14,19 +14,17 @@
 ├─ packages/
 │  ├─ shared/                   # 共享类型/常量/Zod schema（前后端共用）
 │  └─ db/                       # Drizzle schema 与 DB 访问封装（供 worker 使用）
-├─ docs/                        # 可选：更多设计文档（如 ADR、运维手册）
-├─ .github/workflows/           # CI/CD（Pages + Worker 部署、迁移）
-├─ Application.md               # 应用技术规格（已敲定）
-├─ Structure.md                 # 本文件
-├─ Plan.md                      # 交付计划
+├─ Develop/                     # 产品规格、结构、计划、API 参考、发布记录
+├─ .github/workflows/           # CI/CD（Pages + Worker 部署、D1 迁移）
 ├─ AGENTS.md                    # 代码助手/协作约定
-└─ UptimeFlare/                 # 参考项目（仅用于查 API/调用方式；不要在此处开发）
+└─ reference-project/           # 参考项目（只读；不要在此处开发）
 ```
 
 说明：
 
 - 本仓库采用 monorepo 结构，便于共享类型与统一依赖。
-- `UptimeFlare/` 仅作为 Cloudflare API/Workers 用法参考；本项目实现应以 `Application.md` 为准。
+- 规格文档统一放在 `Develop/`；Issue #24 CPU release 记录见 `Develop/Worker-CPU-10ms-Release-Readiness.md`。
+- 只读参考项目仅作为 Cloudflare API/Workers 用法参考；本项目实现应以 `Develop/Application.md` 为准。
 
 ---
 
@@ -34,37 +32,45 @@
 
 ```
 apps/worker/
-├─ wrangler.toml                # Worker 配置（D1 binding、cron triggers、compatibility）
+├─ wrangler.toml                # Worker 配置（D1 binding、cron triggers、Free Plan CPU profile）
 ├─ migrations/                  # D1 SQL migrations（wrangler d1 migrations apply）
 └─ src/
-   ├─ index.ts                  # Hono app：路由注册 + export default
-   ├─ env.ts                    # Env interface（D1 binding、secrets）
-   ├─ middleware/
-   │  ├─ auth.ts                # Admin Bearer Token 鉴权
-   │  └─ errors.ts              # 统一错误响应
+   ├─ index.ts                  # Worker entry：fetch/scheduled/export default
+   ├─ fetch-handler.ts          # fetch 入口拆分，降低 scheduled cold path 负担
+   ├─ hono-app.ts               # Hono app 与路由挂载
+   ├─ env.ts                    # Env interface（D1 binding、secrets、feature flags）
+   ├─ analytics/                # latency / uptime 聚合 helpers
+   ├─ internal/                 # scheduled/service-binding internal handlers
+   │  ├─ homepage-refresh-core.ts
+   │  ├─ runtime-fragments-refresh-core.ts
+   │  ├─ sharded-public-snapshot-core.ts
+   │  └─ sharded-public-snapshot-continuation.ts
+   ├─ middleware/               # auth / errors / public cache / rate limit
    ├─ routes/
-   │  ├─ public.ts              # /api/v1/public/*
-   │  └─ admin.ts               # /api/v1/admin/*
+   │  ├─ public.ts              # /api/v1/public/*（完整 public API）
+   │  ├─ public-hot.ts          # homepage/status/artifact hot snapshot path
+   │  ├─ public-ui*.ts          # status UI 辅助 API
+   │  ├─ admin*.ts              # admin CRUD / settings / analytics / exports
+   │  └─ ...
    ├─ scheduler/
-   │  ├─ scheduled.ts           # scheduled() 入口（Cron tick）
-   │  ├─ lock.ts                # D1 locks lease
-   │  └─ retention.ts           # 清理任务（每日）
-   ├─ monitor/
-   │  ├─ http.ts                # HTTP check（禁缓存、断言、超时）
-   │  ├─ tcp.ts                 # TCP check（cloudflare:sockets）
-   │  └─ state-machine.ts       # 连续成功/失败阈值、UP/DOWN 切换
-   ├─ notify/
-   │  ├─ webhook.ts             # Webhook dispatch（可选签名、超时）
-   │  └─ dedupe.ts              # notification_deliveries 幂等
-   └─ db/
-      ├─ client.ts              # Drizzle + D1 client
-      └─ queries.ts             # 聚合查询（status/latency/uptime）
+   │  ├─ scheduled.ts           # scheduled() 编排、check-batch children、CPU profile
+   │  ├─ daily-rollup.ts        # monitor_daily_rollups
+   │  ├─ lock.ts / lease-guard.ts
+   │  ├─ notifications.ts
+   │  └─ retention.ts
+   ├─ monitor/                  # HTTP/TCP check、target validation、state machine
+   ├─ notify/                   # Webhook dispatch、template、dedupe
+   ├─ observability/            # trace/timing helpers（diagnostics 默认关闭）
+   ├─ public/                   # homepage/status payload compute、runtime snapshot、visibility
+   ├─ schemas/                  # Zod schemas for public/admin/stored payloads
+   └─ snapshots/                # public_snapshots read/write, fragments, homepage artifact
 ```
 
 约定：
 
-- 所有对外 API 均从 `routes/` 进入；非路由逻辑沉到对应模块（monitor/scheduler/notify/db）。
-- `scheduled()` 入口仅负责编排流程与日志；探测实现与 DB 写入在模块内完成。
+- 所有对外 API 均从 `routes/` 进入；非路由逻辑沉到 `public/`、`snapshots/`、`internal/`、`scheduler/` 等模块。
+- `scheduled()` 入口仅负责编排流程与日志；探测、runtime fragment 写入、sharded public snapshot publish 拆为小 invocation。
+- `internal/` routes 仅由 scheduled/service binding 使用，必须保持 Bearer Token 鉴权与 feature flag gating。
 
 ---
 
@@ -135,4 +141,4 @@ packages/db/
 - 状态字段：
   - DB/接口统一用 `up|down|maintenance|paused|unknown`；延迟统一用 `latency_ms`。
 - 不允许在 `apps/web` 直接依赖 Worker 运行时 API（如 `cloudflare:sockets`）。
-- 不允许修改 `UptimeFlare/` 作为实现的一部分（除非明确要求）。
+- 不允许修改只读参考项目作为实现的一部分（除非明确要求）。

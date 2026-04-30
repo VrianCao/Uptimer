@@ -90,7 +90,7 @@ function toTemplateString(value: unknown): string {
 export function renderStringTemplate(template: string, vars: Record<string, unknown>): string {
   const msg = typeof vars.message === 'string' ? vars.message : '';
 
-  // UptimeFlare compatibility: replace $MSG.
+  // Legacy compatibility: replace $MSG.
   if (template === '$MSG') return msg;
   const withMsg = msg ? template.split('$MSG').join(msg) : template;
 

@@ -1,4 +1,4 @@
-# Project docs are tracked (do not ignore specs)
+# Project specs are tracked; local-only ops notes are explicitly ignored below
 
 # Dependencies
 node_modules
@@ -16,6 +16,14 @@ build
 .env.*
 !.env.example
 
+# Local-only agent / ops notes
+Develop/Local-Development-Experience.md
+
+# Local temp / perf evidence
+/tmp/
+.ralph/
+/apps/worker/coverage-cron/
+
 # Misc
 coverage
 .DS_Store
@@ -26,4 +34,4 @@ pnpm-debug.log*
 --dry-run/
 
 # Reference project (do not track in this repo)
-UptimeFlare/
+[U]ptimeFlare/

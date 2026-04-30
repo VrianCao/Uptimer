@@ -31,7 +31,7 @@ describe('notify/template', () => {
     expect(renderStringTemplate('Alert: $MSG', { monitor: vars.monitor })).toBe('Alert: $MSG');
   });
 
-  it('supports UptimeFlare-compatible $MSG replacement', () => {
+  it('supports legacy-compatible $MSG replacement', () => {
     expect(renderStringTemplate('$MSG', vars)).toBe('API timeout');
     expect(renderStringTemplate('Alert: $MSG', vars)).toBe('Alert: API timeout');
     expect(renderStringTemplate('Alert: {{message}}', vars)).toBe('Alert: API timeout');

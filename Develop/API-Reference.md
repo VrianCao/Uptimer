@@ -4,7 +4,7 @@
 
 来源说明：
 
-- “提炼”部分来自 `UptimeFlare/` 中对 Cloudflare Workers、D1、TCP sockets 等能力的实际用法（仅提炼 API 用法，不借鉴其架构/业务实现）。
+- “提炼”部分来自既有 Cloudflare Workers、D1、TCP sockets 等实践用法（仅提炼 API 用法，不借鉴外部架构/业务实现）。
 - “补全”部分基于 Cloudflare 官方文档（见本文末尾 References）。
 
 ---
@@ -101,7 +101,7 @@ export default {
 
 ### 1.5 并发限制（p-limit，用于批量探测）
 
-提炼自 UptimeFlare：Workers 存在出站连接并发限制，批量探测时建议限制并发数（例如 5）。
+基于 Workers 实践：Workers 存在出站连接并发限制，批量探测时建议限制并发数（例如 5）。
 
 ```ts
 import pLimit from 'p-limit';
@@ -125,7 +125,7 @@ const res = await fetch(url, {
   method: 'GET',
   cache: 'no-store',
   cf: {
-    // UptimeFlare 的用法：对所有状态码禁用缓存
+    // 对所有状态码禁用缓存
     cacheTtlByStatus: { '100-599': -1 },
   },
 });
@@ -136,7 +136,7 @@ References：
 - fetch cache directives（no-store / no-cache）：https://developers.cloudflare.com/workers/examples/cache-using-fetch/
 - fetch cf cache 示例（含 cacheTtlByStatus 结构示例）：https://developers.cloudflare.com/workers/examples/cache-using-fetch/
 
-### 2.2 AbortController 超时封装（提炼自 UptimeFlare）
+### 2.2 AbortController 超时封装
 
 ```ts
 export function fetchTimeout(
@@ -159,11 +159,11 @@ export function fetchTimeout(
 实践建议：
 
 - 监控请求默认 10s；webhook 默认 5s（可配置）。
-- 对于需要读取 body 的断言场景，尽量在完成断言后调用 `response.body?.cancel()`，避免长连接占用（UptimeFlare 有类似处理）。
+- 对于需要读取 body 的断言场景，尽量在完成断言后调用 `response.body?.cancel()`，避免长连接占用。
 
 ### 2.3 解析 Cloudflare 运行位置（colo）
 
-UptimeFlare 用法：请求 `https://cloudflare.com/cdn-cgi/trace`，解析 `colo=...`。
+实践用法：请求 `https://cloudflare.com/cdn-cgi/trace`，解析 `colo=...`。
 
 ```ts
 export async function getWorkerColo(): Promise<string | null> {
@@ -215,7 +215,7 @@ const resp = await fetchTimeout(u.toString(), 5000, { method: 'GET' });
 
 ### 2.5 Response headers（CORS / no-store）
 
-提炼自 UptimeFlare 的 Edge API 风格：公开数据接口通常加 CORS；状态类接口/徽章类接口通常显式禁止缓存。
+基于 Edge API 实践：公开数据接口通常加 CORS；状态类接口/徽章类接口通常显式禁止缓存。
 
 ```ts
 const headers = new Headers({
@@ -249,9 +249,9 @@ References：
 
 - TCP sockets API：https://developers.cloudflare.com/workers/runtime-apis/tcp-sockets/
 
-### 3.1.1 提炼：为兼容某些打包器的动态 import 写法（UptimeFlare）
+### 3.1.1 提炼：为兼容某些打包器的动态 import 写法
 
-当你的构建链对 `cloudflare:sockets` 产生打包/解析问题时，可以用动态 import（UptimeFlare 的做法）：
+当你的构建链对 `cloudflare:sockets` 产生打包/解析问题时，可以用动态 import：
 
 ```ts
 const connect = await import('cloudflare:sockets').then((m) => m.connect);
@@ -385,19 +385,19 @@ References：
 
 - D1 exec 示例：https://developers.cloudflare.com/d1/worker-api/return-object
 
-### 4.5 提炼：UptimeFlare 的 “D1 当 KV 用” 写法（示例）
+### 4.5 提炼：“D1 当 KV 用” 写法（示例）
 
-UptimeFlare 在 D1 内建一个 `uptimeflare(key, value)` 表，通过 UPSERT 存/取一个大 JSON 状态 blob：
+一种早期轻量写法是在 D1 内建一个 `kv_store(key, value)` 表，通过 UPSERT 存/取一个大 JSON 状态 blob：
 
 ```ts
 // get
-const row = await env.DB.prepare('SELECT value FROM uptimeflare WHERE key = ?')
+const row = await env.DB.prepare('SELECT value FROM kv_store WHERE key = ?')
   .bind('state')
   .first<{ value: string }>();
 
 // set (UPSERT)
 await env.DB.prepare(
-  'INSERT INTO uptimeflare (key, value) VALUES (?, ?) ' +
+  'INSERT INTO kv_store (key, value) VALUES (?, ?) ' +
     'ON CONFLICT(key) DO UPDATE SET value = excluded.value;',
 )
   .bind('state', stateJson)
@@ -434,7 +434,44 @@ const acquired = (r.meta?.changes ?? 0) > 0;
 await env.DB.prepare('DELETE FROM locks WHERE name = ?').bind('scheduler').run();
 ```
 
-### 4.7 Retention 清理（删除过期 check_results）
+### 4.7 Public snapshot fast path tables
+
+当前发布基线使用 D1 静态快照 + fragments 支撑 Free Plan CPU profile：
+
+```sql
+CREATE TABLE IF NOT EXISTS public_snapshots (
+  key TEXT PRIMARY KEY,
+  generated_at INTEGER NOT NULL,
+  body_json TEXT NOT NULL,
+  updated_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER))
+);
+
+CREATE TABLE IF NOT EXISTS public_snapshot_guard_versions (
+  key TEXT PRIMARY KEY,
+  version INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  state_json TEXT
+);
+
+CREATE TABLE IF NOT EXISTS public_snapshot_fragments (
+  snapshot_key TEXT NOT NULL,
+  fragment_key TEXT NOT NULL,
+  generated_at INTEGER NOT NULL,
+  body_json TEXT NOT NULL,
+  updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+  PRIMARY KEY (snapshot_key, fragment_key)
+);
+CREATE INDEX IF NOT EXISTS idx_public_snapshot_fragments_snapshot_generated
+  ON public_snapshot_fragments(snapshot_key, generated_at);
+```
+
+Key conventions:
+
+- `public_snapshots.key`: `homepage` / `status` / `homepage:artifact`。
+- `public_snapshot_fragments.snapshot_key`: `homepage:envelope`、`homepage:monitors`、`status:envelope`、`status:monitors`、`homepage:artifact:monitors`、`monitor-runtime:updates`。
+- artifact rows use `updated_at` for public freshness, while the body/snapshot still validates against stored `generated_at`。
+
+### 4.8 Retention 清理（删除过期 check_results）
 
 ```ts
 const cutoff = Math.floor(Date.now() / 1000) - 7 * 24 * 60 * 60;
@@ -445,7 +482,7 @@ await env.DB.prepare('DELETE FROM check_results WHERE checked_at < ?').bind(cuto
 
 ## 5) Durable Objects（可选，用于未来多地域探测）
 
-UptimeFlare 使用 DO 做“指定 locationHint 的远程探测”，核心 API 点：
+一种可选方案是使用 DO 做“指定 locationHint 的远程探测”，核心 API 点：
 
 ```ts
 import { DurableObject } from 'cloudflare:workers';
@@ -462,7 +499,7 @@ export class RemoteChecker extends DurableObject {
 }
 ```
 
-调用侧（提炼自 UptimeFlare 的用法）：
+调用侧示例：
 
 ```ts
 const id = env.REMOTE_CHECKER_DO.idFromName(monitorId);
@@ -545,10 +582,13 @@ References：
 
 Public（无需鉴权）：
 
+- `GET /api/v1/public/homepage`
+- `GET /api/v1/public/homepage-artifact`
 - `GET /api/v1/public/status`
 - `GET /api/v1/public/monitors/:id/latency?range=24h`
 - `GET /api/v1/public/monitors/:id/uptime?range=24h|7d|30d`
 - `GET /api/v1/public/incidents?limit=20`
+- `GET /api/v1/public/maintenance-windows?limit=20`
 
 Admin（Bearer Token）：
 
@@ -566,6 +606,17 @@ Admin（Bearer Token）：
 - `POST /api/v1/admin/incidents`
 - `POST /api/v1/admin/incidents/:id/updates`
 - `PATCH /api/v1/admin/incidents/:id/resolve`
+
+Internal（Bearer Token；scheduled/service-binding only）：
+
+- `POST /api/v1/internal/scheduled/check-batch`
+- `POST /api/v1/internal/write/runtime-update-fragments`
+- `POST /api/v1/internal/refresh/runtime-fragments`
+- `POST /api/v1/internal/seed/sharded-public-snapshot`
+- `POST /api/v1/internal/assemble/sharded-public-snapshot`
+- `POST /api/v1/internal/continue/sharded-public-snapshot`
+
+Free Plan CPU profile vars are documented in `Develop/Worker-CPU-10ms-Release-Readiness.md` and enabled in `apps/worker/wrangler.toml`. Do **not** enable `UPTIMER_PUBLIC_SHARDED_HOMEPAGE_RUNTIME_SEED` for the release profile.
 
 ---
 

@@ -2,7 +2,25 @@
 
 Phased delivery plan from MVP to production. Each phase includes acceptance criteria.
 
-> Phases 0–12 are **complete**. See REVIEW.md for remaining gaps.
+> Phases 0–12 are **complete**. Issue #24 Free Plan CPU timeout closeout is released via PR #77/#78 and documented in `Worker-CPU-10ms-Release-Readiness.md`. See REVIEW.md for remaining gaps.
+
+---
+
+## Post-release baseline — Issue #24 CPU closeout（2026-04-29）
+
+状态：已发布到 Main，并已同步 Dev。
+
+验收证据：
+
+- Final controlled Dev Tail：`BAD_OR_GE10 count=0`，所有采样 invocation path 严格 `<10ms`。
+- Production post-release Tail：`BAD_OR_GE10 count=0`。
+- Public parity：`/api/v1/public/homepage`、`/api/v1/public/status`、`/api/v1/public/homepage-artifact` 均返回 `200`。
+
+发布基线：
+
+- Free Plan CPU profile 已写入 `apps/worker/wrangler.toml`。
+- Homepage/status 继续使用静态预计算快照；不以 live compute 作为公共 API 主路径。
+- `UPTIMER_PUBLIC_SHARDED_HOMEPAGE_RUNTIME_SEED` 已实测拒绝，不属于发布基线。
 
 ---
 

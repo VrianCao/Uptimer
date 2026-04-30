@@ -1,16 +1,18 @@
 # Worker CPU <10ms Release Readiness Notes
 
-> 记录日期：2026-04-29  
-> 适用范围：Uptimer Worker 在 Cloudflare Free Plan `10ms CPU` 限制下的候选发布方案  
-> 当前本地 / Dev HEAD：`2a79fe9 fix(worker): keep runtime homepage seed generation stable`  
-> Dev CI / Deploy：green  
-> Main repo `origin`：未触碰
+> 记录日期：2026-04-29
+> 更新日期：2026-04-30
+> 适用范围：Uptimer Worker 在 Cloudflare Free Plan `10ms CPU` 限制下的已发布方案
+> Main release：PR #77 + PR #78
+> Release HEAD：`96f40b2 Merge pull request #78 from VrianCao/release/worker-cpu-10ms-flags`
+> Dev/Main：已同步至 `96f40b2`
+> Production Tail：已通过
 
 ---
 
 ## 1. 结论摘要
 
-本轮 controlled Dev 长 Tail 已通过严格标准：
+本轮 controlled Dev 长 Tail 与 production post-release Tail 均已通过严格标准：
 
 ```txt
 BAD_OR_GE10 count=0
@@ -41,6 +43,14 @@ tmp/perf-10ms/dev-tail-deep-split-iter5-final-long-20260429140817.jsonl
 
 homepage/status 仍保持静态 / 预计算路径，没有把 live compute 作为主方案。
 
+Production post-release parity：
+
+```txt
+/api/v1/public/homepage          200, 6 monitors
+/api/v1/public/status            200, 6 monitors
+/api/v1/public/homepage-artifact 200, 6 monitors, preload_html present
+```
+
 ---
 
 ## 2. 最终长 Tail 数据
@@ -60,12 +70,12 @@ BAD_OR_GE10 count=0
 
 路径统计：
 
-| Invocation path | n | p95 | p99 | max | ge10 | over10 |
-|---|---:|---:|---:|---:|---:|---:|
-| cron wrapper `* * * * *` | 20 | 8ms | 8ms | 9ms | 0 | 0 |
-| `POST /api/v1/internal/scheduled/check-batch` | 260 | 4ms | 4ms | 4ms | 0 | 0 |
-| `POST /api/v1/internal/continue/sharded-public-snapshot` | 422 | 4ms | 5ms | 6ms | 0 | 0 |
-| `POST /api/v1/internal/write/runtime-update-fragments` | 20 | 1ms | 1ms | 1ms | 0 | 0 |
+| Invocation path                                          |   n | p95 | p99 | max | ge10 | over10 |
+| -------------------------------------------------------- | --: | --: | --: | --: | ---: | -----: |
+| cron wrapper `* * * * *`                                 |  20 | 8ms | 8ms | 9ms |    0 |      0 |
+| `POST /api/v1/internal/scheduled/check-batch`            | 260 | 4ms | 4ms | 4ms |    0 |      0 |
+| `POST /api/v1/internal/continue/sharded-public-snapshot` | 422 | 4ms | 5ms | 6ms |    0 |      0 |
+| `POST /api/v1/internal/write/runtime-update-fragments`   |  20 | 1ms | 1ms | 1ms |    0 |      0 |
 
 未出现以下异常 / 回退信号：
 
@@ -81,11 +91,33 @@ falling back inline: 0
 internal sharded homepage runtime seed failed: 0
 ```
 
+### 2.1 Production post-release Tail
+
+Tail 文件：
+
+```txt
+tmp/perf-10ms/prod-tail-release-issue24-20260429154407.jsonl
+```
+
+总体：
+
+```txt
+objects=110
+BAD_OR_GE10 count=0
+```
+
+| Invocation path                                          |   n | p95 | p99 | max | ge10 |
+| -------------------------------------------------------- | --: | --: | --: | --: | ---: |
+| cron wrapper `* * * * *`                                 |   7 | 6ms | 6ms | 6ms |    0 |
+| `POST /api/v1/internal/scheduled/check-batch`            |  21 | 3ms | 3ms | 5ms |    0 |
+| `POST /api/v1/internal/continue/sharded-public-snapshot` |  75 | 2ms | 3ms | 4ms |    0 |
+| `POST /api/v1/internal/write/runtime-update-fragments`   |   7 | 1ms | 1ms | 1ms |    0 |
+
 ---
 
-## 3. 最终候选 Flags
+## 3. 最终发布 Flags
 
-> 这些 flags 仍然是候选发布配置，不应直接改成默认开启。正式 release 前需要单独 rollout 决策。
+> 这组 flags 已在 `apps/worker/wrangler.toml` 中作为 Free Plan CPU 发布基线启用。后续如调整任一项，必须重新 Tail 验证。
 
 ### 3.1 基础调度参数
 
@@ -99,7 +131,7 @@ UPTIMER_INTERNAL_SCHEDULED_BATCH_SIZE = "2"
 - batch size `1` 曾增加 wrapper overhead。
 - batch size `3/4` 曾把 CPU 压回 check-batch children。
 
-### 3.2 Final candidate flags
+### 3.2 Released Free Plan CPU profile flags
 
 ```toml
 UPTIMER_PUBLIC_MONITOR_UPDATE_FRAGMENT_WRITES = "1"
@@ -127,17 +159,17 @@ UPTIMER_INTERNAL_CHECK_BATCH_TRUST_SCHEDULER_LEASE = "1"
 UPTIMER_SCHEDULED_REFRESH_LOGS = "0"
 ```
 
-### 3.3 Explicitly disabled / not part of final candidate
+### 3.3 Explicitly disabled / not part of release profile
 
 ```toml
 # Rejected due CPU outliers.
 UPTIMER_PUBLIC_SHARDED_HOMEPAGE_RUNTIME_SEED = "0"
 
-# Diagnostics remain off in release candidate measurements.
+# Diagnostics remain off in release measurements.
 UPTIMER_SHARDED_CONTINUATION_DIAGNOSTICS = "0"
 UPTIMER_INTERNAL_CHECK_BATCH_DIAGNOSTICS = "0"
 
-# Not used in final candidate.
+# Not used in release profile.
 UPTIMER_INTERNAL_SCHEDULED_BATCH_CONCURRENCY = "0"
 ```
 
@@ -200,7 +232,7 @@ UPTIMER_INTERNAL_CHECK_BATCH_TRUST_SCHEDULER_LEASE = "1"
 
 ### 4.4 Runtime update fragment writes 需要 split + bulk
 
-最终候选包含：
+最终发布 profile 包含：
 
 ```toml
 UPTIMER_INTERNAL_CHECK_BATCH_FRAGMENT_WRITE_SPLIT = "1"
@@ -225,7 +257,7 @@ POST /api/v1/internal/write/runtime-update-fragments:
 
 ### 4.5 homepage artifact 需要预渲染 monitor fragments
 
-最终候选包含：
+最终发布 profile 包含：
 
 ```toml
 UPTIMER_PUBLIC_HOMEPAGE_ARTIFACT_FRAGMENT_WRITES = "1"
@@ -272,7 +304,7 @@ Iteration 4 发现 public parity blocker：
 
 ### 4.7 正常 scheduled logs 应可关闭
 
-最终候选包含：
+最终发布 profile 包含：
 
 ```toml
 UPTIMER_SCHEDULED_REFRESH_LOGS = "0"
@@ -311,10 +343,10 @@ exact 10ms samples=3
 结论：
 
 ```txt
-不要把 UPTIMER_PUBLIC_SHARDED_HOMEPAGE_RUNTIME_SEED 放入正式候选 rollout。
+不要把 UPTIMER_PUBLIC_SHARDED_HOMEPAGE_RUNTIME_SEED 放入正式发布 profile。
 ```
 
-该 flag 仍应保持 default-off。它可能作为未来优化实验保留，但不是当前 release 候选。
+该 flag 仍应保持 default-off。它可能作为未来优化实验保留，但不是当前 release profile。
 
 ### 5.2 更小 / 更大 check batch size
 
@@ -322,7 +354,7 @@ exact 10ms samples=3
 
 - batch size `1`：wrapper overhead 变差。
 - batch size `3/4`：child check-batch CPU 变差。
-- 当前候选维持：
+- 当前发布 profile 维持：
 
 ```toml
 UPTIMER_INTERNAL_SCHEDULED_BATCH_SIZE = "2"
@@ -407,7 +439,7 @@ BAD_OR_GE10 count=4
 continuation max=15ms
 ```
 
-### 6.6 Final candidate rehearsal pass
+### 6.6 Final profile rehearsal pass
 
 ```txt
 tmp/perf-10ms/dev-tail-deep-split-iter4-final-candidate-20260429135630.jsonl
@@ -482,27 +514,21 @@ UI/UX QC 修复已完成，public API / preload behavior 未被最终 CPU 工作
 说明：
 
 - `2a79fe9` 包含 runtime homepage seed flag 代码，但该 flag 是 default-off。
-- 最终 release candidate 不启用 `UPTIMER_PUBLIC_SHARDED_HOMEPAGE_RUNTIME_SEED`。
+- 最终 release profile 不启用 `UPTIMER_PUBLIC_SHARDED_HOMEPAGE_RUNTIME_SEED`。
 - Dev CI / Deploy green。
 - 未 push `origin`。
 
 ---
 
-## 9. 正式 release 前建议讨论事项
+## 9. Release 后运维事项
 
-### 9.1 是否以 staged rollout 启用 flags
+### 9.1 已采用的发布方式
 
-建议不要一次性全部默认开启。建议 release 讨论采用 staged rollout：
+PR #77 先合入已验证代码与 release readiness 文档；PR #78 再将已验证 Free Plan CPU profile 写入 `apps/worker/wrangler.toml`，使默认部署使用同一组实测通过的 flags。
 
-1. 先发布代码，flags default-off。
-2. Dev / staging 开启 final candidate flags。
-3. Production 小窗口开启。
-4. Tail 验证 strict `<10ms`。
-5. 再决定是否长期保留或逐步默认化部分 flags。
+### 9.2 后续 Production rollout / 变更仍必须 Tail 验证
 
-### 9.2 Production rollout 必须 Tail 验证
-
-正式 release 不能只依赖 Dev 结果。Production 开启候选 flags 后至少需要：
+后续任何影响 release profile flags、scheduled path、public snapshot path 的变更，都不能只依赖 Dev 结果。Production 开启或调整后至少需要：
 
 ```txt
 BAD_OR_GE10 count=0
@@ -515,7 +541,7 @@ public parity OK
 
 ### 9.3 哪些 flags 可考虑未来默认化
 
-候选但仍需谨慎：
+已发布但仍需谨慎的关键 flags：
 
 - `UPTIMER_SHARDED_ASSEMBLER_MODE=json`
 - `UPTIMER_INTERNAL_CHECK_BATCH_FRAGMENT_WRITE_SPLIT=1`
@@ -541,22 +567,19 @@ UPTIMER_INTERNAL_SCHEDULED_BATCH_CONCURRENCY
 
 ---
 
-## 10. Release checklist 草案
+## 10. Release checklist 结果
 
-正式 release 前建议检查：
-
-- [ ] `origin` / main repo release 分支与 Dev HEAD 对齐策略确认。
-- [ ] 确认是否 squash / cherry-pick Dev commits。
-- [ ] 确认 D1 migration `0012_public_snapshot_fragments.sql` 已在目标环境应用。
-- [ ] 确认 production `.toml` / dashboard vars 不包含临时 diagnostics。
-- [ ] 确认 final candidate flags 中不包含 `UPTIMER_PUBLIC_SHARDED_HOMEPAGE_RUNTIME_SEED`。
-- [ ] 开启 flags 后跑 Cloudflare Tail。
-- [ ] Tail 结果必须 `BAD_OR_GE10 count=0`。
-- [ ] 验证 public route parity：
-  - [ ] `/api/v1/public/homepage`
-  - [ ] `/api/v1/public/status`
-  - [ ] `/api/v1/public/homepage-artifact`
-- [ ] 若任一路径出现 `>=10ms`，立即回滚 flags，不宣称 release 成功。
+- [x] Main repo 通过 PR 合并（#77、#78），未直接 push `master`。
+- [x] Dev repo 已同步到 Main release HEAD。
+- [x] D1 migration `0012_public_snapshot_fragments.sql` 已随部署应用。
+- [x] Production `.toml` 使用已验证 flags，未包含临时 diagnostics。
+- [x] Final release flags 中不包含 `UPTIMER_PUBLIC_SHARDED_HOMEPAGE_RUNTIME_SEED`。
+- [x] Production Tail 已运行。
+- [x] Tail 结果 `BAD_OR_GE10 count=0`。
+- [x] Public route parity 已验证：
+  - [x] `/api/v1/public/homepage`
+  - [x] `/api/v1/public/status`
+  - [x] `/api/v1/public/homepage-artifact`
 
 ---
 
@@ -594,17 +617,20 @@ UPTIMER_INTERNAL_SCHEDULED_BATCH_SIZE = "2"
 
 ## 12. Final statement
 
-基于 Dev controlled long Tail：
+基于 Dev controlled long Tail 与 production post-release Tail：
 
 ```txt
 tmp/perf-10ms/dev-tail-deep-split-iter5-final-long-20260429140817.jsonl
 BAD_OR_GE10 count=0
+
+tmp/perf-10ms/prod-tail-release-issue24-20260429154407.jsonl
+BAD_OR_GE10 count=0
 ```
 
-当前 final candidate flag set 已在采样范围内满足：
+当前发布基线已在采样范围内满足：
 
 ```txt
 所有 sampled invocation path CPU 严格 <10ms
 ```
 
-但正式 release 仍需独立 rollout 决策和 production Tail 验证。
+Issue #24 已通过 PR #77/#78 final close。后续若改动 CPU profile、scheduled path 或 public snapshot path，必须重新 Tail 验证。

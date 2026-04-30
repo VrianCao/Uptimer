@@ -219,4 +219,6 @@ This project is licensed under the MIT License — see the [LICENSE](LICENSE) fi
 
 Built with [Cloudflare Workers](https://workers.cloudflare.com/) + [Hono](https://hono.dev/) + [React](https://react.dev/)
 
+Thanks to [UptimeFlare](https://github.com/lyc8503/UptimeFlare) for inspiration on Cloudflare-native uptime monitoring patterns.
+
 </div>
