@@ -1,3 +1,5 @@
+import { evaluateHttpStatusCode, type StatusCodeRule } from '@uptimer/db';
+
 import {
   evaluateHttpResponseAssertions,
   prepareHttpResponseAssertions,
@@ -14,7 +16,8 @@ export type HttpCheckConfig = {
   headers: Record<string, string> | null;
   body: string | null;
   followRedirects: boolean;
-  expectedStatus: number[] | null;
+  expectedStatus: StatusCodeRule[] | null;
+  forbiddenStatus: StatusCodeRule[] | null;
   responseKeyword: string | null;
   responseKeywordMode: HttpResponseMatchMode | null;
   responseForbiddenKeyword: string | null;
@@ -116,13 +119,6 @@ async function readTextUpTo(
   return { text, truncated };
 }
 
-function statusOk(httpStatus: number, expectedStatus: number[] | null): boolean {
-  if (expectedStatus && expectedStatus.length > 0) {
-    return expectedStatus.includes(httpStatus);
-  }
-  return httpStatus >= 200 && httpStatus < 300;
-}
-
 async function attemptHttpCheck(
   config: HttpCheckConfig,
   assertions: PreparedHttpResponseAssertion[],
@@ -154,13 +150,20 @@ async function attemptHttpCheck(
     const latencyMs = Math.round(performance.now() - started);
     const httpStatus = res.status;
 
-    if (!statusOk(httpStatus, config.expectedStatus)) {
+    const statusEval = evaluateHttpStatusCode(httpStatus, {
+      expected: config.expectedStatus,
+      forbidden: config.forbiddenStatus,
+    });
+    if (!statusEval.ok) {
       res.body?.cancel();
       return {
         status: 'down',
         latencyMs,
         httpStatus,
-        error: `Unexpected HTTP status: ${httpStatus}`,
+        error:
+          statusEval.reason === 'forbidden'
+            ? `Forbidden HTTP status: ${httpStatus}`
+            : `Unexpected HTTP status: ${httpStatus}`,
       };
     }
 

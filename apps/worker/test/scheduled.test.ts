@@ -105,8 +105,7 @@ function createEnv(options: CreateEnvOptions = {}): Env {
     },
     {
       match: (normalizedSql) =>
-        normalizedSql.includes('select 1 as present') &&
-        normalizedSql.includes('from monitors m'),
+        normalizedSql.includes('select 1 as present') && normalizedSql.includes('from monitors m'),
       first: () => (readSchedulableMonitorPresent() ? { present: 1 } : null),
     },
     {
@@ -308,6 +307,7 @@ describe('scheduler/scheduled regression', () => {
           http_headers_json: null,
           http_body: null,
           expected_status_json: null,
+          forbidden_status_json: null,
           response_keyword: null,
           response_keyword_mode: null,
           response_forbidden_keyword: null,
@@ -640,6 +640,7 @@ describe('scheduler/scheduled regression', () => {
       http_headers_json: null,
       http_body: null,
       expected_status_json: null,
+      forbidden_status_json: null,
       response_keyword: null,
       response_keyword_mode: null,
       response_forbidden_keyword: null,
@@ -678,10 +679,10 @@ describe('scheduler/scheduled regression', () => {
         );
       }
       if (path === '/api/v1/internal/refresh/runtime-fragments') {
-        return new Response(
-          JSON.stringify({ ok: true, refreshed: true, update_count: 7 }),
-          { status: 200, headers: { 'Content-Type': 'application/json; charset=utf-8' } },
-        );
+        return new Response(JSON.stringify({ ok: true, refreshed: true, update_count: 7 }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json; charset=utf-8' },
+        });
       }
       if (path === '/api/v1/internal/refresh/homepage') {
         return new Response(JSON.stringify({ ok: true, refreshed: true }), {
@@ -705,7 +706,11 @@ describe('scheduler/scheduled regression', () => {
       (request) => new URL(request.url).pathname === '/api/v1/internal/scheduled/check-batch',
     );
     expect(checkBatchRequests).toHaveLength(2);
-    expect(checkBatchRequests.every((request) => request.headers.get('X-Uptimer-Runtime-Fragments-Only') === '1')).toBe(true);
+    expect(
+      checkBatchRequests.every(
+        (request) => request.headers.get('X-Uptimer-Runtime-Fragments-Only') === '1',
+      ),
+    ).toBe(true);
     expect(requests.map((request) => new URL(request.url).pathname)).toEqual([
       '/api/v1/internal/scheduled/check-batch',
       '/api/v1/internal/scheduled/check-batch',
@@ -733,6 +738,7 @@ describe('scheduler/scheduled regression', () => {
       http_headers_json: null,
       http_body: null,
       expected_status_json: null,
+      forbidden_status_json: null,
       response_keyword: null,
       response_keyword_mode: null,
       response_forbidden_keyword: null,
@@ -789,10 +795,10 @@ describe('scheduler/scheduled regression', () => {
         });
       }
       if (path === '/api/v1/internal/refresh/runtime-fragments') {
-        return new Response(
-          JSON.stringify({ ok: true, refreshed: true, update_count: 7 }),
-          { status: 200, headers: { 'Content-Type': 'application/json; charset=utf-8' } },
-        );
+        return new Response(JSON.stringify({ ok: true, refreshed: true, update_count: 7 }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json; charset=utf-8' },
+        });
       }
       if (path === '/api/v1/internal/refresh/homepage') {
         return new Response(JSON.stringify({ ok: true, refreshed: true }), {
@@ -809,10 +815,29 @@ describe('scheduler/scheduled regression', () => {
     await Promise.all(waitUntil.mock.calls.map((call) => call[0] as Promise<unknown>));
 
     const requests = selfFetch.mock.calls.map((call) => call[0] as Request);
-    expect(requests.filter((request) => new URL(request.url).pathname === '/api/v1/internal/scheduled/check-batch')).toHaveLength(2);
-    expect(requests.filter((request) => new URL(request.url).pathname === '/api/v1/internal/write/runtime-update-fragments')).toHaveLength(1);
+    expect(
+      requests.filter(
+        (request) => new URL(request.url).pathname === '/api/v1/internal/scheduled/check-batch',
+      ),
+    ).toHaveLength(2);
+    expect(
+      requests.filter(
+        (request) =>
+          new URL(request.url).pathname === '/api/v1/internal/write/runtime-update-fragments',
+      ),
+    ).toHaveLength(1);
     expect(writerBodies).toEqual([
-      { runtime_updates: [[1, 60, 1_760_000_001, checkedAt, 'up', 'up', 21], [2, 60, 1_760_000_002, checkedAt, 'up', 'up', 21], [3, 60, 1_760_000_003, checkedAt, 'up', 'up', 21], [4, 60, 1_760_000_004, checkedAt, 'up', 'up', 21], [5, 60, 1_760_000_005, checkedAt, 'up', 'up', 21], [6, 60, 1_760_000_006, checkedAt, 'up', 'up', 21], [7, 60, 1_760_000_007, checkedAt, 'up', 'up', 21]] },
+      {
+        runtime_updates: [
+          [1, 60, 1_760_000_001, checkedAt, 'up', 'up', 21],
+          [2, 60, 1_760_000_002, checkedAt, 'up', 'up', 21],
+          [3, 60, 1_760_000_003, checkedAt, 'up', 'up', 21],
+          [4, 60, 1_760_000_004, checkedAt, 'up', 'up', 21],
+          [5, 60, 1_760_000_005, checkedAt, 'up', 'up', 21],
+          [6, 60, 1_760_000_006, checkedAt, 'up', 'up', 21],
+          [7, 60, 1_760_000_007, checkedAt, 'up', 'up', 21],
+        ],
+      },
     ]);
     expect(refreshPublicMonitorRuntimeSnapshot).not.toHaveBeenCalled();
   });
@@ -842,7 +867,9 @@ describe('scheduler/scheduled regression', () => {
       preferCachedBaseSnapshot: true,
     });
     expect(logSpy).toHaveBeenCalledWith(
-      expect.stringContaining('scheduled: homepage_refresh_direct route=internal/homepage-refresh mode=scheduled direct=1 ok=1 refreshed=1'),
+      expect.stringContaining(
+        'scheduled: homepage_refresh_direct route=internal/homepage-refresh mode=scheduled direct=1 ok=1 refreshed=1',
+      ),
     );
     logSpy.mockRestore();
   });
@@ -862,6 +889,7 @@ describe('scheduler/scheduled regression', () => {
           http_headers_json: null,
           http_body: null,
           expected_status_json: null,
+          forbidden_status_json: null,
           response_keyword: null,
           response_keyword_mode: null,
           response_forbidden_keyword: null,
@@ -931,12 +959,8 @@ describe('scheduler/scheduled regression', () => {
     expect(req.headers.get('X-Uptimer-Trace-Mode')).toBe('scheduled');
     expect(req.headers.get('X-Uptimer-Trace-Token')).toBe('trace-token');
     expect(req.headers.get('X-Uptimer-Trace-Id')).toBeTruthy();
-    expect(log).toHaveBeenCalledWith(
-      expect.stringContaining('scheduled: homepage_refresh_trace'),
-    );
-    expect(log).toHaveBeenCalledWith(
-      expect.stringContaining('response_trace_id=child-trace-id'),
-    );
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('scheduled: homepage_refresh_trace'));
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('response_trace_id=child-trace-id'));
   });
 
   it('does not emit scheduler trace headers without a trace token', async () => {
@@ -981,6 +1005,7 @@ describe('scheduler/scheduled regression', () => {
           http_headers_json: null,
           http_body: null,
           expected_status_json: null,
+          forbidden_status_json: null,
           response_keyword: null,
           response_keyword_mode: null,
           response_forbidden_keyword: null,
@@ -1013,7 +1038,9 @@ describe('scheduler/scheduled regression', () => {
     expect(req.headers.get('Content-Type')).toContain('application/json');
     expect(req.headers.get('X-Uptimer-Internal-Format')).toBe('compact-v1');
     await expect(req.json()).resolves.toMatchObject({
-      runtime_updates: [[1, 60, 1_760_000_000, Math.floor(Date.now() / 1000 / 60) * 60, 'up', 'up', 21]],
+      runtime_updates: [
+        [1, 60, 1_760_000_000, Math.floor(Date.now() / 1000 / 60) * 60, 'up', 'up', 21],
+      ],
     });
   });
 
@@ -1031,6 +1058,7 @@ describe('scheduler/scheduled regression', () => {
       http_headers_json: null,
       http_body: null,
       expected_status_json: null,
+      forbidden_status_json: null,
       response_keyword: null,
       response_keyword_mode: null,
       response_forbidden_keyword: null,
@@ -1188,6 +1216,7 @@ describe('scheduler/scheduled regression', () => {
       http_headers_json: null,
       http_body: null,
       expected_status_json: null,
+      forbidden_status_json: null,
       response_keyword: null,
       response_keyword_mode: null,
       response_forbidden_keyword: null,
@@ -1255,6 +1284,7 @@ describe('scheduler/scheduled regression', () => {
       http_headers_json: null,
       http_body: null,
       expected_status_json: null,
+      forbidden_status_json: null,
       response_keyword: null,
       response_keyword_mode: null,
       response_forbidden_keyword: null,
@@ -1337,6 +1367,7 @@ describe('scheduler/scheduled regression', () => {
       http_headers_json: null,
       http_body: null,
       expected_status_json: null,
+      forbidden_status_json: null,
       response_keyword: null,
       response_keyword_mode: null,
       response_forbidden_keyword: null,
@@ -1455,6 +1486,7 @@ describe('scheduler/scheduled regression', () => {
           http_headers_json: null,
           http_body: null,
           expected_status_json: null,
+          forbidden_status_json: null,
           response_keyword: null,
           response_keyword_mode: null,
           response_forbidden_keyword: null,
@@ -1549,6 +1581,7 @@ describe('scheduler/scheduled regression', () => {
           http_headers_json: null,
           http_body: null,
           expected_status_json: null,
+          forbidden_status_json: null,
           response_keyword: null,
           response_keyword_mode: null,
           response_forbidden_keyword: null,
@@ -1655,6 +1688,7 @@ describe('scheduler/scheduled regression', () => {
           http_headers_json: null,
           http_body: null,
           expected_status_json: null,
+          forbidden_status_json: null,
           response_keyword: null,
           response_keyword_mode: null,
           response_forbidden_keyword: null,
@@ -1713,6 +1747,7 @@ describe('scheduler/scheduled regression', () => {
           http_headers_json: null,
           http_body: null,
           expected_status_json: null,
+          forbidden_status_json: null,
           response_keyword: null,
           response_keyword_mode: null,
           response_forbidden_keyword: null,
@@ -1782,6 +1817,7 @@ describe('scheduler/scheduled regression', () => {
           http_headers_json: null,
           http_body: null,
           expected_status_json: null,
+          forbidden_status_json: null,
           response_keyword: null,
           response_keyword_mode: null,
           response_forbidden_keyword: null,
@@ -1839,6 +1875,7 @@ describe('scheduler/scheduled regression', () => {
           http_headers_json: null,
           http_body: null,
           expected_status_json: null,
+          forbidden_status_json: null,
           response_keyword: null,
           response_keyword_mode: null,
           response_forbidden_keyword: null,
@@ -1890,6 +1927,7 @@ describe('scheduler/scheduled regression', () => {
           http_headers_json: null,
           http_body: null,
           expected_status_json: null,
+          forbidden_status_json: null,
           response_keyword: null,
           response_keyword_mode: null,
           response_forbidden_keyword: null,
@@ -1913,6 +1951,7 @@ describe('scheduler/scheduled regression', () => {
           http_headers_json: null,
           http_body: null,
           expected_status_json: null,
+          forbidden_status_json: null,
           response_keyword: null,
           response_keyword_mode: null,
           response_forbidden_keyword: null,
@@ -1979,6 +2018,7 @@ describe('scheduler/scheduled regression', () => {
       http_headers_json: null,
       http_body: null,
       expected_status_json: null,
+      forbidden_status_json: null,
       response_keyword: null,
       response_keyword_mode: null,
       response_forbidden_keyword: null,
@@ -2085,6 +2125,7 @@ describe('scheduler/scheduled regression', () => {
         http_headers_json: null,
         http_body: null,
         expected_status_json: null,
+        forbidden_status_json: null,
         response_keyword: null,
         response_keyword_mode: null,
         response_forbidden_keyword: null,
@@ -2116,6 +2157,7 @@ describe('scheduler/scheduled regression', () => {
       body: null,
       followRedirects: true,
       expectedStatus: null,
+      forbiddenStatus: null,
       responseKeyword: null,
       responseKeywordMode: null,
       responseForbiddenKeyword: null,
@@ -2160,6 +2202,7 @@ describe('scheduler/scheduled regression', () => {
         http_headers_json: null,
         http_body: null,
         expected_status_json: null,
+        forbidden_status_json: null,
         response_keyword: '^ready:\\\\d+$',
         response_keyword_mode: 'regex',
         response_forbidden_keyword: 'error',
@@ -2183,6 +2226,7 @@ describe('scheduler/scheduled regression', () => {
       body: null,
       followRedirects: true,
       expectedStatus: null,
+      forbiddenStatus: null,
       responseKeyword: '^ready:\\\\d+$',
       responseKeywordMode: 'regex',
       responseForbiddenKeyword: 'error',
@@ -2204,6 +2248,7 @@ describe('scheduler/scheduled regression', () => {
         http_body: null,
         follow_redirects: 0,
         expected_status_json: JSON.stringify([302]),
+        forbidden_status_json: null,
         response_keyword: null,
         response_keyword_mode: null,
         response_forbidden_keyword: null,
@@ -2241,6 +2286,7 @@ describe('scheduler/scheduled regression', () => {
         http_headers_json: null,
         http_body: null,
         expected_status_json: null,
+        forbidden_status_json: null,
         response_keyword: null,
         response_keyword_mode: null,
         response_forbidden_keyword: null,
@@ -2262,6 +2308,7 @@ describe('scheduler/scheduled regression', () => {
         http_headers_json: null,
         http_body: null,
         expected_status_json: null,
+        forbidden_status_json: null,
         response_keyword: null,
         response_keyword_mode: null,
         response_forbidden_keyword: null,
@@ -2304,6 +2351,7 @@ describe('scheduler/scheduled regression', () => {
         http_headers_json: null,
         http_body: null,
         expected_status_json: null,
+        forbidden_status_json: null,
         response_keyword: null,
         response_keyword_mode: null,
         response_forbidden_keyword: null,
@@ -2379,6 +2427,7 @@ describe('scheduler/scheduled regression', () => {
         http_headers_json: null,
         http_body: null,
         expected_status_json: null,
+        forbidden_status_json: null,
         response_keyword: null,
         response_keyword_mode: null,
         response_forbidden_keyword: null,
@@ -2435,6 +2484,7 @@ describe('scheduler/scheduled regression', () => {
         http_headers_json: null,
         http_body: null,
         expected_status_json: null,
+        forbidden_status_json: null,
         response_keyword: null,
         response_keyword_mode: null,
         response_forbidden_keyword: null,
@@ -2497,6 +2547,7 @@ describe('scheduler/scheduled regression', () => {
         http_headers_json: null,
         http_body: null,
         expected_status_json: null,
+        forbidden_status_json: null,
         response_keyword: null,
         response_keyword_mode: null,
         response_forbidden_keyword: null,
@@ -2541,6 +2592,7 @@ describe('scheduler/scheduled regression', () => {
         http_headers_json: null,
         http_body: null,
         expected_status_json: null,
+        forbidden_status_json: null,
         response_keyword: null,
         response_keyword_mode: null,
         response_forbidden_keyword: null,
@@ -2594,6 +2646,7 @@ describe('scheduler/scheduled regression', () => {
         http_headers_json: null,
         http_body: null,
         expected_status_json: null,
+        forbidden_status_json: null,
         response_keyword: null,
         response_keyword_mode: null,
         response_forbidden_keyword: null,

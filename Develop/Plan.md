@@ -105,7 +105,7 @@ Phased delivery plan from MVP to production. Each phase includes acceptance crit
 - HTTP check：
   - 超时（AbortController）
   - 禁用缓存（`cache: 'no-store'` + `cf.cacheTtlByStatus: { '100-599': -1 }`）
-  - 状态码断言、关键字断言（必要时读取 body）
+  - 状态码断言（精确码/区间白名单、黑名单优先）、关键字断言（必要时读取 body）
 - TCP check：
   - `cloudflare:sockets` connect + 超时 + close
 - 状态机：

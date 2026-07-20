@@ -343,8 +343,13 @@ const en = {
   'monitor_form.headers_placeholder': '{"Authorization":"Bearer ..."}',
   'monitor_form.headers_help': 'Tip: set Content-Type here if you use a request body.',
   'monitor_form.expected_status_optional': 'Expected Status Codes (optional)',
-  'monitor_form.expected_status_placeholder': '200, 204, 301',
-  'monitor_form.expected_status_help': 'Leave empty to accept 2xx.',
+  'monitor_form.expected_status_placeholder': '200, 204, 301-399',
+  'monitor_form.expected_status_help':
+    'Leave empty to accept 2xx. Supports exact codes and ranges (e.g. 200-299).',
+  'monitor_form.forbidden_status_optional': 'Forbidden Status Codes (optional)',
+  'monitor_form.forbidden_status_placeholder': '204, 500-599',
+  'monitor_form.forbidden_status_help':
+    'Blacklist is checked first. With no expected codes, default is still 2xx then exclude these.',
   'monitor_form.body_optional': 'Body (optional)',
   'monitor_form.body_placeholder_get_head': '(usually empty for GET/HEAD)',
   'monitor_form.body_placeholder_default': '...',
@@ -362,12 +367,16 @@ const en = {
     'Headers must be valid JSON (e.g. {"Authorization":"Bearer ..."})',
   'monitor_form.error_headers_must_object': 'Headers must be a JSON object of string values',
   'monitor_form.error_header_value_string': 'Header "{key}" must be a string',
-  'monitor_form.error_expected_status_empty': 'Expected status codes cannot be empty',
-  'monitor_form.error_expected_status_invalid':
-    'Invalid status code: "{value}" (must be an integer 100-599)',
-  'monitor_form.error_expected_status_json_or_list':
-    'Expected status codes must be a JSON array like [200,204] or a list like "200, 204"',
-  'monitor_form.error_expected_status_must_array': 'Expected status codes must be an array',
+  'monitor_form.error_status_rules_empty': 'Status codes cannot be empty',
+  'monitor_form.error_status_rule_empty': 'Status code entry cannot be empty',
+  'monitor_form.error_status_rule_invalid':
+    'Invalid status code or range: "{value}" (use 100-599 or 200-299)',
+  'monitor_form.error_status_rule_range_order':
+    'Invalid range "{value}": start must be less than or equal to end',
+  'monitor_form.error_status_rules_json_or_list':
+    'Status codes must be a JSON array like [200,{"from":301,"to":399}] or a list like "200, 301-399"',
+  'monitor_form.error_status_rules_must_array': 'Status codes must be an array',
+  'monitor_form.error_status_rules_too_many': 'At most 50 status code rules are allowed',
   'monitor_form.error_display_url_invalid': 'Display URL must be a valid URL',
   'monitor_form.error_display_url_protocol': 'Display URL protocol must be http or https',
   'monitor_form.error_regex_invalid': 'Invalid regex: {message}',
@@ -820,8 +829,7 @@ const zhCn: LocaleMessages = {
   'monitor_form.target_host_port_placeholder': 'example.com:443',
   'monitor_form.display_url_optional': '展现网址（可选）',
   'monitor_form.display_url_placeholder': 'https://example.com',
-  'monitor_form.display_url_help':
-    '设置后用于后台展示和默认通知。留空时不展示任何网址。',
+  'monitor_form.display_url_help': '设置后用于后台展示和默认通知。留空时不展示任何网址。',
   'monitor_form.method': '请求方法',
   'monitor_form.interval_sec': '探测间隔（秒）',
   'monitor_form.timeout_ms': '超时（毫秒）',
@@ -833,8 +841,12 @@ const zhCn: LocaleMessages = {
   'monitor_form.headers_placeholder': '{"Authorization":"Bearer ..."}',
   'monitor_form.headers_help': '提示：如果要发送请求体，请在此设置 Content-Type。',
   'monitor_form.expected_status_optional': '期望状态码（可选）',
-  'monitor_form.expected_status_placeholder': '200, 204, 301',
-  'monitor_form.expected_status_help': '留空时默认接受 2xx。',
+  'monitor_form.expected_status_placeholder': '200, 204, 301-399',
+  'monitor_form.expected_status_help': '留空时默认接受 2xx。支持精确码与区间（如 200-299）。',
+  'monitor_form.forbidden_status_optional': '禁止状态码（可选）',
+  'monitor_form.forbidden_status_placeholder': '204, 500-599',
+  'monitor_form.forbidden_status_help':
+    '黑名单优先判定。未配置期望状态码时仍默认 2xx，再排除这些码。',
   'monitor_form.body_optional': '请求体（可选）',
   'monitor_form.body_placeholder_get_head': '（GET/HEAD 通常留空）',
   'monitor_form.body_placeholder_default': '...',
@@ -851,11 +863,15 @@ const zhCn: LocaleMessages = {
     '请求头必须是合法 JSON（例如 {"Authorization":"Bearer ..."}）',
   'monitor_form.error_headers_must_object': '请求头必须是字符串值的 JSON 对象',
   'monitor_form.error_header_value_string': '请求头 "{key}" 的值必须是字符串',
-  'monitor_form.error_expected_status_empty': '期望状态码不能为空',
-  'monitor_form.error_expected_status_invalid': '无效状态码："{value}"（必须是 100-599 的整数）',
-  'monitor_form.error_expected_status_json_or_list':
-    '期望状态码必须是 JSON 数组（如 [200,204]）或列表（如 "200, 204"）',
-  'monitor_form.error_expected_status_must_array': '期望状态码必须是数组',
+  'monitor_form.error_status_rules_empty': '状态码不能为空',
+  'monitor_form.error_status_rule_empty': '状态码条目不能为空',
+  'monitor_form.error_status_rule_invalid':
+    '无效状态码或区间："{value}"（请使用 100-599 或 200-299）',
+  'monitor_form.error_status_rule_range_order': '无效区间 "{value}"：起始必须小于或等于结束',
+  'monitor_form.error_status_rules_json_or_list':
+    '状态码必须是 JSON 数组（如 [200,{"from":301,"to":399}]）或列表（如 "200, 301-399"）',
+  'monitor_form.error_status_rules_must_array': '状态码必须是数组',
+  'monitor_form.error_status_rules_too_many': '最多允许 50 条状态码规则',
   'monitor_form.error_display_url_invalid': '展现网址必须是合法 URL',
   'monitor_form.error_display_url_protocol': '展现网址协议必须是 http 或 https',
   'monitor_form.error_regex_invalid': '正则表达式无效：{message}',
@@ -1224,7 +1240,8 @@ const zhTw: LocaleMessages = {
   'admin_dashboard.group_all': '所有群組',
   'admin_dashboard.group_move_up': '群組上移',
   'admin_dashboard.group_move_down': '群組下移',
-  'admin_dashboard.group_tip': '提示：點選群組可篩選出對應的監測器，並自動帶入「批次指派」的「目標群組」欄位中。',
+  'admin_dashboard.group_tip':
+    '提示：點選群組可篩選出對應的監測器，並自動帶入「批次指派」的「目標群組」欄位中。',
   'admin_dashboard.bulk_assign_title': '批次指派',
   'admin_dashboard.bulk_assign_selected': '已選取監測器：{count}',
   'admin_dashboard.bulk_assign_target_group': '目標群組',
@@ -1304,8 +1321,7 @@ const zhTw: LocaleMessages = {
   'monitor_form.target_host_port_placeholder': 'example.com:443',
   'monitor_form.display_url_optional': '顯示網址（選填）',
   'monitor_form.display_url_placeholder': 'https://example.com',
-  'monitor_form.display_url_help':
-    '設定後將在管理後台及預設通知中顯示。留空則不顯示任何網址。',
+  'monitor_form.display_url_help': '設定後將在管理後台及預設通知中顯示。留空則不顯示任何網址。',
   'monitor_form.method': '請求方法',
   'monitor_form.interval_sec': '檢查間隔（秒）',
   'monitor_form.timeout_ms': '逾時（毫秒）',
@@ -1317,8 +1333,12 @@ const zhTw: LocaleMessages = {
   'monitor_form.headers_placeholder': '{"Authorization":"Bearer ..."}',
   'monitor_form.headers_help': '提示：若要發送請求 Body，請在此設定 Content-Type。',
   'monitor_form.expected_status_optional': '預期狀態碼（選填）',
-  'monitor_form.expected_status_placeholder': '200, 204, 301',
-  'monitor_form.expected_status_help': '留空時預設接受 2xx。',
+  'monitor_form.expected_status_placeholder': '200, 204, 301-399',
+  'monitor_form.expected_status_help': '留空時預設接受 2xx。支援精確碼與區間（如 200-299）。',
+  'monitor_form.forbidden_status_optional': '禁止狀態碼（選填）',
+  'monitor_form.forbidden_status_placeholder': '204, 500-599',
+  'monitor_form.forbidden_status_help':
+    '黑名單優先判定。未設定預期狀態碼時仍預設 2xx，再排除這些碼。',
   'monitor_form.body_optional': '請求 Body（選填）',
   'monitor_form.body_placeholder_get_head': '（GET/HEAD 通常留空）',
   'monitor_form.body_placeholder_default': '...',
@@ -1329,17 +1349,22 @@ const zhTw: LocaleMessages = {
   'monitor_form.response_must_contain_placeholder': '例如：ok',
   'monitor_form.response_must_not_contain_optional': '回應不能包含（選填）',
   'monitor_form.response_must_not_contain_placeholder': '例如：error',
-  'monitor_form.response_regex_help': '使用 JavaScript 正規表達式語法。只需輸入規則本身，請勿加上前後的 / 斜線。',
+  'monitor_form.response_regex_help':
+    '使用 JavaScript 正規表達式語法。只需輸入規則本身，請勿加上前後的 / 斜線。',
   'monitor_form.clear_help': '清空欄位將還原為預設行為。',
   'monitor_form.error_headers_invalid_json':
     '請求標頭必須是合法的 JSON（例如 {"Authorization":"Bearer ..."}）',
   'monitor_form.error_headers_must_object': '請求標頭必須為字串鍵值的 JSON 物件',
   'monitor_form.error_header_value_string': '請求標頭 "{key}" 的值必須為字串',
-  'monitor_form.error_expected_status_empty': '預期狀態碼不能為空',
-  'monitor_form.error_expected_status_invalid': '無效的狀態碼："{value}"（必須是 100-599 的整數）',
-  'monitor_form.error_expected_status_json_or_list':
-    '預期狀態碼必須是 JSON 陣列（如 [200,204]）或逗號分隔字串（如 "200, 204"）',
-  'monitor_form.error_expected_status_must_array': '預期狀態碼必須為陣列',
+  'monitor_form.error_status_rules_empty': '狀態碼不能為空',
+  'monitor_form.error_status_rule_empty': '狀態碼項目不能為空',
+  'monitor_form.error_status_rule_invalid':
+    '無效的狀態碼或區間："{value}"（請使用 100-599 或 200-299）',
+  'monitor_form.error_status_rule_range_order': '無效區間 "{value}"：起始必須小於或等於結束',
+  'monitor_form.error_status_rules_json_or_list':
+    '狀態碼必須是 JSON 陣列（如 [200,{"from":301,"to":399}]）或列表（如 "200, 301-399"）',
+  'monitor_form.error_status_rules_must_array': '狀態碼必須為陣列',
+  'monitor_form.error_status_rules_too_many': '最多允許 50 條狀態碼規則',
   'monitor_form.error_display_url_invalid': '顯示網址必須是合法的 URL',
   'monitor_form.error_display_url_protocol': '顯示網址協議必須為 http 或 https',
   'monitor_form.error_regex_invalid': '無效的正規表達式：{message}',
