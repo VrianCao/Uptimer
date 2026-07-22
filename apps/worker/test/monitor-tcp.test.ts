@@ -42,6 +42,22 @@ describe('monitor/tcp', () => {
     expect(socket.close).toHaveBeenCalled();
   });
 
+  it('preserves brackets when connecting to an IPv6 target', async () => {
+    const socket = createSocket(Promise.resolve());
+    vi.mocked(connect).mockReturnValue(socket as never);
+
+    const result = await runTcpCheck({
+      target: '[2001:bc8:1d80:2140::1]:22',
+      timeoutMs: 500,
+    });
+
+    expect(result.status).toBe('up');
+    expect(connect).toHaveBeenCalledWith({
+      hostname: '[2001:bc8:1d80:2140::1]',
+      port: 22,
+    });
+  });
+
   it('retries transient connection failures and succeeds on a later attempt', async () => {
     vi.useFakeTimers();
     vi.mocked(connect)
