@@ -97,8 +97,10 @@ function isBlockedIpLiteral(host: string): boolean {
   if (lower === '::1' || lower === '::') return true;
   if (lower === '0:0:0:0:0:0:0:1' || lower === '0:0:0:0:0:0:0:0') return true;
   if (lower.includes(':')) {
-    if (lower.startsWith('fe80:')) return true; // IPv6 link-local
-    if (lower.startsWith('fc') || lower.startsWith('fd')) return true; // IPv6 ULA (fc00::/7)
+    const firstHextet = Number.parseInt(lower.split(':', 1)[0] ?? '', 16);
+    if ((firstHextet & 0xffc0) === 0xfe80) return true; // IPv6 link-local (fe80::/10)
+    if ((firstHextet & 0xfe00) === 0xfc00) return true; // IPv6 ULA (fc00::/7)
+    if ((firstHextet & 0xff00) === 0xff00) return true; // IPv6 multicast (ff00::/8)
   }
 
   const mappedIpv4 = parseIpv6MappedIpv4(normalized);
@@ -114,9 +116,13 @@ function normalizeHostForValidation(host: string): string {
   const trimmed = normalizeLiteralHost(host.trim());
   if (!trimmed) return trimmed;
 
-  // Keep IPv6 literals as-is; URL parsing requires brackets and can reject shorthand forms we already handle.
+  // Canonicalize equivalent IPv6 forms so mapped IPv4 checks also cover expanded literals.
   if (trimmed.includes(':')) {
-    return trimmed;
+    try {
+      return normalizeLiteralHost(new URL(`http://[${trimmed}]`).hostname);
+    } catch {
+      return trimmed;
+    }
   }
 
   // Normalize unusual IPv4 notations (e.g. 127.1 / 0x7f000001) before blocked-range checks.

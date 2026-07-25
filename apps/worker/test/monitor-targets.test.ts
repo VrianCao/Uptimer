@@ -74,6 +74,24 @@ describe('validateTcpTarget', () => {
     expect(validateTcpTarget('[::ffff:127.0.0.1]:443')).toBe('target host is not allowed');
   });
 
+  it('rejects the complete IPv6 link-local range', () => {
+    expect(validateTcpTarget('[fe80::1]:22')).toBe('target host is not allowed');
+    expect(validateTcpTarget('[fe90::1]:443')).toBe('target host is not allowed');
+    expect(validateTcpTarget('[febf::1]:443')).toBe('target host is not allowed');
+  });
+
+  it('rejects IPv6 multicast and unique-local targets', () => {
+    expect(validateTcpTarget('[ff02::1]:443')).toBe('target host is not allowed');
+    expect(validateTcpTarget('[ff05::1]:443')).toBe('target host is not allowed');
+    expect(validateTcpTarget('[fd12::1]:22')).toBe('target host is not allowed');
+  });
+
+  it('rejects equivalent IPv4-mapped blocked targets', () => {
+    expect(validateTcpTarget('[::ffff:7f00:1]:443')).toBe('target host is not allowed');
+    expect(validateTcpTarget('[0:0:0:0:0:ffff:7f00:1]:443')).toBe('target host is not allowed');
+    expect(validateTcpTarget('[0:0:0:0:0:FFFF:0A00:0001]:443')).toBe('target host is not allowed');
+  });
+
   it('rejects malformed payloads and out-of-range ports', () => {
     expect(validateTcpTarget('bad-target')).toBe(
       'target must be in host:port format (IPv6: [addr]:port)',

@@ -47,14 +47,14 @@ describe('monitor/tcp', () => {
     vi.mocked(connect).mockReturnValue(socket as never);
 
     const result = await runTcpCheck({
-      target: '[2001:bc8:1d80:2140::1]:22',
+      target: '[2001:4860:4860::8888]:53',
       timeoutMs: 500,
     });
 
     expect(result.status).toBe('up');
     expect(connect).toHaveBeenCalledWith({
-      hostname: '[2001:bc8:1d80:2140::1]',
-      port: 22,
+      hostname: '[2001:4860:4860::8888]',
+      port: 53,
     });
   });
 
