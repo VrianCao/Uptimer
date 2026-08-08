@@ -493,15 +493,28 @@ export function StatusPage() {
       {/* Header */}
       <header className="sticky top-0 z-20 border-b border-slate-200/70 bg-white/95 backdrop-blur dark:border-slate-700/80 dark:bg-slate-800/95">
         <div className="mx-auto max-w-5xl px-4 py-3 sm:px-6 sm:py-4 lg:px-8 flex justify-between items-center">
-          <Link to="/" className="flex flex-col justify-center min-w-0 min-h-9">
-            <span className="text-xl sm:text-2xl font-bold leading-tight text-slate-900 dark:text-slate-100 truncate">
-              {siteTitle}
-            </span>
-            {data.site_description ? (
-              <span className="mt-0.5 text-sm leading-tight text-slate-500 dark:text-slate-400 truncate">
-                {data.site_description}
-              </span>
+          <Link to="/" className="flex items-center gap-3 min-w-0 min-h-9">
+            {data.logo_url ? (
+              <img
+                src={data.logo_url}
+                alt=""
+                referrerPolicy="no-referrer"
+                className="h-8 w-8 sm:h-10 sm:w-10 shrink-0 object-contain rounded"
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none';
+                }}
+              />
             ) : null}
+            <span className="flex flex-col min-w-0">
+              <span className="text-xl sm:text-2xl font-bold leading-tight text-slate-900 dark:text-slate-100 truncate">
+                {siteTitle}
+              </span>
+              {data.site_description ? (
+                <span className="mt-0.5 text-sm leading-tight text-slate-500 dark:text-slate-400 truncate">
+                  {data.site_description}
+                </span>
+              ) : null}
+            </span>
           </Link>
           <div className="flex items-center gap-1">
             <ThemeToggle />

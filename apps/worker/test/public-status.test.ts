@@ -13,6 +13,8 @@ function createPublicStatusDb(handlers: FakeD1QueryHandler[]): D1Database {
         name: 'Default status page',
         title: 'Status Hub',
         description: 'Production services',
+        custom_hostname: null,
+        logo_url: 'https://cdn.example.com/brand.svg',
       }),
     },
     ...handlers,
@@ -97,6 +99,7 @@ describe('public/status payload regression', () => {
     const payload = await computePublicStatusPayload(createPublicStatusDb(handlers), now);
 
     expect(payload.site_title).toBe('Status Hub');
+    expect(payload.logo_url).toBe('https://cdn.example.com/brand.svg');
     expect(payload.uptime_rating_level).toBe(4);
     expect(payload.summary).toEqual({
       up: 1,

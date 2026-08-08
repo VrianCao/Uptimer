@@ -183,7 +183,7 @@ describe('admin status page custom hostname', () => {
     const seenHostnames: (string | null)[] = [];
     const bindings = env([
       {
-        match: 'select id, slug, name, title, description, custom_hostname, is_public, created_at, updated_at from status_pages where id = ?1',
+        match: 'select id, slug, name, title, description, custom_hostname, logo_url, is_public, created_at, updated_at from status_pages where id = ?1',
         first: () => ({
           id: 4,
           slug: 'partners',
@@ -191,6 +191,7 @@ describe('admin status page custom hostname', () => {
           title: 'Partner status',
           description: '',
           custom_hostname: 'status.partners.com',
+          logo_url: null,
           is_public: 1,
           created_at: 10,
           updated_at: 10,
@@ -234,6 +235,108 @@ describe('admin status page custom hostname', () => {
 
   it('rejects an invalid hostname before writing', async () => {
     const res = await patchRequest(app(), env([]), 4, { custom_hostname: 'https://invalid.com' });
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toMatchObject({ error: { code: 'INVALID_ARGUMENT' } });
+  });
+});
+
+describe('admin status page logo url', () => {
+  it('creates a page with a logo url', async () => {
+    const bindings = env([
+      { match: 'select id from status_pages', first: () => null },
+      { match: 'select id from monitors', all: () => [{ id: 1 }] },
+      { match: 'delete from status_page_monitors', run: () => 1 },
+      { match: 'insert into status_page_monitors', run: () => 1 },
+      {
+        match: 'insert into status_pages',
+        first: () => ({
+          id: 4,
+          slug: 'partners',
+          name: 'Partner services',
+          title: 'Partner status',
+          description: '',
+          custom_hostname: null,
+          logo_url: 'https://cdn.example.com/logo.png',
+          is_public: 1,
+          created_at: 10,
+          updated_at: 10,
+        }),
+      },
+      { match: 'insert into status_page_refresh_queue', run: () => 1 },
+    ]);
+
+    const res = await request(app(), bindings, '/api/v1/admin/status-pages', {
+      slug: 'partners',
+      name: 'Partner services',
+      title: 'Partner status',
+      logo_url: 'https://cdn.example.com/logo.png',
+      monitor_ids: [1],
+    });
+
+    expect(res.status).toBe(201);
+    await expect(res.json()).resolves.toMatchObject({
+      status_page: { id: 4, logo_url: 'https://cdn.example.com/logo.png' },
+    });
+  });
+
+  it('patches and clears logo_url atomically', async () => {
+    const seenLogos: (string | null)[] = [];
+    const bindings = env([
+      {
+        match: 'select id, slug, name, title, description, custom_hostname, logo_url, is_public, created_at, updated_at from status_pages where id = ?1',
+        first: () => ({
+          id: 4,
+          slug: 'partners',
+          name: 'Partners',
+          title: 'Partner status',
+          description: '',
+          custom_hostname: null,
+          logo_url: null,
+          is_public: 1,
+          created_at: 10,
+          updated_at: 10,
+        }),
+      },
+      { match: 'select monitor_id from status_page_monitors', all: () => [] },
+      {
+        match: 'update status_pages',
+        first: (_args, _sql) => {
+          seenLogos.push(_args[5] as string | null);
+          return {
+            id: 4,
+            slug: 'partners',
+            name: 'Partners',
+            title: 'Partner status',
+            description: '',
+            custom_hostname: null,
+            logo_url: _args[5] as string | null,
+            is_public: 1,
+            created_at: 10,
+            updated_at: 20,
+          };
+        },
+      },
+      { match: 'insert into status_page_refresh_queue', run: () => 1 },
+    ]);
+
+    const patchRes = await patchRequest(app(), bindings, 4, {
+      logo_url: 'https://cdn.example.com/new-logo.svg',
+    });
+    expect(patchRes.status).toBe(200);
+    await expect(patchRes.json()).resolves.toMatchObject({
+      status_page: { logo_url: 'https://cdn.example.com/new-logo.svg' },
+    });
+
+    const clearRes = await patchRequest(app(), bindings, 4, { logo_url: '' });
+    expect(clearRes.status).toBe(200);
+    await expect(clearRes.json()).resolves.toMatchObject({
+      status_page: { logo_url: null },
+    });
+    expect(seenLogos).toEqual(['https://cdn.example.com/new-logo.svg', null]);
+  });
+
+  it('rejects an invalid logo url before writing', async () => {
+    const res = await patchRequest(app(), env([]), 4, { logo_url: 'not-a-url' });
     expect(res.status).toBe(400);
     await expect(res.json()).resolves.toMatchObject({ error: { code: 'INVALID_ARGUMENT' } });
   });

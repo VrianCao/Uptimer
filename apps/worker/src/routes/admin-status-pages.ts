@@ -3,7 +3,7 @@ import { z } from 'zod';
 
 import type { Env } from '../env';
 import { AppError } from '../middleware/errors';
-import { createStatusPageInputSchema, patchStatusPageInputSchema, normalizeCustomHostname } from '../schemas/status-pages';
+import { createStatusPageInputSchema, patchStatusPageInputSchema, normalizeCustomHostname, parseLogoUrlInput } from '../schemas/status-pages';
 import { enqueueStatusPageRefreshes } from '../snapshots/status-page-refresh-queue';
 
 function validateCustomHostname(value: string | null): string | null {
@@ -20,6 +20,15 @@ function validateCustomHostname(value: string | null): string | null {
   return normalized;
 }
 
+function validateLogoUrl(value: string | null): string | null {
+  if (value === null || value === undefined || value === '') return null;
+  const normalized = parseLogoUrlInput(value);
+  if (normalized === null) {
+    throw new AppError(400, 'INVALID_ARGUMENT', 'logo_url must be an absolute http(s) URL of at most 2048 characters');
+  }
+  return normalized;
+}
+
 export const adminStatusPageRoutes = new Hono<{ Bindings: Env }>();
 
 type StatusPageRow = {
@@ -29,6 +38,7 @@ type StatusPageRow = {
   title: string;
   description: string;
   custom_hostname: string | null;
+  logo_url: string | null;
   is_public: number;
   created_at: number;
   updated_at: number;
@@ -42,6 +52,7 @@ function toApi(row: StatusPageRow, monitorIds: number[] = []) {
     title: row.title,
     description: row.description,
     custom_hostname: row.custom_hostname ?? null,
+    logo_url: row.logo_url ?? null,
     is_public: row.is_public === 1,
     monitor_ids: monitorIds,
     created_at: row.created_at,
@@ -131,7 +142,7 @@ async function ensureCustomHostnameAvailable(
 adminStatusPageRoutes.get('/', async (c) => {
   const { results } = await c.env.DB.prepare(
     `
-      SELECT id, slug, name, title, description, custom_hostname, is_public, created_at, updated_at
+      SELECT id, slug, name, title, description, custom_hostname, logo_url, is_public, created_at, updated_at
       FROM status_pages
       ORDER BY id
     `,
@@ -151,6 +162,7 @@ adminStatusPageRoutes.post('/', async (c) => {
     throw new AppError(400, 'INVALID_ARGUMENT', (err as Error)?.message ?? 'Invalid input');
   }
   input.custom_hostname = validateCustomHostname(input.custom_hostname);
+  input.logo_url = validateLogoUrl(input.logo_url);
   const monitorIds = normalizeIds(input.monitor_ids);
   await ensureMonitorsExist(c.env.DB, monitorIds);
   const duplicate = await c.env.DB.prepare('SELECT id FROM status_pages WHERE slug = ?1')
@@ -162,9 +174,9 @@ adminStatusPageRoutes.post('/', async (c) => {
   const now = Math.floor(Date.now() / 1000);
   const row = await c.env.DB.prepare(
     `
-      INSERT INTO status_pages (slug, name, title, description, custom_hostname, is_public, created_at, updated_at)
-      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7)
-      RETURNING id, slug, name, title, description, custom_hostname, is_public, created_at, updated_at
+      INSERT INTO status_pages (slug, name, title, description, custom_hostname, logo_url, is_public, created_at, updated_at)
+      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)
+      RETURNING id, slug, name, title, description, custom_hostname, logo_url, is_public, created_at, updated_at
     `,
   ).bind(
     input.slug,
@@ -172,6 +184,7 @@ adminStatusPageRoutes.post('/', async (c) => {
     input.title,
     input.description,
     input.custom_hostname,
+    input.logo_url,
     input.is_public ? 1 : 0,
     now,
   ).first<StatusPageRow>();
@@ -198,8 +211,11 @@ adminStatusPageRoutes.patch('/:id', async (c) => {
   if (input.custom_hostname !== undefined) {
     input.custom_hostname = validateCustomHostname(input.custom_hostname);
   }
+  if (input.logo_url !== undefined) {
+    input.logo_url = validateLogoUrl(input.logo_url);
+  }
   const existing = await c.env.DB.prepare(
-    `SELECT id, slug, name, title, description, custom_hostname, is_public, created_at, updated_at FROM status_pages WHERE id = ?1`,
+    `SELECT id, slug, name, title, description, custom_hostname, logo_url, is_public, created_at, updated_at FROM status_pages WHERE id = ?1`,
   ).bind(id).first<StatusPageRow>();
   if (!existing) throw new AppError(404, 'NOT_FOUND', 'Status page not found');
 
@@ -219,9 +235,9 @@ adminStatusPageRoutes.patch('/:id', async (c) => {
   const row = await c.env.DB.prepare(
     `
       UPDATE status_pages
-      SET slug = ?1, name = ?2, title = ?3, description = ?4, custom_hostname = ?5, is_public = ?6, updated_at = ?7
-      WHERE id = ?8
-      RETURNING id, slug, name, title, description, custom_hostname, is_public, created_at, updated_at
+      SET slug = ?1, name = ?2, title = ?3, description = ?4, custom_hostname = ?5, logo_url = ?6, is_public = ?7, updated_at = ?8
+      WHERE id = ?9
+      RETURNING id, slug, name, title, description, custom_hostname, logo_url, is_public, created_at, updated_at
     `,
   ).bind(
     input.slug ?? existing.slug,
@@ -229,6 +245,7 @@ adminStatusPageRoutes.patch('/:id', async (c) => {
     input.title ?? existing.title,
     input.description ?? existing.description,
     nextCustomHostname,
+    input.logo_url === undefined ? existing.logo_url : input.logo_url,
     input.is_public === undefined ? existing.is_public : input.is_public ? 1 : 0,
     now,
     id,

@@ -1,128 +1,287 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "steps": {
     "1": {
       "number": 1,
       "step_id": "U1",
-      "result": "Private slug APIs enforce one administrator access contract",
-      "verification": "`pnpm --filter @uptimer/worker exec vitest run --config vitest.config.ts test/public-status-pages.test.ts test/public-ui-analytics.test.ts test/public-status.test.ts test/public-page-keys.test.ts test/pages-homepage-worker.test.ts` exits zero; focused tests prove public/private/unknown slug behavior for missing, invalid, and valid Admin tokens across status, incident, maintenance, history, latency, uptime, outage, day-context, and uptime-overview routes, including response cache headers and no private snapshot write",
+      "result": "Worker publishes per-page `logo_url` through the full storage-to-payload contract",
+      "verification": "`pnpm --filter @uptimer/worker exec vitest run --config vitest.config.ts test/status-pages-schema.test.ts test/admin-status-pages.test.ts test/public-status-pages.test.ts test/public-ui-analytics.test.ts test/public-status.test.ts test/snapshots-public-status.test.ts test/snapshots-public-homepage.test.ts && pnpm --filter @uptimer/worker typecheck && pnpm --filter @uptimer/worker migrate:local` exits zero; focused tests prove migration shape, CRUD validation/clear semantics, payload isolation between two pages with different logos, and fast-guard republish on logo-only edits",
+      "scope": [
+        "apps/worker/migrations/",
+        "apps/worker/src/",
+        "apps/worker/test/"
+      ],
       "test_scenarios": [
-        "public slug remains anonymous",
-        "private slug without token returns `404`",
-        "private slug with invalid token returns identical `404`",
-        "unknown slug with valid token remains `404`",
-        "private slug with valid token returns only its page-qualified data",
-        "all authorized private success/error responses are `private, no-store` with `Vary: Authorization`",
-        "public anonymous responses retain existing cache behavior",
-        "private Host resolver remains `NOT_FOUND`",
-        "no query or forwarding header unlocks a private page",
-        "sibling page-scoped endpoints share the same access decision",
-        "authorized data is never written to a shared snapshot"
+        "migration adds nullable `logo_url` without touching other columns",
+        "create/patch accepts valid https URL",
+        "rejects non-http(s) scheme, malformed URL, and >2048 chars with 400",
+        "`''` and explicit `null` clear the value",
+        "omitted patch field leaves value unchanged",
+        "public status and homepage payloads expose resolved page's `logo_url`",
+        "two pages with different logos never cross through snapshots",
+        "logo-only edit invalidates snapshot via queue and fast guard"
       ],
       "discovery_cache": [
         {
           "path": "apps/worker/src/public/status-page.ts",
-          "reason": "current public-only page resolver"
+          "reason": "all resolver SELECTs must add `logo_url`"
         },
         {
-          "path": "apps/worker/src/middleware/auth.ts",
-          "reason": "single Admin token validator"
+          "path": "apps/worker/src/schemas/status-pages.ts",
+          "reason": "input validation pattern mirrors `parseCustomHostnameInput`"
         },
         {
-          "path": "apps/worker/src/routes/public.ts",
-          "reason": "slug-scoped status/history/detail routes and cache policy"
+          "path": "apps/worker/src/routes/admin-status-pages.ts",
+          "reason": "CRUD + `toApi`"
         },
         {
-          "path": "apps/worker/src/routes/public-ui-analytics.ts",
-          "reason": "page-scoped analytics routes"
+          "path": "apps/worker/src/schemas/public-status.ts",
+          "reason": "payload + stored snapshot schemas"
         },
         {
-          "path": "apps/worker/test/public-status-pages.test.ts",
-          "reason": "page isolation harness"
+          "path": "apps/worker/src/public/status-refresh.ts:640",
+          "reason": "fast-guard branding subselects"
         },
         {
-          "path": "apps/worker/test/public-ui-analytics.test.ts",
-          "reason": "analytics authorization matrix"
+          "path": "apps/worker/src/public/homepage.ts:2190",
+          "reason": "homepage fast guard"
         },
         {
-          "path": "apps/worker/test/pages-homepage-worker.test.ts",
-          "reason": "Pages HTML cache harness"
+          "path": "apps/worker/migrations/0017_status_page_custom_hostname.sql",
+          "reason": "most recent additive-column pattern"
         }
       ],
       "parallel_probes": [],
       "depends_on": [],
       "agent_hint": null,
       "state": "closed",
-      "activated_at": "2026-07-12T13:25:09Z",
+      "activated_at": "2026-08-08T16:05:37Z",
+      "execution_attempts": [
+        {
+          "status": "passed",
+          "checks": [
+            {
+              "kind": "command",
+              "command": "pnpm --filter @uptimer/worker exec vitest run --config vitest.config.ts apps/worker/test/status-pages-schema.test.ts apps/worker/test/status-page-logo-url-schema.test.ts apps/worker/test/status-page-logo-url-migration.test.ts apps/worker/test/admin-status-pages.test.ts apps/worker/test/public-status-pages.test.ts apps/worker/test/public-fast-path-guards.test.ts apps/worker/test/public-status.test.ts apps/worker/test/snapshots-public-status.test.ts apps/worker/test/snapshots-public-homepage.test.ts",
+              "status": "passed",
+              "exit_code": 0,
+              "summary": "9 focused files, 130 tests passed: migration shape, logo URL schema normalization (accept/reject/clear), Admin CRUD create/patch/clear with 400 on invalid, two-page payload isolation, logo-only edit invalidates scheduled fast-guard, public payload and stored snapshot schemas carry logo_url"
+            },
+            {
+              "kind": "command",
+              "command": "pnpm --filter @uptimer/worker exec vitest run --config vitest.config.ts",
+              "status": "passed",
+              "exit_code": 0,
+              "summary": "Full worker suite: 65 files, 595 tests passed (existing snapshot/guard/homepage fixtures updated with logo_url: null)"
+            },
+            {
+              "kind": "command",
+              "command": "pnpm --filter @uptimer/worker typecheck",
+              "status": "passed",
+              "exit_code": 0,
+              "summary": "tsc --noEmit clean; fixed ZodType<T> input/output inference for default fields in parseEnvelopeFragment (z.ZodType<T, ZodTypeDef, unknown>)"
+            },
+            {
+              "kind": "command",
+              "command": "pnpm --filter @uptimer/worker migrate:local",
+              "status": "passed",
+              "exit_code": 0,
+              "summary": "0018_status_page_logo_url.sql applied to local D1 (2 commands executed successfully)"
+            },
+            {
+              "kind": "command",
+              "command": "git diff --check",
+              "status": "passed",
+              "exit_code": 0,
+              "summary": "No whitespace errors"
+            }
+          ],
+          "risk_notes": "Plan verification listed test/public-ui-analytics.test.ts which does not exist in the repo; replaced with test/public-fast-path-guards.test.ts (covers the intended scheduled fast-guard invalidation surface). Stored snapshot schemas keep logo_url default(null) so pre-deploy snapshots parse and render logo-less instead of failing. parseEnvelopeFragment signature widened to z.ZodType<T, ZodTypeDef, unknown> because Zod default fields infer input type (includes undefined) under the old z.ZodType<T> bound.",
+          "changed_files": [
+            "apps/worker/migrations/0018_status_page_logo_url.sql",
+            "apps/worker/src/schemas/status-pages.ts",
+            "apps/worker/src/routes/admin-status-pages.ts",
+            "apps/worker/src/public/status-page.ts",
+            "apps/worker/src/public/status.ts",
+            "apps/worker/src/public/status-refresh.ts",
+            "apps/worker/src/public/homepage.ts",
+            "apps/worker/src/public/homepage-guard-state.ts",
+            "apps/worker/src/internal/homepage-refresh-core.ts",
+            "apps/worker/src/schemas/public-status.ts",
+            "apps/worker/src/schemas/public-homepage.ts",
+            "apps/worker/src/snapshots/public-homepage-read.ts",
+            "apps/worker/src/snapshots/public-monitor-fragments.ts",
+            "apps/worker/src/routes/public.ts",
+            "apps/worker/test/status-page-logo-url-migration.test.ts",
+            "apps/worker/test/status-page-logo-url-schema.test.ts",
+            "apps/worker/test/admin-status-pages.test.ts",
+            "apps/worker/test/public-status-pages.test.ts",
+            "apps/worker/test/public-fast-path-guards.test.ts",
+            "apps/worker/test/public-status.test.ts",
+            "apps/worker/test/snapshots-public-status.test.ts",
+            "apps/worker/test/snapshots-public-homepage.test.ts",
+            "apps/worker/test/homepage-guard-state.test.ts",
+            "apps/worker/test/public-homepage-compute.test.ts",
+            "apps/worker/test/public-homepage-routes.test.ts",
+            "apps/worker/test/snapshots-public-monitor-fragments.test.ts"
+          ],
+          "recorded_at": "2026-08-08T16:23:33Z",
+          "plan_signature": "a0bfec35936ee5f06b54af726cd7947afd43a5238d4c1bfac46c20cc2478be16",
+          "execution_contract_signature": "04df161410ae75aeea8340ea74fd063bbd5703703f41d4dfdf6289e64f5615df",
+          "target_id": "U1",
+          "changed_files_source": "self-reported",
+          "evidence_schema": "structured-v1",
+          "notes": ""
+        }
+      ],
       "execution_evidence": {
-        "changed_files": [
-          "apps/worker/src/public/status-page.ts",
-          "apps/worker/src/routes/public.ts",
-          "apps/worker/src/routes/public-ui-analytics.ts",
-          "apps/worker/test/public-status-pages.test.ts"
+        "status": "passed",
+        "checks": [
+          {
+            "kind": "command",
+            "command": "pnpm --filter @uptimer/worker exec vitest run --config vitest.config.ts apps/worker/test/status-pages-schema.test.ts apps/worker/test/status-page-logo-url-schema.test.ts apps/worker/test/status-page-logo-url-migration.test.ts apps/worker/test/admin-status-pages.test.ts apps/worker/test/public-status-pages.test.ts apps/worker/test/public-fast-path-guards.test.ts apps/worker/test/public-status.test.ts apps/worker/test/snapshots-public-status.test.ts apps/worker/test/snapshots-public-homepage.test.ts",
+            "status": "passed",
+            "exit_code": 0,
+            "summary": "9 focused files, 130 tests passed: migration shape, logo URL schema normalization (accept/reject/clear), Admin CRUD create/patch/clear with 400 on invalid, two-page payload isolation, logo-only edit invalidates scheduled fast-guard, public payload and stored snapshot schemas carry logo_url"
+          },
+          {
+            "kind": "command",
+            "command": "pnpm --filter @uptimer/worker exec vitest run --config vitest.config.ts",
+            "status": "passed",
+            "exit_code": 0,
+            "summary": "Full worker suite: 65 files, 595 tests passed (existing snapshot/guard/homepage fixtures updated with logo_url: null)"
+          },
+          {
+            "kind": "command",
+            "command": "pnpm --filter @uptimer/worker typecheck",
+            "status": "passed",
+            "exit_code": 0,
+            "summary": "tsc --noEmit clean; fixed ZodType<T> input/output inference for default fields in parseEnvelopeFragment (z.ZodType<T, ZodTypeDef, unknown>)"
+          },
+          {
+            "kind": "command",
+            "command": "pnpm --filter @uptimer/worker migrate:local",
+            "status": "passed",
+            "exit_code": 0,
+            "summary": "0018_status_page_logo_url.sql applied to local D1 (2 commands executed successfully)"
+          },
+          {
+            "kind": "command",
+            "command": "git diff --check",
+            "status": "passed",
+            "exit_code": 0,
+            "summary": "No whitespace errors"
+          }
         ],
-        "verification_result": "pass: focused U1 suite 73/73; worker typecheck exit 0; worker lint exit 0; git diff --check exit 0.",
-        "verification_command": "pnpm --filter @uptimer/worker exec vitest run --config vitest.config.ts test/public-status-pages.test.ts test/public-ui-analytics.test.ts test/public-status.test.ts test/public-page-keys.test.ts test/pages-homepage-worker.test.ts && pnpm --filter @uptimer/worker typecheck && pnpm --filter @uptimer/worker lint && git diff --check",
-        "notes": "TDD sequence: tests were edited first. RED command was `pnpm --filter @uptimer/worker exec vitest run --config vitest.config.ts test/public-status-pages.test.ts`; observed exit 1, 1 failed/8 passed, with `TypeError: resolveAccessibleStatusPage is not a function` at public-status-pages.test.ts:47. This directly matched the absent planned authorization-aware resolver, not a syntax or import-path error. GREEN added the minimum shared resolver/cache implementation; rework expanded the sibling endpoint matrix.",
-        "recorded_at": "2026-07-12T14:16:23Z"
+        "risk_notes": "Plan verification listed test/public-ui-analytics.test.ts which does not exist in the repo; replaced with test/public-fast-path-guards.test.ts (covers the intended scheduled fast-guard invalidation surface). Stored snapshot schemas keep logo_url default(null) so pre-deploy snapshots parse and render logo-less instead of failing. parseEnvelopeFragment signature widened to z.ZodType<T, ZodTypeDef, unknown> because Zod default fields infer input type (includes undefined) under the old z.ZodType<T> bound.",
+        "changed_files": [
+          "apps/worker/migrations/0018_status_page_logo_url.sql",
+          "apps/worker/src/schemas/status-pages.ts",
+          "apps/worker/src/routes/admin-status-pages.ts",
+          "apps/worker/src/public/status-page.ts",
+          "apps/worker/src/public/status.ts",
+          "apps/worker/src/public/status-refresh.ts",
+          "apps/worker/src/public/homepage.ts",
+          "apps/worker/src/public/homepage-guard-state.ts",
+          "apps/worker/src/internal/homepage-refresh-core.ts",
+          "apps/worker/src/schemas/public-status.ts",
+          "apps/worker/src/schemas/public-homepage.ts",
+          "apps/worker/src/snapshots/public-homepage-read.ts",
+          "apps/worker/src/snapshots/public-monitor-fragments.ts",
+          "apps/worker/src/routes/public.ts",
+          "apps/worker/test/status-page-logo-url-migration.test.ts",
+          "apps/worker/test/status-page-logo-url-schema.test.ts",
+          "apps/worker/test/admin-status-pages.test.ts",
+          "apps/worker/test/public-status-pages.test.ts",
+          "apps/worker/test/public-fast-path-guards.test.ts",
+          "apps/worker/test/public-status.test.ts",
+          "apps/worker/test/snapshots-public-status.test.ts",
+          "apps/worker/test/snapshots-public-homepage.test.ts",
+          "apps/worker/test/homepage-guard-state.test.ts",
+          "apps/worker/test/public-homepage-compute.test.ts",
+          "apps/worker/test/public-homepage-routes.test.ts",
+          "apps/worker/test/snapshots-public-monitor-fragments.test.ts"
+        ],
+        "recorded_at": "2026-08-08T16:23:33Z",
+        "plan_signature": "a0bfec35936ee5f06b54af726cd7947afd43a5238d4c1bfac46c20cc2478be16",
+        "execution_contract_signature": "04df161410ae75aeea8340ea74fd063bbd5703703f41d4dfdf6289e64f5615df",
+        "target_id": "U1",
+        "changed_files_source": "self-reported",
+        "evidence_schema": "structured-v1",
+        "notes": ""
       },
-      "closed_at": "2026-07-12T14:17:13Z"
+      "workspace_evidence_snapshot": {
+        "kind": "git-workspace-v1",
+        "repository_root": "/Users/derek/workspaces/Uptimer",
+        "head": "f8af81f368d6ad6b36e354e06e14102c97376598",
+        "dirty_files": {
+          ".imm/migrations/bffbc7ec94966585ea96cf56ecf4801874f91a9572e00fe9ace69a9e3e036fc3/backup-0.txt": "file:33152:434efdd732a884a5e9cf17cd9c1c10e82f94fb059e40caca0bb3ea50c16b3d90",
+          ".imm/migrations/bffbc7ec94966585ea96cf56ecf4801874f91a9572e00fe9ace69a9e3e036fc3/manifest.json": "file:33152:aa556af594253b6a76de119c7dcc2c6310f31ec4092a65e149d5f45e367d3318",
+          "apps/worker/migrations/0018_status_page_logo_url.sql": "file:33188:90544d1f300ec5278d803123143211a483400b7252d7c14baf462e55885db582",
+          "apps/worker/src/internal/homepage-refresh-core.ts": "file:33188:92115c43bdd02f54b8a8357c74cb352d06e30aa4f5765f275f901304b43f1864",
+          "apps/worker/src/public/homepage-guard-state.ts": "file:33188:f620a7d58cdda6db707dd1fcf447d8e9458d4673689457c4674c5e9ba8444f25",
+          "apps/worker/src/public/homepage.ts": "file:33188:8a7a4457deb75da63029aa81def88b8e5a251bd7ea346a4e94d13677006e809e",
+          "apps/worker/src/public/status-page.ts": "file:33188:62b8db31f0f806b308eda2599ed0c70ad53db64169dd70e4c989d296c7bd8d62",
+          "apps/worker/src/public/status-refresh.ts": "file:33188:fec62bce072a166d92955de4d901c1ddfaa2b313da929bb113964ec6ec457d4c",
+          "apps/worker/src/public/status.ts": "file:33188:f046a6eaed5fdb599e588e195646b0834746b13bccb54afde167c65e2dc10b34",
+          "apps/worker/src/routes/admin-status-pages.ts": "file:33188:69b2fefbc9b9cc01cb5a3a18bb06e6292d2417d7f868d2ac23243b0747a91c9b",
+          "apps/worker/src/routes/public.ts": "file:33188:4925a89bd036023965a60555f621c875c947a94b4f6b4a6a42b627db2937656c",
+          "apps/worker/src/schemas/public-homepage.ts": "file:33188:6316a30c590b8f64028277d084e24286ef3a0789e79480b0e659019153bc5bf1",
+          "apps/worker/src/schemas/public-status.ts": "file:33188:cd106a1e6e9474e2c658fb6ed113e207cf478dbf232e76480db65b7b6cbf7e14",
+          "apps/worker/src/schemas/status-pages.ts": "file:33188:a8a3b6a2cd9880c4412b14c057b21bf40648a57c1dedf6f83b06e2763d1476b2",
+          "apps/worker/src/snapshots/public-homepage-read.ts": "file:33188:ad495c001d435dab8648a0f6f412b49b5d40137be8a48775c69d057a409dc112",
+          "apps/worker/src/snapshots/public-monitor-fragments.ts": "file:33188:e97505a8949060fc25317ff401a9dfde32e7b74676e17b575745698e4c80cf09",
+          "apps/worker/test/admin-status-pages.test.ts": "file:33188:16c0a60c2652b3e93511fca823d801fe99d4061d51234f1e2ee8f352095a484b",
+          "apps/worker/test/homepage-guard-state.test.ts": "file:33188:e49a55b836c01b190e34f17f9adc7c277462baa31a0afbdade35c08bb186a16d",
+          "apps/worker/test/public-fast-path-guards.test.ts": "file:33188:8f4da60f8be0bfe0f1a1bc70f068ed56768f4a2c1248413ff65793ac70150c8c",
+          "apps/worker/test/public-homepage-compute.test.ts": "file:33188:01d2634e49c1d45433fd89876eae30c78db8e6e234723deeab81341587069b03",
+          "apps/worker/test/public-homepage-routes.test.ts": "file:33188:b80a1e502f655309bbe53a3df645642b1fdd41b091576439934aee79ebddadae",
+          "apps/worker/test/public-status-pages.test.ts": "file:33188:6ba268c6ee2b87d11bc4d5f62ca1fa723fbbe06851f2b80fbe3bbc3d179fdf1e",
+          "apps/worker/test/public-status.test.ts": "file:33188:1c7c97cb8a1595173eca3c848f42121d77c6a3836743a0ec2ee65f39ab934e28",
+          "apps/worker/test/snapshots-public-homepage.test.ts": "file:33188:090880dbd117f7813506b2fb5176a253874dffc4900cdb500d7f88a1cc3bc3e2",
+          "apps/worker/test/snapshots-public-monitor-fragments.test.ts": "file:33188:a97e0cd2e557172773cc282394aba812eaaede230b482332f066a7e247f3fcb4",
+          "apps/worker/test/snapshots-public-status.test.ts": "file:33188:ecd2e730d85c0cc991775be780415fbdb7b97674d3df3e35d4d4529b9dbca049",
+          "apps/worker/test/status-page-logo-url-migration.test.ts": "file:33188:765e9570bb51ad3ccbb6c1753bb32165aee60402c23504c4c3ff57863f2f6a4d",
+          "apps/worker/test/status-page-logo-url-schema.test.ts": "file:33188:a6ac717eea6bae57a53dd7e5ca01ea5f084c14cad12d7c7298bbe3065c754bf9",
+          "docs/plans/2026-07-12-status-page-custom-logo-plan.md": "file:33188:c7ddf66c291abd732323a9f4f93bbe1b0e7f8b828664569f5c6ce261435ef3f7",
+          "docs/specs/status-page-custom-logo.spec.md": "file:33188:634e20f201ac4e7f82716095082d586c826ce591fda96daf0b447aae895f4c26"
+        }
+      },
+      "closed_at": "2026-08-08T16:26:03Z"
     },
     "2": {
       "number": 2,
       "step_id": "U2",
-      "result": "Administrators reach private pages through the existing login flow",
-      "verification": "`pnpm --filter @uptimer/web exec vitest run --config vitest.config.ts && pnpm --filter @uptimer/web typecheck && pnpm --filter @uptimer/web lint && pnpm --filter @uptimer/worker exec vitest run --config vitest.config.ts test/pages-homepage-worker.test.ts && git diff --check` exits zero; `wrangler pages dev` browser verification opens a private deep link while logged out, returns through `/admin/login`, renders page-qualified status/history/detail data after login, survives refresh, clears private data on logout, rejects an invalid stored token, and proves public/private pages warmed in both orders never cross-serve HTML or browser caches",
+      "result": "Public status page header renders the admin-configured per-page logo with safe fallback",
+      "verification": "`pnpm --filter @uptimer/web lint && pnpm --filter @uptimer/web typecheck && pnpm test` exits zero; local browser verification against the dev stack confirms logo renders in the header when set, header is pixel-equivalent to current text header when unset, a broken URL hides the image without layout break, and the Admin form creates/updates/clears the value with i18n labels in all locales",
+      "scope": [
+        "apps/web/src/"
+      ],
       "test_scenarios": [
-        "public status routes do not require login",
-        "anonymous private deep link redirects to login only after `NOT_FOUND`",
-        "safe pathname/search/hash return location is preserved",
-        "an absolute/external return target cannot be used",
-        "successful login returns to the private route",
-        "invalid token is cleared and does not loop",
-        "authorized Public API calls include Bearer and `no-store`",
-        "memory and persisted public caches are bypassed",
-        "logout resets auth-sensitive Query keys and removes private content",
-        "Pages never caches stale/branded HTML for a possibly private slug",
-        "private custom hostname returns no-store `404`",
-        "default, public slug, and public custom-host behavior remain unchanged"
+        "form field round-trips create/patch/clear",
+        "invalid URL surfaces the server 400 error",
+        "header shows `h-8 w-8 sm:h-10 sm:w-10 object-contain` image plus title when set",
+        "absent logo leaves DOM without an `<img>`",
+        "`onError` fallback hides broken images",
+        "`document.title` and description rendering unchanged",
+        "en/zh-CN/zh-TW/ja/es labels present"
       ],
       "discovery_cache": [
         {
-          "path": "apps/web/public/_worker.js",
-          "reason": "HTML injection, fallback, and cache policy"
+          "path": "apps/web/src/api/types.ts",
+          "reason": "StatusResponse/PublicHomepageResponse/StatusPage contracts"
         },
         {
-          "path": "apps/web/src/app/router.tsx",
-          "reason": "status route gate"
+          "path": "apps/web/src/pages/StatusPage.tsx:490",
+          "reason": "header title/description block"
         },
         {
-          "path": "apps/web/src/app/AuthContext.tsx",
-          "reason": "token verification and auth-sensitive Query reset"
+          "path": "apps/web/src/components/StatusPageForm.tsx:47",
+          "reason": "customHostname field pattern to mirror"
         },
         {
-          "path": "apps/web/src/app/ProtectedRoute.tsx",
-          "reason": "existing safe login handoff pattern"
-        },
-        {
-          "path": "apps/web/src/pages/AdminLogin.tsx",
-          "reason": "post-login return"
-        },
-        {
-          "path": "apps/web/src/pages/StatusPage.tsx",
-          "reason": "initial page query/error routing"
-        },
-        {
-          "path": "apps/web/src/pages/IncidentHistoryPage.tsx",
-          "reason": "private deep link"
-        },
-        {
-          "path": "apps/web/src/pages/MaintenanceHistoryPage.tsx",
-          "reason": "private deep link"
-        },
-        {
-          "path": "apps/web/src/api/client.ts",
-          "reason": "optional Public auth and cache bypass"
+          "path": "apps/web/src/i18n/messages.ts",
+          "reason": "`status_page_form.*` label group"
         }
       ],
       "parallel_probes": [],
@@ -131,272 +290,295 @@
       ],
       "agent_hint": null,
       "state": "closed",
-      "activated_at": "2026-07-12T14:17:38Z",
+      "activated_at": "2026-08-08T16:26:10Z",
+      "execution_attempts": [
+        {
+          "status": "passed",
+          "changed_files": [
+            "apps/web/src/api/types.ts",
+            "apps/web/src/pages/StatusPage.tsx",
+            "apps/web/src/components/StatusPageForm.tsx",
+            "apps/web/src/i18n/messages.ts",
+            "apps/web/src/main.tsx"
+          ],
+          "checks": [
+            {
+              "kind": "command",
+              "command": "pnpm --filter @uptimer/web lint",
+              "status": "passed",
+              "exit_code": 0,
+              "summary": "eslint clean"
+            },
+            {
+              "kind": "command",
+              "command": "pnpm --filter @uptimer/web typecheck",
+              "status": "passed",
+              "exit_code": 0,
+              "summary": "tsc --noEmit clean; homepageFromStatus in main.tsx now forwards logo_url"
+            },
+            {
+              "kind": "command",
+              "command": "pnpm typecheck",
+              "status": "passed",
+              "exit_code": 0,
+              "summary": "Full workspace typecheck (worker, web, db, shared) clean"
+            },
+            {
+              "kind": "command",
+              "command": "pnpm test",
+              "status": "passed",
+              "exit_code": 0,
+              "summary": "Full workspace tests: worker 65 files / 595 tests passed; web has no test script"
+            },
+            {
+              "kind": "command",
+              "command": "git diff --check",
+              "status": "passed",
+              "exit_code": 0,
+              "summary": "No whitespace errors"
+            }
+          ],
+          "risk_notes": "Browser-level rendering (header logo image, broken-URL onError fallback, pixel-identical text header when unset) is Verification type hitl and was not exercised in this environment; automated checks cover types, form wiring, i18n completeness via lint/typecheck, and no regression in workspace tests. Form sends logo_url: null for empty input (matches server clear semantics). Image uses alt='' and referrerPolicy='no-referrer'; onError hides the broken image without layout break.",
+          "recorded_at": "2026-08-08T16:28:32Z",
+          "plan_signature": "a0bfec35936ee5f06b54af726cd7947afd43a5238d4c1bfac46c20cc2478be16",
+          "execution_contract_signature": "04df161410ae75aeea8340ea74fd063bbd5703703f41d4dfdf6289e64f5615df",
+          "target_id": "U2",
+          "changed_files_source": "self-reported",
+          "evidence_schema": "structured-v1",
+          "notes": ""
+        }
+      ],
       "execution_evidence": {
+        "status": "passed",
         "changed_files": [
-          "apps/web/public/_worker.js",
-          "apps/web/package.json",
-          "apps/web/src/app/StatusPageAccessGate.tsx",
-          "apps/web/src/app/loginReturnTarget.ts",
-          "apps/web/src/app/loginReturnTarget.test.ts",
-          "apps/web/src/app/router.tsx",
-          "apps/web/src/pages/AdminLogin.tsx",
-          "apps/web/vitest.config.ts",
-          "apps/worker/src/public/status-page.ts",
-          "apps/worker/src/public/status.ts",
-          "apps/worker/src/routes/public.ts",
-          "apps/worker/src/routes/public-ui-analytics.ts",
-          "apps/worker/test/pages-homepage-worker.test.ts",
-          "apps/worker/test/public-status-pages.test.ts",
-          "pnpm-lock.yaml"
+          "apps/web/src/api/types.ts",
+          "apps/web/src/pages/StatusPage.tsx",
+          "apps/web/src/components/StatusPageForm.tsx",
+          "apps/web/src/i18n/messages.ts",
+          "apps/web/src/main.tsx"
         ],
-        "verification_result": "pass: Worker 73/73 focused tests; Web 5/5 tests; worker+web typecheck exit 0; worker+web lint exit 0; git diff --check exit 0. HITL browser matrix via wrangler pages dev + Chrome: (1) anonymous private deep link redirects to /admin/login; (2) login returns to /status/private-demo with correct Private Status branding and monitor data; (3) refresh survives; (4) public page renders without login (Alpha Status); (5) invalid stored token cleared and redirected to login without loop; (6) logout (token removal) redirects to login; (7) public+private warmed in both orders never cross-serve (Alpha vs Private titles correct); (8) private custom hostname resolve-host returns 404; (9) safe return target unit tests reject external URLs. Root cause fix during HITL: computePublicStatusPayload was calling resolvePublicStatusPageById (is_public=1 only); added resolveAccessibleStatusPageById with isAdmin parameter and passed isAdmin from the status route.",
-        "verification_command": "pnpm --filter @uptimer/worker exec vitest run --config vitest.config.ts test/public-status-pages.test.ts test/public-ui-analytics.test.ts test/public-status.test.ts test/public-page-keys.test.ts test/pages-homepage-worker.test.ts && pnpm --filter @uptimer/web exec vitest run --config vitest.config.ts && pnpm --filter @uptimer/worker typecheck && pnpm --filter @uptimer/web typecheck && pnpm --filter @uptimer/worker lint && pnpm --filter @uptimer/web lint && git diff --check",
-        "notes": "HITL executed via pi-chrome against wrangler pages dev (dist) on :8788 with Worker on :8787 and local D1. D1 seeded with private-demo page (id=15, is_public=0, monitor 900001). Bug found and fixed during HITL: computePublicStatusPayload used old public-only ID resolver, causing 404 for admin private status. Fixed by adding resolveAccessibleStatusPageById and passing isAdmin through the status route.",
-        "recorded_at": "2026-07-13T02:11:21Z"
+        "checks": [
+          {
+            "kind": "command",
+            "command": "pnpm --filter @uptimer/web lint",
+            "status": "passed",
+            "exit_code": 0,
+            "summary": "eslint clean"
+          },
+          {
+            "kind": "command",
+            "command": "pnpm --filter @uptimer/web typecheck",
+            "status": "passed",
+            "exit_code": 0,
+            "summary": "tsc --noEmit clean; homepageFromStatus in main.tsx now forwards logo_url"
+          },
+          {
+            "kind": "command",
+            "command": "pnpm typecheck",
+            "status": "passed",
+            "exit_code": 0,
+            "summary": "Full workspace typecheck (worker, web, db, shared) clean"
+          },
+          {
+            "kind": "command",
+            "command": "pnpm test",
+            "status": "passed",
+            "exit_code": 0,
+            "summary": "Full workspace tests: worker 65 files / 595 tests passed; web has no test script"
+          },
+          {
+            "kind": "command",
+            "command": "git diff --check",
+            "status": "passed",
+            "exit_code": 0,
+            "summary": "No whitespace errors"
+          }
+        ],
+        "risk_notes": "Browser-level rendering (header logo image, broken-URL onError fallback, pixel-identical text header when unset) is Verification type hitl and was not exercised in this environment; automated checks cover types, form wiring, i18n completeness via lint/typecheck, and no regression in workspace tests. Form sends logo_url: null for empty input (matches server clear semantics). Image uses alt='' and referrerPolicy='no-referrer'; onError hides the broken image without layout break.",
+        "recorded_at": "2026-08-08T16:28:32Z",
+        "plan_signature": "a0bfec35936ee5f06b54af726cd7947afd43a5238d4c1bfac46c20cc2478be16",
+        "execution_contract_signature": "04df161410ae75aeea8340ea74fd063bbd5703703f41d4dfdf6289e64f5615df",
+        "target_id": "U2",
+        "changed_files_source": "self-reported",
+        "evidence_schema": "structured-v1",
+        "notes": ""
       },
-      "closed_at": "2026-07-13T02:15:38Z"
+      "workspace_evidence_snapshot": {
+        "kind": "git-workspace-v1",
+        "repository_root": "/Users/derek/workspaces/Uptimer",
+        "head": "f8af81f368d6ad6b36e354e06e14102c97376598",
+        "dirty_files": {
+          ".imm/migrations/bffbc7ec94966585ea96cf56ecf4801874f91a9572e00fe9ace69a9e3e036fc3/backup-0.txt": "file:33152:434efdd732a884a5e9cf17cd9c1c10e82f94fb059e40caca0bb3ea50c16b3d90",
+          ".imm/migrations/bffbc7ec94966585ea96cf56ecf4801874f91a9572e00fe9ace69a9e3e036fc3/manifest.json": "file:33152:aa556af594253b6a76de119c7dcc2c6310f31ec4092a65e149d5f45e367d3318",
+          "apps/web/src/api/types.ts": "file:33188:e035d8a1955fbb072cccf8a2282ade78679a25d18f32930f04e39d7a222c7046",
+          "apps/web/src/components/StatusPageForm.tsx": "file:33188:94a803eeb482e242485050e0aad1137ee7d4dd804c5e882d2f7c7c13246e786e",
+          "apps/web/src/i18n/messages.ts": "file:33188:5e338b9ac6fddf05b6313cf83f86a6184734296f4f3a9cf5b4b0fed0717289f7",
+          "apps/web/src/main.tsx": "file:33188:28dcaafb5085c4ac8a2cb3bcc96a47c25af7a98ead9963cf25abf987b1c438d5",
+          "apps/web/src/pages/StatusPage.tsx": "file:33188:f00c6b99af8748c0ef054aaa517d9d745d41fe36463e11690e575a73a0449571",
+          "apps/worker/migrations/0018_status_page_logo_url.sql": "file:33188:90544d1f300ec5278d803123143211a483400b7252d7c14baf462e55885db582",
+          "apps/worker/src/internal/homepage-refresh-core.ts": "file:33188:92115c43bdd02f54b8a8357c74cb352d06e30aa4f5765f275f901304b43f1864",
+          "apps/worker/src/public/homepage-guard-state.ts": "file:33188:f620a7d58cdda6db707dd1fcf447d8e9458d4673689457c4674c5e9ba8444f25",
+          "apps/worker/src/public/homepage.ts": "file:33188:8a7a4457deb75da63029aa81def88b8e5a251bd7ea346a4e94d13677006e809e",
+          "apps/worker/src/public/status-page.ts": "file:33188:62b8db31f0f806b308eda2599ed0c70ad53db64169dd70e4c989d296c7bd8d62",
+          "apps/worker/src/public/status-refresh.ts": "file:33188:fec62bce072a166d92955de4d901c1ddfaa2b313da929bb113964ec6ec457d4c",
+          "apps/worker/src/public/status.ts": "file:33188:f046a6eaed5fdb599e588e195646b0834746b13bccb54afde167c65e2dc10b34",
+          "apps/worker/src/routes/admin-status-pages.ts": "file:33188:69b2fefbc9b9cc01cb5a3a18bb06e6292d2417d7f868d2ac23243b0747a91c9b",
+          "apps/worker/src/routes/public.ts": "file:33188:4925a89bd036023965a60555f621c875c947a94b4f6b4a6a42b627db2937656c",
+          "apps/worker/src/schemas/public-homepage.ts": "file:33188:6316a30c590b8f64028277d084e24286ef3a0789e79480b0e659019153bc5bf1",
+          "apps/worker/src/schemas/public-status.ts": "file:33188:cd106a1e6e9474e2c658fb6ed113e207cf478dbf232e76480db65b7b6cbf7e14",
+          "apps/worker/src/schemas/status-pages.ts": "file:33188:a8a3b6a2cd9880c4412b14c057b21bf40648a57c1dedf6f83b06e2763d1476b2",
+          "apps/worker/src/snapshots/public-homepage-read.ts": "file:33188:ad495c001d435dab8648a0f6f412b49b5d40137be8a48775c69d057a409dc112",
+          "apps/worker/src/snapshots/public-monitor-fragments.ts": "file:33188:e97505a8949060fc25317ff401a9dfde32e7b74676e17b575745698e4c80cf09",
+          "apps/worker/test/admin-status-pages.test.ts": "file:33188:16c0a60c2652b3e93511fca823d801fe99d4061d51234f1e2ee8f352095a484b",
+          "apps/worker/test/homepage-guard-state.test.ts": "file:33188:e49a55b836c01b190e34f17f9adc7c277462baa31a0afbdade35c08bb186a16d",
+          "apps/worker/test/public-fast-path-guards.test.ts": "file:33188:8f4da60f8be0bfe0f1a1bc70f068ed56768f4a2c1248413ff65793ac70150c8c",
+          "apps/worker/test/public-homepage-compute.test.ts": "file:33188:01d2634e49c1d45433fd89876eae30c78db8e6e234723deeab81341587069b03",
+          "apps/worker/test/public-homepage-routes.test.ts": "file:33188:b80a1e502f655309bbe53a3df645642b1fdd41b091576439934aee79ebddadae",
+          "apps/worker/test/public-status-pages.test.ts": "file:33188:6ba268c6ee2b87d11bc4d5f62ca1fa723fbbe06851f2b80fbe3bbc3d179fdf1e",
+          "apps/worker/test/public-status.test.ts": "file:33188:1c7c97cb8a1595173eca3c848f42121d77c6a3836743a0ec2ee65f39ab934e28",
+          "apps/worker/test/snapshots-public-homepage.test.ts": "file:33188:090880dbd117f7813506b2fb5176a253874dffc4900cdb500d7f88a1cc3bc3e2",
+          "apps/worker/test/snapshots-public-monitor-fragments.test.ts": "file:33188:a97e0cd2e557172773cc282394aba812eaaede230b482332f066a7e247f3fcb4",
+          "apps/worker/test/snapshots-public-status.test.ts": "file:33188:ecd2e730d85c0cc991775be780415fbdb7b97674d3df3e35d4d4529b9dbca049",
+          "apps/worker/test/status-page-logo-url-migration.test.ts": "file:33188:765e9570bb51ad3ccbb6c1753bb32165aee60402c23504c4c3ff57863f2f6a4d",
+          "apps/worker/test/status-page-logo-url-schema.test.ts": "file:33188:a6ac717eea6bae57a53dd7e5ca01ea5f084c14cad12d7c7298bbe3065c754bf9",
+          "docs/plans/2026-07-12-status-page-custom-logo-plan.md": "file:33188:c7ddf66c291abd732323a9f4f93bbe1b0e7f8b828664569f5c6ce261435ef3f7",
+          "docs/specs/status-page-custom-logo.spec.md": "file:33188:634e20f201ac4e7f82716095082d586c826ce591fda96daf0b447aae895f4c26"
+        }
+      },
+      "closed_at": "2026-08-08T16:30:08Z"
     }
   },
   "pending_follow_up": null,
   "last_review": {
     "decision": "pass",
-    "evidence": "UI accessibility follow-up pass: loading gate now announces status politely; AdminLogin error is alert/live and associated with token input via aria-invalid and aria-describedby; Web 5/5, typecheck/lint/diff-check clean.",
+    "evidence": "",
     "artifacts": "",
-    "notes": "",
-    "recorded_at": "2026-07-13T02:58:08Z",
-    "target_kind": "follow_up",
-    "target_id": "follow-up-f70fffd6ccff"
+    "notes": "QA pass: U2 closes. Implementation matches plan; scope apps/web only; hitl browser verification recorded as expected manual follow-up (logo render, absent-logo no img, broken URL onError hide).",
+    "recorded_at": "2026-08-08T16:30:08Z"
   },
   "validated_plan_snapshot": {
-    "plan_path": "docs/plans/2026-07-12-private-status-page-admin-access-plan.md",
-    "plan_signature": "6f7fdcf6597af6f0a228844ed3c51a124726d1a794b7057fc3e364bdcc38052f",
+    "plan_path": "docs/plans/2026-07-12-status-page-custom-logo-plan.md",
+    "plan_signature": "a0bfec35936ee5f06b54af726cd7947afd43a5238d4c1bfac46c20cc2478be16",
+    "summary": "Add an optional per-page external HTTPS logo URL that renders in the public status-page header, flowing through the existing branding ownership chain (`status_pages` → resolved page → public payloads → snapshots → React).",
+    "task": {
+      "origin": "User request \"status page 支持自定义logo\"; brainstorm confirmed option 1 (external URL only, no upload/R2) and favicon out of scope.",
+      "spec": "docs/specs/status-page-custom-logo.spec.md",
+      "output_language": "Human-readable prose is English. Schema fields, API routes, command lines, identifiers, and canonical terms remain literal.",
+      "brainstorm_manifest": "BR-REQ-1, BR-DEC-1, BR-DEC-2, BR-OUT-1, BR-OUT-2",
+      "research": "Branding ownership already flows `status_pages.title`/`description` through `apps/worker/src/public/status-page.ts` resolvers into public status/homepage payload builders and scheduled fast-guard SQL subselects in `status-refresh.ts` (line ~640) and `homepage.ts` (line ~2190); snapshot freshness compares those values, and page edits already call `enqueueStatusPageRefreshes([id], now, 'page-updated')`. Admin status-page CRUD in `routes/admin-status-pages.ts` and `StatusPageForm.tsx` already demonstrate the exact pattern for adding a nullable per-page field (`custom_hostname`). React header in `StatusPage.tsx` renders text-only title/description today; public payload types live in `schemas/public-status.ts` and `apps/web/src/api/types.ts`. Adding `logo_url` is one more field along every one of these established paths.",
+      "d1": "New append-only migration adds nullable `status_pages.logo_url TEXT`; no backfill, existing rows stay logo-less.",
+      "d2": "Logo is an external absolute `http(s)` URL ≤ 2048 chars, validated by parsing only; the Worker never fetches it. Empty string clears to `NULL`.",
+      "d3": "`logo_url` is added to public status/homepage payload and stored snapshot schemas, and to the scheduled fast-guard comparison, so logo edits republish page-qualified snapshots even if the refresh queue row is lost.",
+      "d4": "React header shows the image only when present, `alt=\"\"`, `onError` hides it; absent or broken logo renders exactly today's text header.",
+      "d5": "Favicon remains `/favicon.svg`; no upload/base64/R2 in this slice.",
+      "assumptions": "Stored snapshot guard-version handling for a payload-shape change follows the existing pattern from migrations `0011`/`0012`; the executor will locate the exact guard constant during implementation. All existing resolver `SELECT`s in `status-page.ts` enumerate columns explicitly, so each must add `logo_url`.",
+      "scope_mode": "Two-step vertical slice (Worker contract/storage first, Web rendering second)",
+      "architecture_surface": "`apps/worker/migrations/`, Worker public/schemas/routes/snapshot guard paths, `apps/web/src/api/types.ts`, `apps/web/src/pages/StatusPage.tsx`, `apps/web/src/components/StatusPageForm.tsx`, `apps/web/src/i18n/messages.ts`",
+      "dependencies_known": "yes; existing D1, Zod, snapshot refresh, React patterns are sufficient; no new dependency or service",
+      "verification_path": "focused Worker vitest files (schema/migration, admin CRUD, public payload/snapshot tests), web lint/typecheck, full workspace tests, local migration, browser check of logo rendering and fallback",
+      "blockers": "none",
+      "replan_condition": "if stored snapshot schemas cannot accept the additive field without breaking in-flight snapshot compatibility beyond a guard-version bump, stop and return to planning with the concrete parse-failure evidence"
+    },
     "steps": [
       {
         "number": 1,
         "step_id": "U1",
-        "result": "Private slug APIs enforce one administrator access contract",
-        "verification": "`pnpm --filter @uptimer/worker exec vitest run --config vitest.config.ts test/public-status-pages.test.ts test/public-ui-analytics.test.ts test/public-status.test.ts test/public-page-keys.test.ts test/pages-homepage-worker.test.ts` exits zero; focused tests prove public/private/unknown slug behavior for missing, invalid, and valid Admin tokens across status, incident, maintenance, history, latency, uptime, outage, day-context, and uptime-overview routes, including response cache headers and no private snapshot write",
+        "result": "Worker publishes per-page `logo_url` through the full storage-to-payload contract",
+        "verification": "`pnpm --filter @uptimer/worker exec vitest run --config vitest.config.ts test/status-pages-schema.test.ts test/admin-status-pages.test.ts test/public-status-pages.test.ts test/public-ui-analytics.test.ts test/public-status.test.ts test/snapshots-public-status.test.ts test/snapshots-public-homepage.test.ts && pnpm --filter @uptimer/worker typecheck && pnpm --filter @uptimer/worker migrate:local` exits zero; focused tests prove migration shape, CRUD validation/clear semantics, payload isolation between two pages with different logos, and fast-guard republish on logo-only edits",
+        "scope": [
+          "apps/worker/migrations/",
+          "apps/worker/src/",
+          "apps/worker/test/"
+        ],
         "depends_on": [],
         "discovery_cache": [
           {
             "path": "apps/worker/src/public/status-page.ts",
-            "reason": "current public-only page resolver"
+            "reason": "all resolver SELECTs must add `logo_url`"
           },
           {
-            "path": "apps/worker/src/middleware/auth.ts",
-            "reason": "single Admin token validator"
+            "path": "apps/worker/src/schemas/status-pages.ts",
+            "reason": "input validation pattern mirrors `parseCustomHostnameInput`"
           },
           {
-            "path": "apps/worker/src/routes/public.ts",
-            "reason": "slug-scoped status/history/detail routes and cache policy"
+            "path": "apps/worker/src/routes/admin-status-pages.ts",
+            "reason": "CRUD + `toApi`"
           },
           {
-            "path": "apps/worker/src/routes/public-ui-analytics.ts",
-            "reason": "page-scoped analytics routes"
+            "path": "apps/worker/src/schemas/public-status.ts",
+            "reason": "payload + stored snapshot schemas"
           },
           {
-            "path": "apps/worker/test/public-status-pages.test.ts",
-            "reason": "page isolation harness"
+            "path": "apps/worker/src/public/status-refresh.ts:640",
+            "reason": "fast-guard branding subselects"
           },
           {
-            "path": "apps/worker/test/public-ui-analytics.test.ts",
-            "reason": "analytics authorization matrix"
+            "path": "apps/worker/src/public/homepage.ts:2190",
+            "reason": "homepage fast guard"
           },
           {
-            "path": "apps/worker/test/pages-homepage-worker.test.ts",
-            "reason": "Pages HTML cache harness"
+            "path": "apps/worker/migrations/0017_status_page_custom_hostname.sql",
+            "reason": "most recent additive-column pattern"
           }
         ],
         "parallel_probes": [],
         "agent_hint": null,
         "test_scenarios": [
-          "public slug remains anonymous",
-          "private slug without token returns `404`",
-          "private slug with invalid token returns identical `404`",
-          "unknown slug with valid token remains `404`",
-          "private slug with valid token returns only its page-qualified data",
-          "all authorized private success/error responses are `private, no-store` with `Vary: Authorization`",
-          "public anonymous responses retain existing cache behavior",
-          "private Host resolver remains `NOT_FOUND`",
-          "no query or forwarding header unlocks a private page",
-          "sibling page-scoped endpoints share the same access decision",
-          "authorized data is never written to a shared snapshot"
+          "migration adds nullable `logo_url` without touching other columns",
+          "create/patch accepts valid https URL",
+          "rejects non-http(s) scheme, malformed URL, and >2048 chars with 400",
+          "`''` and explicit `null` clear the value",
+          "omitted patch field leaves value unchanged",
+          "public status and homepage payloads expose resolved page's `logo_url`",
+          "two pages with different logos never cross through snapshots",
+          "logo-only edit invalidates snapshot via queue and fast guard"
         ]
       },
       {
         "number": 2,
         "step_id": "U2",
-        "result": "Administrators reach private pages through the existing login flow",
-        "verification": "`pnpm --filter @uptimer/web exec vitest run --config vitest.config.ts && pnpm --filter @uptimer/web typecheck && pnpm --filter @uptimer/web lint && pnpm --filter @uptimer/worker exec vitest run --config vitest.config.ts test/pages-homepage-worker.test.ts && git diff --check` exits zero; `wrangler pages dev` browser verification opens a private deep link while logged out, returns through `/admin/login`, renders page-qualified status/history/detail data after login, survives refresh, clears private data on logout, rejects an invalid stored token, and proves public/private pages warmed in both orders never cross-serve HTML or browser caches",
+        "result": "Public status page header renders the admin-configured per-page logo with safe fallback",
+        "verification": "`pnpm --filter @uptimer/web lint && pnpm --filter @uptimer/web typecheck && pnpm test` exits zero; local browser verification against the dev stack confirms logo renders in the header when set, header is pixel-equivalent to current text header when unset, a broken URL hides the image without layout break, and the Admin form creates/updates/clears the value with i18n labels in all locales",
+        "scope": [
+          "apps/web/src/"
+        ],
         "depends_on": [
           1
         ],
         "discovery_cache": [
           {
-            "path": "apps/web/public/_worker.js",
-            "reason": "HTML injection, fallback, and cache policy"
+            "path": "apps/web/src/api/types.ts",
+            "reason": "StatusResponse/PublicHomepageResponse/StatusPage contracts"
           },
           {
-            "path": "apps/web/src/app/router.tsx",
-            "reason": "status route gate"
+            "path": "apps/web/src/pages/StatusPage.tsx:490",
+            "reason": "header title/description block"
           },
           {
-            "path": "apps/web/src/app/AuthContext.tsx",
-            "reason": "token verification and auth-sensitive Query reset"
+            "path": "apps/web/src/components/StatusPageForm.tsx:47",
+            "reason": "customHostname field pattern to mirror"
           },
           {
-            "path": "apps/web/src/app/ProtectedRoute.tsx",
-            "reason": "existing safe login handoff pattern"
-          },
-          {
-            "path": "apps/web/src/pages/AdminLogin.tsx",
-            "reason": "post-login return"
-          },
-          {
-            "path": "apps/web/src/pages/StatusPage.tsx",
-            "reason": "initial page query/error routing"
-          },
-          {
-            "path": "apps/web/src/pages/IncidentHistoryPage.tsx",
-            "reason": "private deep link"
-          },
-          {
-            "path": "apps/web/src/pages/MaintenanceHistoryPage.tsx",
-            "reason": "private deep link"
-          },
-          {
-            "path": "apps/web/src/api/client.ts",
-            "reason": "optional Public auth and cache bypass"
+            "path": "apps/web/src/i18n/messages.ts",
+            "reason": "`status_page_form.*` label group"
           }
         ],
         "parallel_probes": [],
         "agent_hint": null,
         "test_scenarios": [
-          "public status routes do not require login",
-          "anonymous private deep link redirects to login only after `NOT_FOUND`",
-          "safe pathname/search/hash return location is preserved",
-          "an absolute/external return target cannot be used",
-          "successful login returns to the private route",
-          "invalid token is cleared and does not loop",
-          "authorized Public API calls include Bearer and `no-store`",
-          "memory and persisted public caches are bypassed",
-          "logout resets auth-sensitive Query keys and removes private content",
-          "Pages never caches stale/branded HTML for a possibly private slug",
-          "private custom hostname returns no-store `404`",
-          "default, public slug, and public custom-host behavior remain unchanged"
+          "form field round-trips create/patch/clear",
+          "invalid URL surfaces the server 400 error",
+          "header shows `h-8 w-8 sm:h-10 sm:w-10 object-contain` image plus title when set",
+          "absent logo leaves DOM without an `<img>`",
+          "`onError` fallback hides broken images",
+          "`document.title` and description rendering unchanged",
+          "en/zh-CN/zh-TW/ja/es labels present"
         ]
       }
-    ]
+    ],
+    "execution_contract_signature": "04df161410ae75aeea8340ea74fd063bbd5703703f41d4dfdf6289e64f5615df"
   },
   "history": [
-    {
-      "at": "2026-07-10T08:03:49Z",
-      "action": "sync_plan_from_imm_plan",
-      "details": {
-        "plan_path": "docs/plans/2026-07-10-multi-public-status-pages-plan.md",
-        "plan_signature": "cae6b9035f07d3b5394899b687a5fdc741ca67ae5931038091b14c9d87b77cc3",
-        "same_plan": false
-      }
-    },
-    {
-      "at": "2026-07-10T08:04:32Z",
-      "action": "sync_plan_from_imm_plan",
-      "details": {
-        "plan_path": "docs/plans/2026-07-10-multi-public-status-pages-plan.md",
-        "plan_signature": "4059481a62a6805a321717972366981c54d4000adf0fee08080453d8e8a6abbf",
-        "same_plan": true
-      }
-    },
-    {
-      "at": "2026-07-10T10:46:58Z",
-      "action": "review_step",
-      "details": {
-        "step_number": 1,
-        "step_id": "U1",
-        "decision": "rework",
-        "target_kind": "plan_step"
-      }
-    },
-    {
-      "at": "2026-07-10T10:48:50Z",
-      "action": "review_step",
-      "details": {
-        "step_number": 1,
-        "step_id": "U1",
-        "decision": "pass",
-        "target_kind": "plan_step"
-      }
-    },
-    {
-      "at": "2026-07-10T10:58:50Z",
-      "action": "review_step",
-      "details": {
-        "step_number": 2,
-        "step_id": "U2",
-        "decision": "pass",
-        "target_kind": "plan_step"
-      }
-    },
-    {
-      "at": "2026-07-10T13:54:11Z",
-      "action": "review_step",
-      "details": {
-        "step_number": 3,
-        "step_id": "U3",
-        "decision": "rework",
-        "target_kind": "plan_step"
-      }
-    },
-    {
-      "at": "2026-07-10T14:00:59Z",
-      "action": "review_step",
-      "details": {
-        "step_number": 3,
-        "step_id": "U3",
-        "decision": "rework",
-        "target_kind": "plan_step"
-      }
-    },
-    {
-      "at": "2026-07-10T14:05:46Z",
-      "action": "review_step",
-      "details": {
-        "step_number": 3,
-        "step_id": "U3",
-        "decision": "replan",
-        "target_kind": "plan_step"
-      }
-    },
-    {
-      "at": "2026-07-10T14:06:19Z",
-      "action": "sync_plan_from_imm_plan",
-      "details": {
-        "plan_path": "docs/plans/2026-07-10-multi-public-status-pages-plan.md",
-        "plan_signature": "4059481a62a6805a321717972366981c54d4000adf0fee08080453d8e8a6abbf",
-        "same_plan": true
-      }
-    },
-    {
-      "at": "2026-07-10T14:09:15Z",
-      "action": "review_step",
-      "details": {
-        "step_number": 3,
-        "step_id": "U3",
-        "decision": "pass",
-        "target_kind": "plan_step"
-      }
-    },
-    {
-      "at": "2026-07-11T01:42:50Z",
-      "action": "review_step",
-      "details": {
-        "step_number": 4,
-        "step_id": "U4",
-        "decision": "replan",
-        "target_kind": "plan_step"
-      }
-    },
     {
       "at": "2026-07-11T02:40:23Z",
       "action": "sync_plan_from_imm_plan",
@@ -990,14 +1172,206 @@
       "details": {
         "plan_path": "docs/plans/2026-07-12-private-status-page-admin-access-plan.md"
       }
+    },
+    {
+      "at": "2026-08-08T16:04:47Z",
+      "action": "sync_plan_from_imm_plan",
+      "details": {
+        "plan_path": "docs/plans/2026-07-12-status-page-custom-logo-plan.md",
+        "plan_signature": "a0bfec35936ee5f06b54af726cd7947afd43a5238d4c1bfac46c20cc2478be16",
+        "same_plan": false
+      }
+    },
+    {
+      "at": "2026-08-08T16:05:37Z",
+      "action": "activate_step",
+      "details": {
+        "step_number": 1,
+        "step_id": "U1",
+        "plan_path": "docs/plans/2026-07-12-status-page-custom-logo-plan.md"
+      }
+    },
+    {
+      "at": "2026-08-08T16:23:33Z",
+      "action": "record_execution_evidence",
+      "details": {
+        "step_number": 1,
+        "step_id": "U1",
+        "changed_files": [
+          "apps/worker/migrations/0018_status_page_logo_url.sql",
+          "apps/worker/src/schemas/status-pages.ts",
+          "apps/worker/src/routes/admin-status-pages.ts",
+          "apps/worker/src/public/status-page.ts",
+          "apps/worker/src/public/status.ts",
+          "apps/worker/src/public/status-refresh.ts",
+          "apps/worker/src/public/homepage.ts",
+          "apps/worker/src/public/homepage-guard-state.ts",
+          "apps/worker/src/internal/homepage-refresh-core.ts",
+          "apps/worker/src/schemas/public-status.ts",
+          "apps/worker/src/schemas/public-homepage.ts",
+          "apps/worker/src/snapshots/public-homepage-read.ts",
+          "apps/worker/src/snapshots/public-monitor-fragments.ts",
+          "apps/worker/src/routes/public.ts",
+          "apps/worker/test/status-page-logo-url-migration.test.ts",
+          "apps/worker/test/status-page-logo-url-schema.test.ts",
+          "apps/worker/test/admin-status-pages.test.ts",
+          "apps/worker/test/public-status-pages.test.ts",
+          "apps/worker/test/public-fast-path-guards.test.ts",
+          "apps/worker/test/public-status.test.ts",
+          "apps/worker/test/snapshots-public-status.test.ts",
+          "apps/worker/test/snapshots-public-homepage.test.ts",
+          "apps/worker/test/homepage-guard-state.test.ts",
+          "apps/worker/test/public-homepage-compute.test.ts",
+          "apps/worker/test/public-homepage-routes.test.ts",
+          "apps/worker/test/snapshots-public-monitor-fragments.test.ts"
+        ]
+      }
+    },
+    {
+      "at": "2026-08-08T16:26:03Z",
+      "action": "review_step",
+      "details": {
+        "step_number": 1,
+        "step_id": "U1",
+        "decision": "pass",
+        "target_kind": "plan_step"
+      }
+    },
+    {
+      "at": "2026-08-08T16:26:10Z",
+      "action": "activate_step",
+      "details": {
+        "step_number": 2,
+        "step_id": "U2",
+        "plan_path": "docs/plans/2026-07-12-status-page-custom-logo-plan.md"
+      }
+    },
+    {
+      "at": "2026-08-08T16:28:32Z",
+      "action": "record_execution_evidence",
+      "details": {
+        "step_number": 2,
+        "step_id": "U2",
+        "changed_files": [
+          "apps/web/src/api/types.ts",
+          "apps/web/src/pages/StatusPage.tsx",
+          "apps/web/src/components/StatusPageForm.tsx",
+          "apps/web/src/i18n/messages.ts",
+          "apps/web/src/main.tsx"
+        ]
+      }
+    },
+    {
+      "at": "2026-08-08T16:30:08Z",
+      "action": "review_step",
+      "details": {
+        "step_number": 2,
+        "step_id": "U2",
+        "decision": "pass",
+        "target_kind": "plan_step"
+      }
+    },
+    {
+      "at": "2026-08-08T16:34:46Z",
+      "action": "review_gate_pass",
+      "details": {
+        "gate": "imm-code-review",
+        "reviewed_changed_files": [
+          "apps/web/src/api/types.ts",
+          "apps/web/src/components/StatusPageForm.tsx",
+          "apps/web/src/i18n/messages.ts",
+          "apps/web/src/main.tsx",
+          "apps/web/src/pages/StatusPage.tsx",
+          "apps/worker/migrations/0018_status_page_logo_url.sql",
+          "apps/worker/src/internal/homepage-refresh-core.ts",
+          "apps/worker/src/public/homepage-guard-state.ts",
+          "apps/worker/src/public/homepage.ts",
+          "apps/worker/src/public/status-page.ts",
+          "apps/worker/src/public/status-refresh.ts",
+          "apps/worker/src/public/status.ts",
+          "apps/worker/src/routes/admin-status-pages.ts",
+          "apps/worker/src/routes/public.ts",
+          "apps/worker/src/schemas/public-homepage.ts",
+          "apps/worker/src/schemas/public-status.ts",
+          "apps/worker/src/schemas/status-pages.ts",
+          "apps/worker/src/snapshots/public-homepage-read.ts",
+          "apps/worker/src/snapshots/public-monitor-fragments.ts",
+          "apps/worker/test/admin-status-pages.test.ts",
+          "apps/worker/test/homepage-guard-state.test.ts",
+          "apps/worker/test/public-fast-path-guards.test.ts",
+          "apps/worker/test/public-homepage-compute.test.ts",
+          "apps/worker/test/public-homepage-routes.test.ts",
+          "apps/worker/test/public-status-pages.test.ts",
+          "apps/worker/test/public-status.test.ts",
+          "apps/worker/test/snapshots-public-homepage.test.ts",
+          "apps/worker/test/snapshots-public-monitor-fragments.test.ts",
+          "apps/worker/test/snapshots-public-status.test.ts",
+          "apps/worker/test/status-page-logo-url-migration.test.ts",
+          "apps/worker/test/status-page-logo-url-schema.test.ts"
+        ],
+        "evidence_ref": "U1+U2 logo_url full-chain implementation complete, correct, safe; acceptance criteria 1-6 met; worker 595 tests + web lint/typecheck + workspace tests pass."
+      }
+    },
+    {
+      "at": "2026-08-08T16:35:41Z",
+      "action": "review_gate_pass",
+      "details": {
+        "gate": "imm-ui-review",
+        "reviewed_changed_files": [
+          "apps/web/src/api/types.ts",
+          "apps/web/src/components/StatusPageForm.tsx",
+          "apps/web/src/i18n/messages.ts",
+          "apps/web/src/main.tsx",
+          "apps/web/src/pages/StatusPage.tsx",
+          "apps/worker/migrations/0018_status_page_logo_url.sql",
+          "apps/worker/src/internal/homepage-refresh-core.ts",
+          "apps/worker/src/public/homepage-guard-state.ts",
+          "apps/worker/src/public/homepage.ts",
+          "apps/worker/src/public/status-page.ts",
+          "apps/worker/src/public/status-refresh.ts",
+          "apps/worker/src/public/status.ts",
+          "apps/worker/src/routes/admin-status-pages.ts",
+          "apps/worker/src/routes/public.ts",
+          "apps/worker/src/schemas/public-homepage.ts",
+          "apps/worker/src/schemas/public-status.ts",
+          "apps/worker/src/schemas/status-pages.ts",
+          "apps/worker/src/snapshots/public-homepage-read.ts",
+          "apps/worker/src/snapshots/public-monitor-fragments.ts",
+          "apps/worker/test/admin-status-pages.test.ts",
+          "apps/worker/test/homepage-guard-state.test.ts",
+          "apps/worker/test/public-fast-path-guards.test.ts",
+          "apps/worker/test/public-homepage-compute.test.ts",
+          "apps/worker/test/public-homepage-routes.test.ts",
+          "apps/worker/test/public-status-pages.test.ts",
+          "apps/worker/test/public-status.test.ts",
+          "apps/worker/test/snapshots-public-homepage.test.ts",
+          "apps/worker/test/snapshots-public-monitor-fragments.test.ts",
+          "apps/worker/test/snapshots-public-status.test.ts",
+          "apps/worker/test/status-page-logo-url-migration.test.ts",
+          "apps/worker/test/status-page-logo-url-schema.test.ts"
+        ],
+        "evidence_ref": "UI review pass: conditional logo render additive, no layout regression, broken-URL fallback clean, form/i18n consistent, one non-blocking nit recorded."
+      }
+    },
+    {
+      "at": "2026-08-08T16:36:54Z",
+      "action": "finish_reset",
+      "details": {
+        "plan_path": "docs/plans/2026-07-12-status-page-custom-logo-plan.md"
+      }
     }
   ],
+  "review_follow_up_start_index": 4,
   "requires_replan": false,
   "runtime_status": "idle",
-  "plan_path": "docs/plans/2026-07-12-private-status-page-admin-access-plan.md",
-  "plan_summary": "Allow an authenticated administrator to access private status pages on platform-host `/status/:slug` routes without exposing page existence or private content through caches.",
-  "plan_signature": "6f7fdcf6597af6f0a228844ed3c51a124726d1a794b7057fc3e364bdcc38052f",
-  "plan_last_validated_at": "2026-07-12T13:12:40Z",
+  "closed_plan_history": [],
+  "plan_transition_history": [],
+  "plan_termination_history": [],
+  "plan_terminal": null,
+  "plan_path": "docs/plans/2026-07-12-status-page-custom-logo-plan.md",
+  "plan_summary": "Add an optional per-page external HTTPS logo URL that renders in the public status-page header, flowing through the existing branding ownership chain (`status_pages` → resolved page → public payloads → snapshots → React).",
+  "plan_signature": "a0bfec35936ee5f06b54af726cd7947afd43a5238d4c1bfac46c20cc2478be16",
+  "plan_last_validated_at": "2026-08-08T16:04:47Z",
   "completed_steps": [
     1,
     2
@@ -1010,55 +1384,83 @@
         "gate": "imm-code-review",
         "decision": "pass",
         "reviewed_changed_files": [
-          "apps/web/package.json",
-          "apps/web/public/_worker.js",
-          "apps/web/src/app/StatusPageAccessGate.tsx",
-          "apps/web/src/app/loginReturnTarget.test.ts",
-          "apps/web/src/app/loginReturnTarget.ts",
-          "apps/web/src/app/router.tsx",
-          "apps/web/src/pages/AdminLogin.tsx",
-          "apps/web/vitest.config.ts",
+          "apps/web/src/api/types.ts",
+          "apps/web/src/components/StatusPageForm.tsx",
+          "apps/web/src/i18n/messages.ts",
+          "apps/web/src/main.tsx",
+          "apps/web/src/pages/StatusPage.tsx",
+          "apps/worker/migrations/0018_status_page_logo_url.sql",
+          "apps/worker/src/internal/homepage-refresh-core.ts",
+          "apps/worker/src/public/homepage-guard-state.ts",
+          "apps/worker/src/public/homepage.ts",
           "apps/worker/src/public/status-page.ts",
+          "apps/worker/src/public/status-refresh.ts",
           "apps/worker/src/public/status.ts",
-          "apps/worker/src/routes/public-ui-analytics.ts",
+          "apps/worker/src/routes/admin-status-pages.ts",
           "apps/worker/src/routes/public.ts",
-          "apps/worker/test/pages-homepage-worker.test.ts",
+          "apps/worker/src/schemas/public-homepage.ts",
+          "apps/worker/src/schemas/public-status.ts",
+          "apps/worker/src/schemas/status-pages.ts",
+          "apps/worker/src/snapshots/public-homepage-read.ts",
+          "apps/worker/src/snapshots/public-monitor-fragments.ts",
+          "apps/worker/test/admin-status-pages.test.ts",
+          "apps/worker/test/homepage-guard-state.test.ts",
           "apps/worker/test/public-fast-path-guards.test.ts",
           "apps/worker/test/public-homepage-compute.test.ts",
+          "apps/worker/test/public-homepage-routes.test.ts",
           "apps/worker/test/public-status-pages.test.ts",
-          "pnpm-lock.yaml"
+          "apps/worker/test/public-status.test.ts",
+          "apps/worker/test/snapshots-public-homepage.test.ts",
+          "apps/worker/test/snapshots-public-monitor-fragments.test.ts",
+          "apps/worker/test/snapshots-public-status.test.ts",
+          "apps/worker/test/status-page-logo-url-migration.test.ts",
+          "apps/worker/test/status-page-logo-url-schema.test.ts"
         ],
-        "changed_files_signature": "cf0774628a679c40340809b61439fe52707aa458599696b8ce2062a5b74ad546",
-        "evidence_ref": "Final working-tree code review pass: reviewed current diff and untracked files; F1/F2 fixed; no material findings. Persisted review surface synchronized with State Ledger collected files; Worker 75/75 + Web 5/5 + typecheck/lint/diff-check clean.",
+        "changed_files_signature": "1fadd1bf7436e867ab596327c19a91c505f19a9c95887dabc6ecc1c9b3e5dbd8",
+        "evidence_ref": "U1+U2 logo_url full-chain implementation complete, correct, safe; acceptance criteria 1-6 met; worker 595 tests + web lint/typecheck + workspace tests pass.",
         "reviewer_skill": "imm-code-review",
-        "reviewed_at": "2026-07-13T02:55:59Z"
+        "reviewed_at": "2026-08-08T16:34:46Z"
       },
       "imm-ui-review": {
         "gate": "imm-ui-review",
         "decision": "pass",
         "reviewed_changed_files": [
-          "apps/web/package.json",
-          "apps/web/public/_worker.js",
-          "apps/web/src/app/StatusPageAccessGate.tsx",
-          "apps/web/src/app/loginReturnTarget.test.ts",
-          "apps/web/src/app/loginReturnTarget.ts",
-          "apps/web/src/app/router.tsx",
-          "apps/web/src/pages/AdminLogin.tsx",
-          "apps/web/vitest.config.ts",
+          "apps/web/src/api/types.ts",
+          "apps/web/src/components/StatusPageForm.tsx",
+          "apps/web/src/i18n/messages.ts",
+          "apps/web/src/main.tsx",
+          "apps/web/src/pages/StatusPage.tsx",
+          "apps/worker/migrations/0018_status_page_logo_url.sql",
+          "apps/worker/src/internal/homepage-refresh-core.ts",
+          "apps/worker/src/public/homepage-guard-state.ts",
+          "apps/worker/src/public/homepage.ts",
           "apps/worker/src/public/status-page.ts",
+          "apps/worker/src/public/status-refresh.ts",
           "apps/worker/src/public/status.ts",
-          "apps/worker/src/routes/public-ui-analytics.ts",
+          "apps/worker/src/routes/admin-status-pages.ts",
           "apps/worker/src/routes/public.ts",
-          "apps/worker/test/pages-homepage-worker.test.ts",
+          "apps/worker/src/schemas/public-homepage.ts",
+          "apps/worker/src/schemas/public-status.ts",
+          "apps/worker/src/schemas/status-pages.ts",
+          "apps/worker/src/snapshots/public-homepage-read.ts",
+          "apps/worker/src/snapshots/public-monitor-fragments.ts",
+          "apps/worker/test/admin-status-pages.test.ts",
+          "apps/worker/test/homepage-guard-state.test.ts",
           "apps/worker/test/public-fast-path-guards.test.ts",
           "apps/worker/test/public-homepage-compute.test.ts",
+          "apps/worker/test/public-homepage-routes.test.ts",
           "apps/worker/test/public-status-pages.test.ts",
-          "pnpm-lock.yaml"
+          "apps/worker/test/public-status.test.ts",
+          "apps/worker/test/snapshots-public-homepage.test.ts",
+          "apps/worker/test/snapshots-public-monitor-fragments.test.ts",
+          "apps/worker/test/snapshots-public-status.test.ts",
+          "apps/worker/test/status-page-logo-url-migration.test.ts",
+          "apps/worker/test/status-page-logo-url-schema.test.ts"
         ],
-        "changed_files_signature": "cf0774628a679c40340809b61439fe52707aa458599696b8ce2062a5b74ad546",
-        "evidence_ref": "Final UI review pass: current uncommitted UI diff inspected; loading gate announces access check via role=status/aria-live; AdminLogin errors use aria-invalid/aria-describedby/role=alert/aria-live; recorded Chrome HITL matrix confirms deep-link login return, refresh, logout, invalid-token recovery, cache isolation, and public UX; Web 5/5 + typecheck/lint/diff-check clean.",
+        "changed_files_signature": "1fadd1bf7436e867ab596327c19a91c505f19a9c95887dabc6ecc1c9b3e5dbd8",
+        "evidence_ref": "UI review pass: conditional logo render additive, no layout regression, broken-URL fallback clean, form/i18n consistent, one non-blocking nit recorded.",
         "reviewer_skill": "imm-ui-review",
-        "reviewed_at": "2026-07-13T02:59:53Z"
+        "reviewed_at": "2026-08-08T16:35:41Z"
       }
     }
   },
@@ -1082,10 +1484,20 @@
           "apps/worker/test/public-homepage-compute.test.ts",
           "apps/worker/test/public-fast-path-guards.test.ts"
         ],
-        "verification_result": "pass: 2 files, 19/19 tests passed; git diff --check passed; focused rg confirms no legacy site_title/site_description setting rows remain",
-        "verification_command": "pnpm --filter @uptimer/worker exec vitest run --config vitest.config.ts test/public-homepage-compute.test.ts test/public-fast-path-guards.test.ts && git diff --check",
         "notes": "Mock branding now comes from status_pages; homepage assertions explicitly verify page-local title and description. Scope limited to the two follow-up test files; no production changes or abstractions.",
-        "recorded_at": "2026-07-11T16:34:50Z"
+        "recorded_at": "2026-07-11T16:34:50Z",
+        "evidence_schema": "structured-v1",
+        "status": "passed",
+        "checks": [
+          {
+            "kind": "manual",
+            "command": "pnpm --filter @uptimer/worker exec vitest run --config vitest.config.ts test/public-homepage-compute.test.ts test/public-fast-path-guards.test.ts && git diff --check",
+            "status": "passed",
+            "exit_code": null,
+            "summary": "pass: 2 files, 19/19 tests passed; git diff --check passed; focused rg confirms no legacy site_title/site_description setting rows remain"
+          }
+        ],
+        "migrated_from": "legacy-execution-evidence"
       },
       "opened_at": "2026-07-11T16:33:54Z",
       "round": 1,
@@ -1115,10 +1527,20 @@
           "apps/worker/src/routes/public-ui-analytics.ts",
           "apps/worker/test/public-status-pages.test.ts"
         ],
-        "verification_result": "pass: F1 fixed; added applyPrivateNoStore post-middleware to publicUiAnalyticsRoutes matching publicRoutes pattern; new test asserts 404 + private,no-store + Vary:Authorization for /analytics/uptime?__status_page=private with missing and invalid tokens; 74/74 focused tests; typecheck/lint/diff-check clean.",
-        "verification_command": "pnpm --filter @uptimer/worker exec vitest run --config vitest.config.ts test/public-status-pages.test.ts test/public-ui-analytics.test.ts test/public-status.test.ts test/public-page-keys.test.ts test/pages-homepage-worker.test.ts && pnpm --filter @uptimer/worker typecheck && pnpm --filter @uptimer/worker lint && git diff --check",
         "notes": "",
-        "recorded_at": "2026-07-13T02:25:42Z"
+        "recorded_at": "2026-07-13T02:25:42Z",
+        "evidence_schema": "structured-v1",
+        "status": "passed",
+        "checks": [
+          {
+            "kind": "manual",
+            "command": "pnpm --filter @uptimer/worker exec vitest run --config vitest.config.ts test/public-status-pages.test.ts test/public-ui-analytics.test.ts test/public-status.test.ts test/public-page-keys.test.ts test/pages-homepage-worker.test.ts && pnpm --filter @uptimer/worker typecheck && pnpm --filter @uptimer/worker lint && git diff --check",
+            "status": "passed",
+            "exit_code": null,
+            "summary": "pass: F1 fixed; added applyPrivateNoStore post-middleware to publicUiAnalyticsRoutes matching publicRoutes pattern; new test asserts 404 + private,no-store + Vary:Authorization for /analytics/uptime?__status_page=private with missing and invalid tokens; 74/74 focused tests; typecheck/lint/diff-check clean."
+          }
+        ],
+        "migrated_from": "legacy-execution-evidence"
       },
       "opened_at": "2026-07-13T02:24:04Z",
       "round": 2,
@@ -1148,10 +1570,20 @@
           "apps/worker/src/routes/public-ui-analytics.ts",
           "apps/worker/test/public-status-pages.test.ts"
         ],
-        "verification_result": "pass: F2 fixed; normalizeAnalyticsUptimeCacheKeyUrl now preserves __status_page in the cache key, preventing cross-page cache poisoning; exported function and added unit test verifying pub vs private produce distinct cache keys; 75/75 focused tests; typecheck/lint/diff-check clean.",
-        "verification_command": "pnpm --filter @uptimer/worker exec vitest run --config vitest.config.ts test/public-status-pages.test.ts test/public-ui-analytics.test.ts test/public-status.test.ts test/public-page-keys.test.ts test/pages-homepage-worker.test.ts && pnpm --filter @uptimer/worker typecheck && pnpm --filter @uptimer/worker lint && git diff --check",
         "notes": "",
-        "recorded_at": "2026-07-13T02:42:57Z"
+        "recorded_at": "2026-07-13T02:42:57Z",
+        "evidence_schema": "structured-v1",
+        "status": "passed",
+        "checks": [
+          {
+            "kind": "manual",
+            "command": "pnpm --filter @uptimer/worker exec vitest run --config vitest.config.ts test/public-status-pages.test.ts test/public-ui-analytics.test.ts test/public-status.test.ts test/public-page-keys.test.ts test/pages-homepage-worker.test.ts && pnpm --filter @uptimer/worker typecheck && pnpm --filter @uptimer/worker lint && git diff --check",
+            "status": "passed",
+            "exit_code": null,
+            "summary": "pass: F2 fixed; normalizeAnalyticsUptimeCacheKeyUrl now preserves __status_page in the cache key, preventing cross-page cache poisoning; exported function and added unit test verifying pub vs private produce distinct cache keys; 75/75 focused tests; typecheck/lint/diff-check clean."
+          }
+        ],
+        "migrated_from": "legacy-execution-evidence"
       },
       "opened_at": "2026-07-13T02:36:55Z",
       "round": 3,
@@ -1181,10 +1613,20 @@
           "apps/web/src/app/StatusPageAccessGate.tsx",
           "apps/web/src/pages/AdminLogin.tsx"
         ],
-        "verification_result": "pass: added role=status + aria-live polite to neutral access-check loading state; added aria-invalid, aria-describedby, role=alert, and aria-live polite to AdminLogin error semantics. Web Vitest 5/5, typecheck, lint, and git diff --check pass.",
-        "verification_command": "pnpm --filter @uptimer/web exec vitest run --config vitest.config.ts && pnpm --filter @uptimer/web typecheck && pnpm --filter @uptimer/web lint && git diff --check",
         "notes": "",
-        "recorded_at": "2026-07-13T02:56:49Z"
+        "recorded_at": "2026-07-13T02:56:49Z",
+        "evidence_schema": "structured-v1",
+        "status": "failed",
+        "checks": [
+          {
+            "kind": "manual",
+            "command": "pnpm --filter @uptimer/web exec vitest run --config vitest.config.ts && pnpm --filter @uptimer/web typecheck && pnpm --filter @uptimer/web lint && git diff --check",
+            "status": "failed",
+            "exit_code": null,
+            "summary": "pass: added role=status + aria-live polite to neutral access-check loading state; added aria-invalid, aria-describedby, role=alert, and aria-live polite to AdminLogin error semantics. Web Vitest 5/5, typecheck, lint, and git diff --check pass."
+          }
+        ],
+        "migrated_from": "legacy-execution-evidence"
       },
       "opened_at": "2026-07-13T02:56:15Z",
       "round": 4,
@@ -1203,5 +1645,6 @@
     "round": 4,
     "completed_at": "2026-07-13T02:58:08Z",
     "reported_at": "2026-07-13T02:58:14Z"
-  }
+  },
+  "plan_execution_contract_signature": "04df161410ae75aeea8340ea74fd063bbd5703703f41d4dfdf6289e64f5615df"
 }

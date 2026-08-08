@@ -1,0 +1,16 @@
+{
+  "manifest_version": 1,
+  "migration_id": "bffbc7ec94966585ea96cf56ecf4801874f91a9572e00fe9ace69a9e3e036fc3",
+  "status": "committed",
+  "created_at": "2026-08-08T16:04:33.725Z",
+  "files": [
+    {
+      "relative_path": ".imm/memory/current_iteration.json",
+      "sha256": "434efdd732a884a5e9cf17cd9c1c10e82f94fb059e40caca0bb3ea50c16b3d90",
+      "after_sha256": "297a85488acc2792d5d7be6c684a38a7cd5c235f426c226f1fbb64aefb0718b6",
+      "backup_file": "backup-0.txt",
+      "mode": 384
+    }
+  ],
+  "completed_at": "2026-08-08T16:04:33.727Z"
+}

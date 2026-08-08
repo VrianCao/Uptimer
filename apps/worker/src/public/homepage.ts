@@ -65,6 +65,7 @@ type HomepageMonitorStatus = HomepageMonitorCard['status'];
 type HomepagePublicSettings = Awaited<ReturnType<typeof readPublicSiteSettings>> & {
   site_title: string;
   site_description: string;
+  logo_url: string | null;
 };
 const HOMEPAGE_FAST_PUBLIC_LOCALES = new Set<HomepagePublicSettings['site_locale']>([
   'auto',
@@ -254,6 +255,7 @@ function hasMatchingHomepagePublicSettings(
   return (
     snapshot.site_title === settings.site_title &&
     snapshot.site_description === settings.site_description &&
+    snapshot.logo_url === settings.logo_url &&
     snapshot.site_locale === settings.site_locale &&
     snapshot.site_timezone === settings.site_timezone &&
     snapshot.uptime_rating_level === settings.uptime_rating_level
@@ -280,9 +282,15 @@ function normalizeHomepageFastGuardString(
   return value;
 }
 
+function normalizeHomepageFastGuardOptionalUrl(value: string | null | undefined): string | null {
+  if (typeof value !== 'string' || value.length === 0 || value.length > 2048) return null;
+  return value;
+}
+
 function normalizeHomepageFastGuardSettings(row: {
   site_title_value: string | null | undefined;
   site_description_value: string | null | undefined;
+  logo_url_value: string | null | undefined;
   site_locale_value: string | null | undefined;
   site_timezone_value: string | null | undefined;
   uptime_rating_level_value: string | null | undefined;
@@ -299,6 +307,7 @@ function normalizeHomepageFastGuardSettings(row: {
       max: 500,
       allowEmpty: true,
     }),
+    logo_url: normalizeHomepageFastGuardOptionalUrl(row.logo_url_value),
     site_locale: HOMEPAGE_FAST_PUBLIC_LOCALES.has(
       (row.site_locale_value ?? '') as HomepagePublicSettings['site_locale'],
     )
@@ -1511,6 +1520,7 @@ export function homepageFromStatusPayload(
     monitor_count_total: status.monitors.length,
     site_title: status.site_title,
     site_description: status.site_description,
+    logo_url: status.logo_url,
     site_locale: status.site_locale,
     site_timezone: status.site_timezone,
     uptime_rating_level: status.uptime_rating_level,
@@ -2197,6 +2207,11 @@ async function readHomepageScheduledFastGuardState(
           WHERE slug = 'default' AND is_public = 1
         ) AS site_description_value,
         (
+          SELECT logo_url
+          FROM status_pages
+          WHERE slug = 'default' AND is_public = 1
+        ) AS logo_url_value,
+        (
           SELECT value
           FROM settings
           WHERE key = 'site_locale'
@@ -2265,6 +2280,7 @@ async function readHomepageScheduledFastGuardState(
     await statement.bind(now).first<{
       site_title_value: string | null;
       site_description_value: string | null;
+      logo_url_value: string | null;
       site_locale_value: string | null;
       site_timezone_value: string | null;
       uptime_rating_level_value: string | null;
@@ -2282,6 +2298,7 @@ async function readHomepageScheduledFastGuardState(
     settings: normalizeHomepageFastGuardSettings({
       site_title_value: row?.site_title_value,
       site_description_value: row?.site_description_value,
+      logo_url_value: row?.logo_url_value,
       site_locale_value: row?.site_locale_value,
       site_timezone_value: row?.site_timezone_value,
       uptime_rating_level_value: row?.uptime_rating_level_value,
@@ -2473,6 +2490,7 @@ export async function tryComputePublicHomepagePayloadFromScheduledRuntimeUpdates
     monitor_count_total: monitorData.monitorCountTotal,
     site_title: settings.site_title,
     site_description: settings.site_description,
+    logo_url: settings.logo_url,
     site_locale: settings.site_locale,
     site_timezone: settings.site_timezone,
     uptime_rating_level: monitorData.uptimeRatingLevel,
@@ -2516,7 +2534,7 @@ export async function computePublicHomepagePayload(
       readPublicSiteSettings(db),
       resolveDefaultPublicStatusPage(db),
     ]);
-    return { ...settings, site_title: page.title, site_description: page.description };
+    return { ...settings, site_title: page.title, site_description: page.description, logo_url: page.logo_url };
   });
   const maintenanceWindowsPromise = withTraceAsync(
     trace,
@@ -2611,6 +2629,7 @@ export async function computePublicHomepagePayload(
     monitor_count_total: monitorData.monitorCountTotal,
     site_title: settings.site_title,
     site_description: settings.site_description,
+    logo_url: settings.logo_url,
     site_locale: settings.site_locale,
     site_timezone: settings.site_timezone,
     uptime_rating_level: monitorData.uptimeRatingLevel,
@@ -2646,6 +2665,7 @@ export async function computePublicHomepageArtifactPayload(
     ...settings,
     site_title: page.title,
     site_description: page.description,
+    logo_url: page.logo_url,
   }));
   const bootstrapRowsPromise = listHomepageMonitorRows(db, includeHiddenMonitors);
   const maintenanceWindowsPromise = listVisibleMaintenanceWindows(db, now, includeHiddenMonitors);
@@ -2681,6 +2701,7 @@ export async function computePublicHomepageArtifactPayload(
     monitor_count_total: summaryData.monitorCountTotal,
     site_title: settings.site_title,
     site_description: settings.site_description,
+    logo_url: settings.logo_url,
     site_locale: settings.site_locale,
     site_timezone: settings.site_timezone,
     uptime_rating_level: settings.uptime_rating_level,

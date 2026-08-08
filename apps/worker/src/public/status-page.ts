@@ -7,6 +7,7 @@ export type PublicStatusPage = {
   title: string;
   description: string;
   custom_hostname: string | null;
+  logo_url: string | null;
 };
 
 type StatusPageRow = PublicStatusPage & { is_public: number };
@@ -26,7 +27,7 @@ export async function resolvePublicStatusPage(
   const page = await db
     .prepare(
       `
-        SELECT id, slug, name, title, description, custom_hostname
+        SELECT id, slug, name, title, description, custom_hostname, logo_url
         FROM status_pages
         WHERE slug = ?1 AND is_public = 1
       `,
@@ -49,7 +50,7 @@ export async function resolveAccessibleStatusPage(
   const row = await db
     .prepare(
       `
-        SELECT id, slug, name, title, description, custom_hostname, is_public
+        SELECT id, slug, name, title, description, custom_hostname, logo_url, is_public
         FROM status_pages
         WHERE slug = ?1
       `,
@@ -84,7 +85,7 @@ export async function resolveAccessibleStatusPageById(
   const row = await db
     .prepare(
       `
-        SELECT id, slug, name, title, description, custom_hostname, is_public
+        SELECT id, slug, name, title, description, custom_hostname, logo_url, is_public
         FROM status_pages
         WHERE id = ?1
       `,
@@ -106,7 +107,7 @@ export async function resolvePublicStatusPageById(
   const page = await db
     .prepare(
       `
-        SELECT id, slug, name, title, description, custom_hostname
+        SELECT id, slug, name, title, description, custom_hostname, logo_url
         FROM status_pages
         WHERE id = ?1 AND is_public = 1
       `,
@@ -184,7 +185,7 @@ export async function resolvePublicStatusPageByHostname(
   const page = await db
     .prepare(
       `
-        SELECT id, slug, name, title, description, custom_hostname
+        SELECT id, slug, name, title, description, custom_hostname, logo_url
         FROM status_pages
         WHERE custom_hostname = ?1 AND is_public = 1
       `,

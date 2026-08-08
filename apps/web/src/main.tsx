@@ -90,6 +90,7 @@ function homepageFromStatus(status: StatusResponse): PublicHomepageResponse {
     monitor_count_total: status.monitors.length,
     site_title: status.site_title,
     site_description: status.site_description,
+    logo_url: status.logo_url,
     site_locale: status.site_locale,
     site_timezone: status.site_timezone,
     uptime_rating_level: status.uptime_rating_level,

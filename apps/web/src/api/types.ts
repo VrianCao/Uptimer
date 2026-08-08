@@ -128,6 +128,7 @@ export interface StatusResponse {
   generated_at: number;
   site_title: string;
   site_description: string;
+  logo_url: string | null;
   site_locale: LocaleSetting;
   site_timezone: string;
   uptime_rating_level: 1 | 2 | 3 | 4 | 5;
@@ -194,6 +195,7 @@ export interface PublicHomepageResponse {
   monitor_count_total: number;
   site_title: string;
   site_description: string;
+  logo_url: string | null;
   site_locale: LocaleSetting;
   site_timezone: string;
   uptime_rating_level: UptimeRatingLevel;
@@ -591,6 +593,7 @@ export interface StatusPage {
   title: string;
   description: string;
   custom_hostname: string | null;
+  logo_url: string | null;
   is_public: boolean;
   monitor_ids: number[];
   created_at: number;
@@ -608,6 +611,7 @@ export interface CreateStatusPageInput {
   description?: string;
   is_public?: boolean;
   custom_hostname?: string | null;
+  logo_url?: string | null;
   monitor_ids?: number[];
 }
 
@@ -618,6 +622,7 @@ export interface PatchStatusPageInput {
   description?: string;
   is_public?: boolean;
   custom_hostname?: string | null;
+  logo_url?: string | null;
   monitor_ids?: number[];
 }
 

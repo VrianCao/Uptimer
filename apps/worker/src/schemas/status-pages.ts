@@ -1,7 +1,8 @@
 import { z } from 'zod';
 
 const slugSchema = z.string().trim().min(1).max(64).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
-const idListSchema = z.array(z.number().int().positive()).min(1).max(500);
+// Empty array is valid: means "unlink all monitors from this page".
+const idListSchema = z.array(z.number().int().positive()).max(500);
 
 // ponytail: hostname is validated by parsing, not by hand-rolled regex. A bare
 // hostname with no scheme parses under a synthetic http URL; anything with a
@@ -79,6 +80,35 @@ export function parseCustomHostnameInput(value: unknown): string | null {
 
 export const CUSTOM_HOSTNAME_ERROR = 'custom_hostname must be a bare ASCII hostname (no scheme, path, port, wildcard, IP, or localhost)';
 
+const LOGO_URL_MAX_LENGTH = 2048;
+
+/**
+ * Parse a raw `logo_url` input into a canonical stored value.
+ *
+ * - `null` / `undefined` / `''` -> `null` (clears the logo)
+ * - absolute `http:` / `https:` URL with no credentials and <= 2048 chars -> the trimmed URL
+ * - anything else -> `null` (caller surfaces the error as a 400)
+ *
+ * The Worker never fetches this URL; it is rendered only by visitors' browsers.
+ */
+export function parseLogoUrlInput(value: unknown): string | null {
+  if (value === undefined || value === null || value === '') return null;
+  const trimmed = String(value).trim();
+  if (trimmed.length === 0 || trimmed.length > LOGO_URL_MAX_LENGTH) return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+  if (parsed.username !== '' || parsed.password !== '') return null;
+  if (!parsed.hostname) return null;
+  return trimmed;
+}
+
+export const LOGO_URL_ERROR = 'logo_url must be an absolute http(s) URL of at most 2048 characters';
+
 export const createStatusPageInputSchema = z.object({
   slug: slugSchema,
   name: z.string().trim().min(1).max(100),
@@ -86,6 +116,7 @@ export const createStatusPageInputSchema = z.object({
   description: z.string().max(500).optional().default(''),
   is_public: z.boolean().optional().default(true),
   custom_hostname: z.union([z.string(), z.null()]).optional().default(null),
+  logo_url: z.union([z.string(), z.null()]).optional().default(null),
   monitor_ids: idListSchema.optional().default([]),
 });
 
@@ -97,6 +128,7 @@ export const patchStatusPageInputSchema = z
     description: z.string().max(500).optional(),
     is_public: z.boolean().optional(),
     custom_hostname: z.union([z.string(), z.null()]).optional(),
+    logo_url: z.union([z.string(), z.null()]).optional(),
     monitor_ids: idListSchema.optional(),
   })
   .refine((value) => Object.keys(value).length > 0, { message: 'At least one field must be provided' });

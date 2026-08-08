@@ -170,6 +170,7 @@ function parseDirectHomepagePayload(value: unknown): PublicHomepageResponse | nu
     monitor_count_total: Array.isArray(value.monitors) ? value.monitors.length : 0,
     site_title: value.site_title,
     site_description: value.site_description,
+    logo_url: value.logo_url ?? null,
     site_locale: value.site_locale,
     site_timezone: value.site_timezone,
     uptime_rating_level: value.uptime_rating_level,

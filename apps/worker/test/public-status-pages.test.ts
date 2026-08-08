@@ -19,13 +19,62 @@ describe('public status page scope', () => {
         match: 'from status_pages',
         first: (args) =>
           args[0] === 'partners'
-            ? { id: 4, slug: 'partners', name: 'Partners', title: 'Partner status', description: '' }
+            ? { id: 4, slug: 'partners', name: 'Partners', title: 'Partner status', description: '', custom_hostname: null, logo_url: 'https://cdn.example.com/logo.png' }
             : null,
       },
     ]);
 
-    await expect(resolvePublicStatusPage(db, 'partners')).resolves.toMatchObject({ id: 4 });
+    await expect(resolvePublicStatusPage(db, 'partners')).resolves.toMatchObject({
+      id: 4,
+      logo_url: 'https://cdn.example.com/logo.png',
+    });
     await expect(resolvePublicStatusPage(db, 'missing')).rejects.toMatchObject<AppError>({ status: 404 });
+  });
+
+  it('carries a page logo through the slug status payload and never leaks another page logo', async () => {
+    Object.defineProperty(globalThis, 'caches', {
+      configurable: true,
+      value: { open: vi.fn(async () => ({ match: async () => undefined, put: async () => undefined })) },
+    });
+    const db = createFakeD1Database([
+      {
+        match: 'from status_pages',
+        first: () => ({
+          id: 4,
+          slug: 'partners',
+          name: 'Partners',
+          title: 'Partner status',
+          description: '',
+          custom_hostname: null,
+          logo_url: 'https://cdn.example.com/partners.png',
+          is_public: 1,
+        }),
+      },
+      {
+        match: 'from monitors m',
+        all: () => [],
+      },
+      { match: 'from incidents', all: () => [] },
+      { match: 'from maintenance_windows', all: () => [] },
+      { match: 'select value from settings', first: () => ({ value: '3' }) },
+      { match: 'select key, value from settings', all: () => [] },
+    ]);
+    const app = new Hono<{ Bindings: Env }>();
+    app.onError(handleError);
+    app.notFound(handleNotFound);
+    app.route('/api/v1/public', publicRoutes);
+
+    const res = await app.fetch(
+      new Request('https://status.example.test/api/v1/public/status-pages/partners/status'),
+      { DB: db, ADMIN_TOKEN: 'test-admin-token' } as unknown as Env,
+      { waitUntil: vi.fn() } as unknown as ExecutionContext,
+    );
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({
+      logo_url: 'https://cdn.example.com/partners.png',
+      status_page: { slug: 'partners', logo_url: 'https://cdn.example.com/partners.png' },
+    });
   });
 
   it('conceals a private slug unless administrator access is allowed', async () => {

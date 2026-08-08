@@ -35,6 +35,7 @@ type StatusMonitor = PublicStatusResponse['monitors'][number];
 type StatusPublicSettings = SettingsResponse['settings'] & {
   site_title: string;
   site_description: string;
+  logo_url: string | null;
 };
 type StatusMonitorMetadataStamp = {
   monitorCountTotal: number;
@@ -127,9 +128,15 @@ function normalizeStatusFastGuardString(
   return value;
 }
 
+function normalizeStatusFastGuardOptionalUrl(value: string | null | undefined): string | null {
+  if (typeof value !== 'string' || value.length === 0 || value.length > 2048) return null;
+  return value;
+}
+
 function normalizeStatusFastGuardSettings(row: {
   site_title_value: string | null | undefined;
   site_description_value: string | null | undefined;
+  logo_url_value: string | null | undefined;
   site_locale_value: string | null | undefined;
   site_timezone_value: string | null | undefined;
   uptime_rating_level_value: string | null | undefined;
@@ -146,6 +153,7 @@ function normalizeStatusFastGuardSettings(row: {
       max: 500,
       allowEmpty: true,
     }),
+    logo_url: normalizeStatusFastGuardOptionalUrl(row.logo_url_value),
     site_locale: STATUS_FAST_PUBLIC_LOCALES.has(
       (row.site_locale_value ?? '') as StatusPublicSettings['site_locale'],
     )
@@ -174,6 +182,7 @@ function hasMatchingStatusPublicSettings(
   return (
     baseSnapshot.site_title === settings.site_title &&
     baseSnapshot.site_description === settings.site_description &&
+    baseSnapshot.logo_url === settings.logo_url &&
     baseSnapshot.site_locale === settings.site_locale &&
     baseSnapshot.site_timezone === settings.site_timezone &&
     baseSnapshot.uptime_rating_level === settings.uptime_rating_level
@@ -648,6 +657,11 @@ async function readStatusScheduledFastGuardState(
               WHERE slug = 'default' AND is_public = 1
             ) AS site_description_value,
             (
+              SELECT logo_url
+              FROM status_pages
+              WHERE slug = 'default' AND is_public = 1
+            ) AS logo_url_value,
+            (
               SELECT value
               FROM settings
               WHERE key = 'site_locale'
@@ -702,6 +716,7 @@ async function readStatusScheduledFastGuardState(
     .first<{
       site_title_value: string | null;
       site_description_value: string | null;
+      logo_url_value: string | null;
       site_locale_value: string | null;
       site_timezone_value: string | null;
       uptime_rating_level_value: string | null;
@@ -716,6 +731,7 @@ async function readStatusScheduledFastGuardState(
     settings: normalizeStatusFastGuardSettings({
       site_title_value: row?.site_title_value,
       site_description_value: row?.site_description_value,
+      logo_url_value: row?.logo_url_value,
       site_locale_value: row?.site_locale_value,
       site_timezone_value: row?.site_timezone_value,
       uptime_rating_level_value: row?.uptime_rating_level_value,

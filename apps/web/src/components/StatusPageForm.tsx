@@ -45,6 +45,7 @@ export function StatusPageForm(props: CreateProps | EditProps) {
   const [title, setTitle] = useState(page?.title ?? '');
   const [description, setDescription] = useState(page?.description ?? '');
   const [customHostname, setCustomHostname] = useState(page?.custom_hostname ?? '');
+  const [logoUrl, setLogoUrl] = useState(page?.logo_url ?? '');
   const [isPublic, setIsPublic] = useState(page?.is_public ?? true);
   const [selectedMonitorIds, setSelectedMonitorIds] = useState<number[]>(
     page?.monitor_ids ?? [],
@@ -78,6 +79,7 @@ export function StatusPageForm(props: CreateProps | EditProps) {
     const trimmedDescription = description.trim().slice(0, 500);
     const monitorIds = [...new Set(selectedMonitorIds)];
     const trimmedHostname = customHostname.trim();
+    const trimmedLogoUrl = logoUrl.trim();
 
     if (page) {
       const data: PatchStatusPageInput = {
@@ -87,6 +89,7 @@ export function StatusPageForm(props: CreateProps | EditProps) {
         description: trimmedDescription,
         is_public: isPublic,
         custom_hostname: trimmedHostname === '' ? null : trimmedHostname,
+        logo_url: trimmedLogoUrl === '' ? null : trimmedLogoUrl,
         monitor_ids: monitorIds,
       };
       props.onSubmit(data);
@@ -100,6 +103,7 @@ export function StatusPageForm(props: CreateProps | EditProps) {
       description: trimmedDescription,
       is_public: isPublic,
       custom_hostname: trimmedHostname === '' ? null : trimmedHostname,
+      logo_url: trimmedLogoUrl === '' ? null : trimmedLogoUrl,
       monitor_ids: monitorIds,
     };
     props.onSubmit(data);
@@ -159,6 +163,19 @@ export function StatusPageForm(props: CreateProps | EditProps) {
           placeholder={t('status_page_form.description_placeholder')}
         />
         <div className={FIELD_HELP_CLASS}>{t('status_page_form.description_help')}</div>
+      </div>
+
+      <div>
+        <label className={FIELD_LABEL_CLASS}>{t('status_page_form.logo_url')}</label>
+        <input
+          value={logoUrl}
+          onChange={(e) => setLogoUrl(e.target.value)}
+          className={INPUT_CLASS}
+          placeholder={t('status_page_form.logo_url_placeholder')}
+          autoComplete="off"
+          spellCheck={false}
+        />
+        <div className={FIELD_HELP_CLASS}>{t('status_page_form.logo_url_help')}</div>
       </div>
 
       <div>

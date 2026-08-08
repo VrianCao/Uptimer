@@ -332,6 +332,80 @@ describe('public fast-path guards', () => {
     });
   });
 
+  it('rejects the fast path when only the page logo changed', async () => {
+    const now = 1_728_000_360;
+    const baseSnapshot = createHomepageSnapshot(now);
+    const handlers: FakeD1QueryHandler[] = [
+      {
+        match: (sql) =>
+          sql.includes('from status_pages') &&
+          sql.includes("where slug = 'default'") &&
+          sql.includes('has_active_incidents'),
+        first: () => ({
+          site_title_value: baseSnapshot.site_title,
+          site_description_value: baseSnapshot.site_description,
+          logo_url_value: 'https://cdn.example.com/new-logo.png',
+          site_locale_value: baseSnapshot.site_locale,
+          site_timezone_value: baseSnapshot.site_timezone,
+          uptime_rating_level_value: String(baseSnapshot.uptime_rating_level),
+          monitor_count_total: 1,
+          max_updated_at: baseSnapshot.generated_at,
+          has_active_incidents: 0,
+          has_resolved_incident_preview: 0,
+          has_active_maintenance: 0,
+          has_upcoming_maintenance: 0,
+          has_maintenance_history_preview: 0,
+        }),
+      },
+      {
+        match: 'select generated_at, updated_at, body_json from public_snapshots',
+        first: (args) =>
+          args[0] === 'monitor-runtime'
+            ? {
+                generated_at: baseSnapshot.generated_at + 60,
+                updated_at: baseSnapshot.generated_at + 60,
+                body_json: JSON.stringify({
+                  version: 1,
+                  generated_at: baseSnapshot.generated_at + 60,
+                  day_start_at: Math.floor(now / 86_400) * 86_400,
+                  monitors: [
+                    {
+                      monitor_id: 1,
+                      created_at: now - 600,
+                      interval_sec: 60,
+                      range_start_at: Math.floor(now / 86_400) * 86_400,
+                      materialized_at: baseSnapshot.generated_at + 60,
+                      last_checked_at: baseSnapshot.monitors[0]?.last_checked_at,
+                      last_status_code: 'u',
+                      last_outage_open: false,
+                      total_sec: 180,
+                      downtime_sec: 0,
+                      unknown_sec: 0,
+                      uptime_sec: 180,
+                      heartbeat_gap_sec: '',
+                      heartbeat_latency_ms: [42],
+                      heartbeat_status_codes: 'u',
+                    },
+                  ],
+                }),
+              }
+            : null,
+      },
+    ];
+
+    const trace = new Trace({ enabled: true, id: 'trace-test', mode: 'scheduled' });
+    const patched = await tryComputePublicHomepagePayloadFromScheduledRuntimeUpdates({
+      db: createFakeD1Database(handlers),
+      now,
+      baseSnapshot,
+      baseSnapshotBodyJson: null,
+      updates: [],
+      trace,
+    });
+
+    expect(patched).toBeNull();
+  });
+
   it('does not reuse an older runtime snapshot than the homepage base snapshot', async () => {
     const now = 1_728_000_360;
     const baseSnapshot = createHomepageSnapshot(now);

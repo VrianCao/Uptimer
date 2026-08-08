@@ -1020,6 +1020,7 @@ publicRoutes.get('/status-pages/:slug/status', async (c) => {
       name: page.name,
       title: page.title,
       description: page.description,
+      logo_url: page.logo_url,
     },
   });
   if (page.is_private) return applyPrivateNoStore(res);

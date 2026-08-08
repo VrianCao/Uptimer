@@ -28,6 +28,7 @@ function validStateJson(versions: HomepageGuardVersions, validUntil = 1_700_000_
       settings: {
         site_title: 'Uptimer',
         site_description: '',
+        logo_url: null,
         site_locale: 'auto',
         site_timezone: 'UTC',
         retention_check_results_days: 7,

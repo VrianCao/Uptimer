@@ -48,6 +48,7 @@ export async function computePublicStatusPayload(
     generated_at: now,
     site_title: page.title,
     site_description: page.description,
+    logo_url: page.logo_url,
     site_locale: settings.site_locale,
     site_timezone: settings.site_timezone,
     uptime_rating_level: monitorData.uptimeRatingLevel,

@@ -366,7 +366,7 @@ function findEnvelopeRow(
 
 function parseEnvelopeFragment<T extends { generated_at: number }>(
   rows: readonly PublicSnapshotFragmentRow[],
-  schema: z.ZodType<T>,
+  schema: z.ZodType<T, z.ZodTypeDef, unknown>,
 ): PublicSnapshotEnvelopeReadResult<T> | null {
   const row = findEnvelopeRow(rows);
   if (!row) {

@@ -34,6 +34,7 @@ export type CachedHomepageScheduledFastGuardState = {
   settings: {
     site_title: string;
     site_description: string;
+    logo_url: string | null;
     site_locale: 'auto' | 'en' | 'zh-CN' | 'zh-TW' | 'ja' | 'es';
     site_timezone: string;
     retention_check_results_days: number;
@@ -82,6 +83,7 @@ const homepageGuardStateJsonSchema = z.object({
     settings: z.object({
       site_title: z.string().max(100),
       site_description: z.string().max(500),
+      logo_url: z.string().max(2048).nullable(),
       site_locale: z.enum(['auto', 'en', 'zh-CN', 'zh-TW', 'ja', 'es']),
       site_timezone: z.string().max(64),
       retention_check_results_days: z.number().int().min(1).max(365),
