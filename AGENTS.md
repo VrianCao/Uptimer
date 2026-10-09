@@ -23,7 +23,8 @@ If documentation conflicts with the current task, stop and align before proceedi
 
 Do not introduce alternative technologies without explicit approval.
 
-- **Frontend (Pages)**: React + Vite + TypeScript + Tailwind + React Router + TanStack Query + Recharts
+- **Frontend**: React + Vite + TypeScript + Tailwind + React Router + TanStack Query + Recharts（默认由 Cloudflare Pages 托管；可选 `UPTIMER_DEPLOY_MODE=single_worker` 时作为 Worker `[assets]` 与 API 同源）
+
 - **Backend (Workers)**: TypeScript + Hono + Zod
 - **Database**: Cloudflare D1 + Drizzle ORM; migrations via Wrangler D1 (SQL)
 - **Auth**: Admin Bearer Token (stored in Workers Secret)

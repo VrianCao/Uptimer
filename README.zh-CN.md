@@ -22,7 +22,7 @@
 
 - **零运维** — 无需管理服务器、容器或数据库。完全运行在 Cloudflare 的免费/付费套餐上。
 - **边缘原生** — 监控探针从 Cloudflare Workers 发起，状态页由 CDN 边缘节点分发。
-- **一键部署** — 推送到 `main` 分支，GitHub Actions 自动完成：D1 迁移、Worker 部署、Pages 构建。
+- **一键部署** — 推送到 `main` 分支，GitHub Actions 自动完成：D1 迁移、Worker API 与 Pages 前端（可选 single Worker 模式）。
 - **功能完整** — HTTP/TCP 探测、事件管理、维护窗口、Webhook 通知、管理后台。
 
 ## 功能特性
@@ -63,18 +63,20 @@
 
 ## 架构
 
+默认部署形态为 **Pages + Workers**（前后端分离）。也可选用 **single_worker** 模式，将 SPA 与 API 部署到同一个 Worker 域名。
+
 ```
                 ┌──────────────────────────────────────────┐
                 │            Cloudflare Network            │
                 │                                          │
 Visitors ──────►│  Pages (React SPA)                       │
-                │      │                                   │
+                │      │  /api/*  →  代理到 Worker         │
                 │      ▼                                   │
 Admin ─────────►│  Workers (Hono API)                      │
                 │      │              │                    │
                 │      ▼              ▼                    │
                 │    D1 DB      Cron Triggers              │
-                │              (scheduled probes)          │
+                │              (定时探测)                  │
                 │                     │                    │
                 └─────────────────────┼────────────────────┘
                                       │
@@ -85,6 +87,10 @@ Admin ─────────►│  Workers (Hono API)                     
                               Webhooks ──► Discord / Slack / ntfy
 ```
 
+**默认（`pages`）**：状态页与管理后台部署在 Cloudflare Pages；Worker 负责 API 与定时探测。Pages 通过 `apps/web/public/_worker.js` 将 `/api/*` 代理到 Worker，并在首屏 HTML 中预注入首页快照数据。
+
+**可选（`single_worker`）**：设置 GitHub Actions 变量 `UPTIMER_DEPLOY_MODE=single_worker`，构建后的 SPA 会作为 Worker 的 `[assets]` 上传。状态页、管理后台与 API 共用同一域名（无需 Pages 项目）。注意：首屏需在 SPA 加载后请求 `/api/v1/public/homepage` 完成渲染（无 HTML 预注入）；若从现有 `pages` 切换到此模式，需手动删除旧的 Pages 项目或配置重定向。
+
 ## 技术栈
 
 | 层级   | 技术                                                               |
@@ -92,7 +98,7 @@ Admin ─────────►│  Workers (Hono API)                     
 | 前端   | React 18, Vite, TypeScript, Tailwind CSS, TanStack Query, Recharts |
 | 后端   | Cloudflare Workers, Hono, Zod                                      |
 | 数据库 | Cloudflare D1 (SQLite), Drizzle ORM                                |
-| 托管   | Cloudflare Pages（前端）、Workers（API）                           |
+| 托管   | Cloudflare Pages（前端）+ Workers（API）；可选单 Worker 模式       |
 | CI/CD  | GitHub Actions                                                     |
 | 包管理 | pnpm（monorepo）                                                   |
 
@@ -114,6 +120,8 @@ Admin ─────────►│  Workers (Hono API)                     
    - `Account / Account Settings / Read`
 4. 复制生成的 Token
 
+> `Cloudflare Pages / Edit` 仅默认 `pages` 模式需要。若使用 `UPTIMER_DEPLOY_MODE=single_worker`，可不授予 Pages 权限。
+
 ### 第 3 步 — 添加 GitHub Secrets
 
 进入你 Fork 的仓库 → **Settings** → **Secrets and variables** → **Actions** → **New repository secret**，添加：
@@ -124,6 +132,8 @@ Admin ─────────►│  Workers (Hono API)                     
 | `UPTIMER_ADMIN_TOKEN`   | 任意强密码字符串（用于登录管理后台）                                                                          |   必填   |
 | `CLOUDFLARE_ACCOUNT_ID` | 你的 [Cloudflare Account ID](https://developers.cloudflare.com/fundamentals/setup/find-account-and-zone-ids/) |   推荐   |
 
+可选仓库 **变量**（非 Secret）：`UPTIMER_DEPLOY_MODE` = `pages`（默认）或 `single_worker`。
+
 ### 第 4 步 — 运行 GitHub Actions
 
 进入 **Actions** → **Deploy to Cloudflare** → **Run workflow**（或直接向 `main`/`master` 推送一次提交）。
@@ -131,17 +141,26 @@ Admin ─────────►│  Workers (Hono API)                     
 工作流会自动完成：
 
 - 创建 D1 数据库并执行迁移
-- 部署 Worker（API + 定时监控任务）
-- 构建并部署 Pages 前端（状态页）
+- 部署 Worker（API + 定时探测）
+- 默认模式：构建前端（Vite）并部署到 Cloudflare Pages
+- single_worker 模式：构建前端，并作为静态资源与 Worker 一起上传
 - 注入管理密钥为 Worker Secret
 
 ### 第 5 步 — 访问你的状态页
 
 工作流运行成功后（首次部署通常约 2 分钟）：
 
-- **状态页** → `https://<你的仓库名>.pages.dev`
-- **管理后台** → `https://<你的仓库名>.pages.dev/admin`
-- **API** → `https://<你的仓库名>.workers.dev/api/v1/public/status`
+**默认（`pages` 模式）：**
+
+- **状态页** → `https://<你的-pages-项目名>.pages.dev`
+- **管理后台** → `https://<你的-pages-项目名>.pages.dev/admin`
+- **API** → `https://<你的-worker-名>.workers.dev/api/v1/public/status`
+
+**可选（`single_worker` 模式）：**
+
+- **状态页** → `https://<你的-worker-名>.workers.dev`
+- **管理后台** → `https://<你的-worker-名>.workers.dev/admin`
+- **API** → `https://<你的-worker-名>.workers.dev/api/v1/public/status`
 
 使用你设置的 `UPTIMER_ADMIN_TOKEN` 登录管理后台，即可开始添加监控项。
 

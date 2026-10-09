@@ -2,7 +2,7 @@
 
 Version: 0.1.0 (Draft, revised)
 Type: Technical Specification & Application Architecture
-Platform: Cloudflare Native (Workers + Pages + D1)
+Platform: Cloudflare Native (Workers + Pages + D1; optional single-Worker hosting)
 Last updated: 2026-01-28
 
 ---
@@ -22,7 +22,7 @@ Uptimer 是一个构建在 Cloudflare 边缘网络上的 Serverless 可用性监
 核心目标：
 
 - Zero-Ops：无服务器、无容器、无自建数据库实例。
-- Cloudflare-native：Workers 负责 API 与定时探测；Pages 承载 Web UI；D1 存储配置与历史数据。
+- Cloudflare-native：Workers 负责 API 与定时探测；Pages 承载 Web UI（默认）；也可选择 single_worker 将 SPA 作为 Worker 静态资源与 API 同源部署；D1 存储配置与历史数据。
 - 开箱即用：以「个人/中小团队」的可维护性、低成本、可定制为优先。
 
 差异化强调（需与 Cloudflare 运行时约束匹配）：
@@ -74,7 +74,7 @@ Uptimer 是一个构建在 Cloudflare 边缘网络上的 Serverless 可用性监
 
 Frontend (Dashboard + Status Page):
 
-- Host: Cloudflare Pages
+- Host: Cloudflare Pages（默认）或 Cloudflare Workers `[assets]`（`UPTIMER_DEPLOY_MODE=single_worker`）
 - Framework: React + Vite (TypeScript)
 - Styling: Tailwind CSS
 - Router: React Router
@@ -103,20 +103,20 @@ Storage:
 
 ### 5.1 组件划分
 
-- Pages Web：公共状态页 + 管理后台 UI。
+- Web 前端：公共状态页 + 管理后台 UI。默认部署在 Cloudflare Pages；`UPTIMER_DEPLOY_MODE=single_worker` 时作为 Worker `[assets]` 与 API 同源。
 - Worker API：对外 REST API（public/admin），聚合 D1 数据。
 - Worker Scheduler：Cron 触发的探测引擎（可与 API 同一个 Worker 模块）。
 - D1：配置、状态、事件与历史数据。
 - 外部通知：Webhook（Discord/Slack/Telegram/自定义）。
 
-### 5.2 架构图 (Conceptual)
+### 5.2 架构图 (Conceptual，默认 pages 模式)
 
 ```mermaid
 graph TD
   Visitor[访客] -->|HTTPS| Pages[Cloudflare Pages (UI)]
   Admin[管理员] -->|HTTPS| Pages
 
-  Pages -->|fetch /api| Worker[Cloudflare Worker (API)]
+  Pages -->|/api/* 代理| Worker[Cloudflare Worker (API)]
   Worker --> D1[(D1 Database)]
 
   Cron[Cron Trigger] --> Scheduler[Worker (scheduled: Monitor Engine)]
@@ -124,6 +124,8 @@ graph TD
   Scheduler -->|write results| D1
   Scheduler -->|webhook| Notify[外部通知]
 ```
+
+> `single_worker` 模式：Pages 节点替换为「Worker（UI 静态资源 + API）」，访客/管理员直连该 Worker，无 Pages 代理层。
 
 ---
 
@@ -498,7 +500,7 @@ Uptime / SLA（按时间窗口计算可用性）：
 Public:
 
 - `GET /api/v1/public/homepage`：公共首页 JSON；优先读取 `public_snapshots.homepage` / fragments 发布结果。
-- `GET /api/v1/public/homepage-artifact`：Pages HTML preload artifact；返回 `preload_html` + `snapshot`。
+- `GET /api/v1/public/homepage-artifact`：HTML preload artifact；返回 `preload_html` + `snapshot`。
 - `GET /api/v1/public/status`：返回全局状态、组件列表、未解决事件摘要、维护窗口、最近心跳与延迟（状态页首屏）。
 - `GET /api/v1/public/monitors/:id/latency?range=24h`：延迟序列（对外可限制粒度）。
 - `GET /api/v1/public/monitors/:id/uptime?range=24h|7d|30d`：SLA/可用性统计（含 downtime 秒数与 Unknown 比例）。
@@ -717,11 +719,13 @@ D1 存储形态：
 
 ### 13.2 部署 (CI/CD)
 
-建议 GitHub Actions：
+建议 GitHub Actions（`UPTIMER_DEPLOY_MODE` 控制，默认 `pages`）：
 
-- 前端：build -> deploy to Cloudflare Pages
-- 后端：`wrangler deploy`
 - 数据库：`wrangler d1 migrations apply <db> --remote`
+- 后端（`pages` 模式）：`wrangler deploy`（基础配置不包含 `[assets]`，生产 Worker 仅提供 API）
+- 后端（`single_worker` 模式）：CI 动态向 `wrangler.ci.toml` 注入 `[assets]`，SPA 静态资源与 Worker 一并部署
+- 前端（默认 `pages`）：build -> deploy to Cloudflare Pages（`_worker.js` 代理 `/api/*`）
+- 前端（可选 `single_worker`）：由 Worker `[assets]` 承载，无需单独 Pages 项目
 
 ### 13.3 wrangler 配置要点（示例）
 
