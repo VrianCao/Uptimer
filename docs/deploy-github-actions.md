@@ -48,16 +48,16 @@ Deploy Uptimer to Cloudflare using the built-in GitHub Actions workflow.
 
 Override default naming and routing:
 
-| Name                                     | Default                   | Description                  |
-| ---------------------------------------- | ------------------------- | ---------------------------- |
-| `UPTIMER_PREFIX`                         | Repository name slug      | Unified resource name prefix |
-| `UPTIMER_WORKER_NAME`                    | `${UPTIMER_PREFIX}`       | Worker name                  |
-| `UPTIMER_PAGES_PROJECT`                  | `${UPTIMER_PREFIX}`       | Pages project name           |
-| `UPTIMER_D1_NAME`                        | `${UPTIMER_PREFIX}`       | D1 database name             |
-| `UPTIMER_D1_BINDING`                     | `DB`                      | D1 binding name in Worker    |
-| `UPTIMER_API_BASE`                       | Auto-derived or `/api/v1` | API address (e.g. `https://my-worker.example.com/api/v1` or `/api/v1`) |
+| Name                                     | Default                   | Description                                                                         |
+| ---------------------------------------- | ------------------------- | ----------------------------------------------------------------------------------- |
+| `UPTIMER_PREFIX`                         | Repository name slug      | Unified resource name prefix                                                        |
+| `UPTIMER_WORKER_NAME`                    | `${UPTIMER_PREFIX}`       | Worker name                                                                         |
+| `UPTIMER_PAGES_PROJECT`                  | `${UPTIMER_PREFIX}`       | Pages project name                                                                  |
+| `UPTIMER_D1_NAME`                        | `${UPTIMER_PREFIX}`       | D1 database name                                                                    |
+| `UPTIMER_D1_BINDING`                     | `DB`                      | D1 binding name in Worker                                                           |
+| `UPTIMER_API_BASE`                       | Auto-derived or `/api/v1` | API address (e.g. `https://my-worker.example.com/api/v1` or `/api/v1`)              |
 | `UPTIMER_API_ORIGIN`                     | Auto-derived              | API origin (e.g. `https://my-worker.example.com`); `/api/v1` appended automatically |
-| `VITE_ADMIN_PATH` / `UPTIMER_ADMIN_PATH` | —                         | Custom admin dashboard path  |
+| `VITE_ADMIN_PATH` / `UPTIMER_ADMIN_PATH` | —                         | Custom admin dashboard path                                                         |
 
 > If no naming variables are set, the workflow uses the repository name slug as the default prefix. This keeps names stable across forks.
 >

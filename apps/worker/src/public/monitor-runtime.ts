@@ -407,7 +407,9 @@ function isRuntimeStatusCode(value: unknown): value is MonitorRuntimeStatusCode 
   return value === 'u' || value === 'd' || value === 'm' || value === 'p' || value === 'x';
 }
 
-function isPublicMonitorRuntimeTotalsEntry(value: unknown): value is PublicMonitorRuntimeTotalsEntry {
+function isPublicMonitorRuntimeTotalsEntry(
+  value: unknown,
+): value is PublicMonitorRuntimeTotalsEntry {
   if (!isRecord(value)) {
     return false;
   }
@@ -427,7 +429,9 @@ function isPublicMonitorRuntimeTotalsEntry(value: unknown): value is PublicMonit
   );
 }
 
-function isPublicMonitorRuntimeTotalsSnapshot(value: unknown): value is PublicMonitorRuntimeTotalsSnapshot {
+function isPublicMonitorRuntimeTotalsSnapshot(
+  value: unknown,
+): value is PublicMonitorRuntimeTotalsSnapshot {
   return (
     isRecord(value) &&
     value.version === MONITOR_RUNTIME_SNAPSHOT_VERSION &&
@@ -485,10 +489,11 @@ export const publicMonitorRuntimeSnapshotSchema = z.object({
   monitors: z.array(runtimeEntrySchema),
 });
 
-export const publicMonitorRuntimeTotalsSnapshotSchema = z.custom<PublicMonitorRuntimeTotalsSnapshot>(
-  isPublicMonitorRuntimeTotalsSnapshot,
-  'Invalid public monitor runtime totals snapshot',
-);
+export const publicMonitorRuntimeTotalsSnapshotSchema =
+  z.custom<PublicMonitorRuntimeTotalsSnapshot>(
+    isPublicMonitorRuntimeTotalsSnapshot,
+    'Invalid public monitor runtime totals snapshot',
+  );
 
 const readRuntimeSnapshotStatementByDb = new WeakMap<D1Database, D1PreparedStatement>();
 const upsertRuntimeSnapshotRowsStatementByDb = new WeakMap<D1Database, D1PreparedStatement>();
@@ -768,9 +773,7 @@ function writeCachedRuntimeTotalsSnapshotGlobal(
   return snapshot;
 }
 
-function readSnapshotMonitorIds(
-  snapshot: PublicMonitorRuntimeSnapshot,
-): ReadonlySet<number> {
+function readSnapshotMonitorIds(snapshot: PublicMonitorRuntimeSnapshot): ReadonlySet<number> {
   const cached = runtimeSnapshotMonitorIdsBySnapshot.get(snapshot);
   if (cached) {
     return cached;
@@ -842,7 +845,12 @@ async function readStoredMonitorRuntimeSnapshot(
     if (!row?.body_json) return null;
 
     const updatedAt = toSnapshotUpdatedAt(row);
-    const cachedSnapshot = readCachedRuntimeSnapshot(db, row.generated_at, updatedAt, row.body_json);
+    const cachedSnapshot = readCachedRuntimeSnapshot(
+      db,
+      row.generated_at,
+      updatedAt,
+      row.body_json,
+    );
     if (cachedSnapshot) {
       return {
         generatedAt: row.generated_at,

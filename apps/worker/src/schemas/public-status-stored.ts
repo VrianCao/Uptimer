@@ -209,7 +209,11 @@ function validateBanner(value: unknown): boolean {
   }
 
   if (value.source === 'monitors') {
-    return value.down_ratio === undefined || value.down_ratio === null || typeof value.down_ratio === 'number';
+    return (
+      value.down_ratio === undefined ||
+      value.down_ratio === null ||
+      typeof value.down_ratio === 'number'
+    );
   }
 
   return false;

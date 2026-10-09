@@ -249,7 +249,11 @@ async function readStoredPublicAnalyticsOverviewSnapshot(
       };
     }
 
-    const globalCachedSnapshot = readCachedSnapshotGlobal(row.generated_at, updatedAt, row.body_json);
+    const globalCachedSnapshot = readCachedSnapshotGlobal(
+      row.generated_at,
+      updatedAt,
+      row.body_json,
+    );
     if (globalCachedSnapshot) {
       return {
         generatedAt: row.generated_at,

@@ -332,7 +332,9 @@ describe('computePublicHomepagePayload', () => {
       paused: 0,
       unknown: 0,
     });
-    expect(payload.monitors[0]?.uptime_day_strip).toEqual(baseSnapshot.monitors[0]?.uptime_day_strip);
+    expect(payload.monitors[0]?.uptime_day_strip).toEqual(
+      baseSnapshot.monitors[0]?.uptime_day_strip,
+    );
     expect(payload.monitors[0]?.uptime_30d).toEqual({ uptime_pct: 100 });
   });
 
@@ -813,7 +815,7 @@ describe('computePublicHomepagePayload', () => {
         }),
       },
       {
-        match: (sql) => sql.includes("from incidents") && sql.includes("status = 'resolved'"),
+        match: (sql) => sql.includes('from incidents') && sql.includes("status = 'resolved'"),
         all: () => [
           {
             id: 9,
@@ -1629,7 +1631,7 @@ describe('computePublicHomepagePayload', () => {
         }),
       },
       {
-        match: (sql) => sql.includes("from incidents") && sql.includes("status = 'resolved'"),
+        match: (sql) => sql.includes('from incidents') && sql.includes("status = 'resolved'"),
         all: () => [
           {
             id: 10,

@@ -48,16 +48,16 @@
 
 覆盖默认命名与路由：
 
-| 名称                                     | 默认值               | 说明                      |
-| ---------------------------------------- | -------------------- | ------------------------- |
-| `UPTIMER_PREFIX`                         | 仓库名 slug          | 统一资源名前缀            |
-| `UPTIMER_WORKER_NAME`                    | `${UPTIMER_PREFIX}`  | Worker 名称               |
-| `UPTIMER_PAGES_PROJECT`                  | `${UPTIMER_PREFIX}`  | Pages 项目名              |
-| `UPTIMER_D1_NAME`                        | `${UPTIMER_PREFIX}`  | D1 数据库名               |
-| `UPTIMER_D1_BINDING`                     | `DB`                 | Worker 中 D1 binding 名称 |
-| `UPTIMER_API_BASE`                       | 自动推导或 `/api/v1` | API 地址（如 `https://my-worker.example.com/api/v1` 或 `/api/v1`） |
+| 名称                                     | 默认值               | 说明                                                                 |
+| ---------------------------------------- | -------------------- | -------------------------------------------------------------------- |
+| `UPTIMER_PREFIX`                         | 仓库名 slug          | 统一资源名前缀                                                       |
+| `UPTIMER_WORKER_NAME`                    | `${UPTIMER_PREFIX}`  | Worker 名称                                                          |
+| `UPTIMER_PAGES_PROJECT`                  | `${UPTIMER_PREFIX}`  | Pages 项目名                                                         |
+| `UPTIMER_D1_NAME`                        | `${UPTIMER_PREFIX}`  | D1 数据库名                                                          |
+| `UPTIMER_D1_BINDING`                     | `DB`                 | Worker 中 D1 binding 名称                                            |
+| `UPTIMER_API_BASE`                       | 自动推导或 `/api/v1` | API 地址（如 `https://my-worker.example.com/api/v1` 或 `/api/v1`）   |
 | `UPTIMER_API_ORIGIN`                     | 自动推导             | API 源地址（如 `https://my-worker.example.com`）；自动拼接 `/api/v1` |
-| `VITE_ADMIN_PATH` / `UPTIMER_ADMIN_PATH` | —                    | 自定义管理后台路径        |
+| `VITE_ADMIN_PATH` / `UPTIMER_ADMIN_PATH` | —                    | 自定义管理后台路径                                                   |
 
 > 若不配置命名变量，工作流会使用仓库名 slug 作为默认前缀。这在 fork 场景下能保持命名稳定。
 >

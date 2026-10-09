@@ -15,7 +15,9 @@ function normalizeFalsyHeader(value: string | undefined): boolean {
   if (!value) return false;
   const normalized = value.trim().toLowerCase();
   if (!normalized) return false;
-  return normalized === '0' || normalized === 'false' || normalized === 'no' || normalized === 'off';
+  return (
+    normalized === '0' || normalized === 'false' || normalized === 'no' || normalized === 'off'
+  );
 }
 
 function readTraceToken(env: Record<string, unknown> | undefined): string | null {
@@ -62,8 +64,7 @@ export function resolveTraceOptions(opts: {
       : crypto.randomUUID();
 
   const timingsRaw = opts.env?.['UPTIMER_TRACE_TIMINGS'];
-  const timingsEnabled =
-    typeof timingsRaw === 'string' ? !normalizeFalsyHeader(timingsRaw) : true;
+  const timingsEnabled = typeof timingsRaw === 'string' ? !normalizeFalsyHeader(timingsRaw) : true;
 
   return { enabled: true, id, mode, timingsEnabled };
 }

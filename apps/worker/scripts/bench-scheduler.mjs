@@ -53,13 +53,14 @@ function sanitizeLabel(raw) {
 }
 
 function resolveBaselineRef() {
-  return (
-    process.env.SCHEDULER_BENCH_BASE_REF ?? 'aef3f045c4c694f8440d08ba020548eed94f82db'
-  );
+  return process.env.SCHEDULER_BENCH_BASE_REF ?? 'aef3f045c4c694f8440d08ba020548eed94f82db';
 }
 
 function createOutputPath(label) {
-  return path.join(os.tmpdir(), `uptimer-scheduler-bench-${sanitizeLabel(label)}-${Date.now()}.json`);
+  return path.join(
+    os.tmpdir(),
+    `uptimer-scheduler-bench-${sanitizeLabel(label)}-${Date.now()}.json`,
+  );
 }
 
 function ensureTreeDependencies(treeRoot) {
@@ -132,7 +133,14 @@ function runBenchmarkForTree(treeRoot, label) {
 
   run(
     'node',
-    [vitestEntrypoint, 'run', '--config', benchConfigPath, 'test/scheduled.bench.ts', '--reporter=dot'],
+    [
+      vitestEntrypoint,
+      'run',
+      '--config',
+      benchConfigPath,
+      'test/scheduled.bench.ts',
+      '--reporter=dot',
+    ],
     {
       cwd: workerCwd,
       env,
@@ -149,7 +157,8 @@ function summarizeComparison(baselineRows, currentRows) {
     const currentRow = currentRows[index];
     const baselineMean = baselineRow.meanMs;
     const currentMean = currentRow.meanMs;
-    const meanReductionPct = baselineMean === 0 ? 0 : ((baselineMean - currentMean) / baselineMean) * 100;
+    const meanReductionPct =
+      baselineMean === 0 ? 0 : ((baselineMean - currentMean) / baselineMean) * 100;
 
     return {
       scenario: baselineRow.scenario,

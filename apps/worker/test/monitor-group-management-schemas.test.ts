@@ -57,7 +57,6 @@ describe('monitor group management schemas', () => {
       response_keyword_mode: 'regex',
     });
     expect(createResult.success).toBe(false);
-
   });
 
   it('rejects assertion modes without a corresponding response value', () => {

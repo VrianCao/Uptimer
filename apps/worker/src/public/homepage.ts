@@ -181,10 +181,7 @@ async function withTraceAsync<T>(
   return trace ? trace.timeAsync(name, fn) : await fn();
 }
 
-function safeParseJsonArray<T>(
-  text: string | null,
-  schema: z.ZodType<T[]>,
-): T[] {
+function safeParseJsonArray<T>(text: string | null, schema: z.ZodType<T[]>): T[] {
   if (!text) return [];
   try {
     const parsed = JSON.parse(text) as unknown;
@@ -631,10 +628,7 @@ function canTrustBaseSnapshotMonitorMetadata(opts: {
   if (
     baseSnapshot.monitor_count_total !== baseSnapshot.monitors.length ||
     runtimeSnapshot.generated_at < baseSnapshot.generated_at ||
-    !snapshotHasMonitorIds(
-      runtimeSnapshot,
-      getHomepageSnapshotMonitorIds(baseSnapshot),
-    )
+    !snapshotHasMonitorIds(runtimeSnapshot, getHomepageSnapshotMonitorIds(baseSnapshot))
   ) {
     return false;
   }
@@ -769,11 +763,10 @@ async function readHomepageMonitorMetadataStamp(
         AND ${monitorVisibilityPredicate(includeHiddenMonitors, 'm')}
     `,
       ),
-  )
-    .first<{
-      monitor_count_total: number | null;
-      max_updated_at: number | null;
-    }>();
+  ).first<{
+    monitor_count_total: number | null;
+    max_updated_at: number | null;
+  }>();
 
   return {
     monitorCountTotal: row?.monitor_count_total ?? 0,
@@ -1773,7 +1766,10 @@ function tryPatchPublicHomepagePayloadFromRuntimeSnapshot(opts: {
     let nextMonitor: HomepageMonitorCard;
     let todayTotals: UptimeWindowTotals | null = null;
     if (update) {
-      if (baseMonitor.last_checked_at !== null && update.checked_at <= baseMonitor.last_checked_at) {
+      if (
+        baseMonitor.last_checked_at !== null &&
+        update.checked_at <= baseMonitor.last_checked_at
+      ) {
         opts.trace?.setLabel('runtime_snapshot_patch_skip', 'stale_update');
         return null;
       }
@@ -1892,9 +1888,7 @@ function tryPatchPublicHomepagePayloadFromRuntimeSnapshot(opts: {
             ? heartbeats.map((heartbeat) => heartbeat.latency_ms)
             : baseMonitor.heartbeat_strip.latency_ms,
           status_codes: heartbeats
-            ? heartbeats
-                .map((heartbeat) => toHeartbeatStatusCode(heartbeat.status))
-                .join('')
+            ? heartbeats.map((heartbeat) => toHeartbeatStatusCode(heartbeat.status)).join('')
             : baseMonitor.heartbeat_strip.status_codes,
         },
         uptime_30d: null,
@@ -2257,21 +2251,24 @@ async function readHomepageScheduledFastGuardState(
     `,
       ),
   );
-  const row = await withTraceAsync(trace, 'homepage_refresh_fast_guard_query', async () =>
-    await statement.bind(now).first<{
-      site_title_value: string | null;
-      site_description_value: string | null;
-      site_locale_value: string | null;
-      site_timezone_value: string | null;
-      uptime_rating_level_value: string | null;
-      monitor_count_total: number | null;
-      max_updated_at: number | null;
-      has_active_incidents: number | null;
-      has_resolved_incident_preview: number | null;
-      has_active_maintenance: number | null;
-      has_upcoming_maintenance: number | null;
-      has_maintenance_history_preview: number | null;
-    }>(),
+  const row = await withTraceAsync(
+    trace,
+    'homepage_refresh_fast_guard_query',
+    async () =>
+      await statement.bind(now).first<{
+        site_title_value: string | null;
+        site_description_value: string | null;
+        site_locale_value: string | null;
+        site_timezone_value: string | null;
+        uptime_rating_level_value: string | null;
+        monitor_count_total: number | null;
+        max_updated_at: number | null;
+        has_active_incidents: number | null;
+        has_resolved_incident_preview: number | null;
+        has_active_maintenance: number | null;
+        has_upcoming_maintenance: number | null;
+        has_maintenance_history_preview: number | null;
+      }>(),
   );
 
   return withTraceSync(trace, 'homepage_refresh_fast_guard_normalize', () => ({

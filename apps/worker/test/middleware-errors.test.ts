@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
-import { AppError, handleError, handleNotFound, type ErrorResponse } from '../src/middleware/errors';
+import {
+  AppError,
+  handleError,
+  handleNotFound,
+  type ErrorResponse,
+} from '../src/middleware/errors';
 
 function createContext() {
   return {

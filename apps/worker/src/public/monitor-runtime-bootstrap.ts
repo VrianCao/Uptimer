@@ -87,7 +87,7 @@ export async function rebuildPublicMonitorRuntimeSnapshot(
         today.total_sec > 0
           ? Math.max(0, now - today.total_sec)
           : row.created_at >= dayStart
-            ? latestHeartbeat?.checked_at ?? null
+            ? (latestHeartbeat?.checked_at ?? null)
             : dayStart;
 
       return {

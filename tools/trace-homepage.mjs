@@ -92,7 +92,9 @@ function formatMs(value) {
 async function run() {
   const args = parseArgs(process.argv);
   if (!args.url) {
-    console.error('Usage: node tools/trace-homepage.mjs <url> [--n 120] [--mode bypass-cache] [--token ...]');
+    console.error(
+      'Usage: node tools/trace-homepage.mjs <url> [--n 120] [--mode bypass-cache] [--token ...]',
+    );
     process.exit(2);
   }
 
@@ -155,12 +157,16 @@ async function run() {
   }
 
   console.log(`url=${args.url}`);
-  console.log(`n=${runs.length} ok=${okRuns.length} mode=${args.mode || '-'} concurrency=${concurrency}`);
+  console.log(
+    `n=${runs.length} ok=${okRuns.length} mode=${args.mode || '-'} concurrency=${concurrency}`,
+  );
   console.log('');
 
   for (const [group, list] of [...groups.entries()].sort((a, b) => b[1].length - a[1].length)) {
     const walls = list.map((r) => r.wall_ms).sort((a, b) => a - b);
-    console.log(`[${group}] count=${list.length} wall_p50=${formatMs(percentile(walls, 50))} wall_p90=${formatMs(percentile(walls, 90))}`);
+    console.log(
+      `[${group}] count=${list.length} wall_p50=${formatMs(percentile(walls, 50))} wall_p90=${formatMs(percentile(walls, 90))}`,
+    );
 
     for (const metric of [...allMetrics].sort()) {
       const values = list

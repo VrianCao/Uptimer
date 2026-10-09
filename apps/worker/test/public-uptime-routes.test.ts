@@ -247,7 +247,8 @@ describe('public incident feed regression', () => {
 
     const handlers: FakeD1QueryHandler[] = [
       {
-        match: (sql) => sql.includes('from incidents') && sql.includes("where status != 'resolved'"),
+        match: (sql) =>
+          sql.includes('from incidents') && sql.includes("where status != 'resolved'"),
         all: (args, sql) => {
           activeIncidentArgs.push([...args]);
           activeIncidentSqls.push(sql);
@@ -302,7 +303,7 @@ describe('public incident feed regression', () => {
     const handlers: FakeD1QueryHandler[] = [
       {
         match: (sql) =>
-          sql.includes("from incidents") &&
+          sql.includes('from incidents') &&
           sql.includes("where status = 'resolved'") &&
           sql.includes('order by resolved_at desc, id desc'),
         all: (args) => {
@@ -364,7 +365,7 @@ describe('public incident feed regression', () => {
       {
         match: (sql) =>
           sql.includes('select id, resolved_at') &&
-          sql.includes("from incidents") &&
+          sql.includes('from incidents') &&
           sql.includes("status = 'resolved'"),
         first: () => ({
           id: 5,

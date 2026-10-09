@@ -33,11 +33,9 @@ async function requestPublicUi(path: string, handlers: FakeD1QueryHandler[]) {
   } as unknown as Env;
   const waitUntil = vi.fn();
 
-  const res = await publicUiRoutes.fetch(
-    new Request(`https://status.example.com${path}`),
-    env,
-    { waitUntil } as unknown as ExecutionContext,
-  );
+  const res = await publicUiRoutes.fetch(new Request(`https://status.example.com${path}`), env, {
+    waitUntil,
+  } as unknown as ExecutionContext);
   const body = (await res.json()) as Record<string, unknown>;
   return { res, body, waitUntil };
 }
@@ -158,7 +156,7 @@ describe('public ui routes', () => {
         ],
       },
       {
-        match: (sql) => sql.includes('from public_snapshots') && sql.includes("where key = ?1"),
+        match: (sql) => sql.includes('from public_snapshots') && sql.includes('where key = ?1'),
         first: (args) => {
           const [key] = args as [string];
           if (key === 'analytics-overview') {
@@ -259,7 +257,7 @@ describe('public ui routes', () => {
         ],
       },
       {
-        match: (sql) => sql.includes('from public_snapshots') && sql.includes("where key = ?1"),
+        match: (sql) => sql.includes('from public_snapshots') && sql.includes('where key = ?1'),
         first: (args) => {
           if (args[0] === 'analytics-overview') {
             return {
@@ -350,7 +348,7 @@ describe('public ui routes', () => {
         ],
       },
       {
-        match: (sql) => sql.includes('from public_snapshots') && sql.includes("where key = ?1"),
+        match: (sql) => sql.includes('from public_snapshots') && sql.includes('where key = ?1'),
         first: (args) => {
           const [key] = args as [string];
           if (key === 'analytics-overview') {
@@ -442,7 +440,10 @@ describe('public ui routes', () => {
   });
 
   it('rejects unsupported compact latency formats on the fast public-ui worker route', async () => {
-    const { res, body } = await requestPublicUiViaWorker('/monitors/21/latency?format=compact-v2', []);
+    const { res, body } = await requestPublicUiViaWorker(
+      '/monitors/21/latency?format=compact-v2',
+      [],
+    );
 
     expect(res.status).toBe(400);
     expect(body).toMatchObject({
@@ -564,7 +565,7 @@ describe('public ui routes', () => {
         ],
       },
       {
-        match: (sql) => sql.includes('from public_snapshots') && sql.includes("where key = ?1"),
+        match: (sql) => sql.includes('from public_snapshots') && sql.includes('where key = ?1'),
         first: (args) => {
           if (args[0] === 'analytics-overview') {
             return {
@@ -664,7 +665,7 @@ describe('public ui routes', () => {
         ],
       },
       {
-        match: (sql) => sql.includes('from public_snapshots') && sql.includes("where key = ?1"),
+        match: (sql) => sql.includes('from public_snapshots') && sql.includes('where key = ?1'),
         first: (args) => {
           const [key] = args as [string];
           if (key === 'analytics-overview') {
@@ -701,8 +702,9 @@ describe('public ui routes', () => {
       },
       {
         match: (sql) =>
-          sql.includes('select m.id, m.name, m.type, m.interval_sec, m.created_at, s.last_checked_at') &&
-          sql.includes('left join monitor_state'),
+          sql.includes(
+            'select m.id, m.name, m.type, m.interval_sec, m.created_at, s.last_checked_at',
+          ) && sql.includes('left join monitor_state'),
         all: () => [
           {
             id: 21,
@@ -716,8 +718,7 @@ describe('public ui routes', () => {
       },
       {
         match: (sql) =>
-          sql.includes('from monitor_daily_rollups') &&
-          sql.includes('group by monitor_id'),
+          sql.includes('from monitor_daily_rollups') && sql.includes('group by monitor_id'),
         all: () => [],
       },
       {
@@ -751,8 +752,9 @@ describe('public ui routes', () => {
       },
       {
         match: (sql) =>
-          sql.includes('coalesce(sum(case when r.day_start_at >= ?2 then r.total_sec else 0 end), 0) as total_sec_30d') &&
-          sql.includes('left join monitor_daily_rollups r'),
+          sql.includes(
+            'coalesce(sum(case when r.day_start_at >= ?2 then r.total_sec else 0 end), 0) as total_sec_30d',
+          ) && sql.includes('left join monitor_daily_rollups r'),
         all: () => [
           {
             monitor_id: 21,

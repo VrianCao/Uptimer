@@ -24,7 +24,9 @@ type PersistedHomepageCache = {
   value: PublicHomepageResponse;
 };
 
-function toHeartbeatStatusCode(status: StatusResponse['monitors'][number]['heartbeats'][number]['status']) {
+function toHeartbeatStatusCode(
+  status: StatusResponse['monitors'][number]['heartbeats'][number]['status'],
+) {
   switch (status) {
     case 'up':
       return 'u';
@@ -161,8 +163,8 @@ const initialHomepage =
 const migratedPersistedStatus = initialHomepage ? null : readPersistedStatusCache();
 const persistedHomepage = initialHomepage
   ? null
-  : readPersistedHomepageCache() ??
-    (migratedPersistedStatus ? homepageFromStatus(migratedPersistedStatus) : null);
+  : (readPersistedHomepageCache() ??
+    (migratedPersistedStatus ? homepageFromStatus(migratedPersistedStatus) : null));
 const seedHomepage = initialHomepage ?? persistedHomepage;
 
 if (seedHomepage) {

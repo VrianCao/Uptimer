@@ -364,7 +364,10 @@ describe('internal sharded public snapshot assembler route', () => {
       write_count: 2,
     });
     expect(writes.map((args) => args[0])).toEqual(['homepage', 'homepage:artifact']);
-    const artifact = JSON.parse(writes[1]![2] as string) as { preload_html?: string; snapshot?: unknown };
+    const artifact = JSON.parse(writes[1]![2] as string) as {
+      preload_html?: string;
+      snapshot?: unknown;
+    };
     expect(artifact.preload_html).toContain('uptimer-preload');
     expect(artifact.snapshot).toMatchObject({ generated_at: 1_700_000_000 });
   });
@@ -437,7 +440,10 @@ describe('internal sharded public snapshot assembler route', () => {
       write_count: 2,
     });
     expect(writes.map((args) => args[0])).toEqual(['homepage', 'homepage:artifact']);
-    const artifact = JSON.parse(writes[1]![2] as string) as { preload_html?: string; snapshot?: unknown };
+    const artifact = JSON.parse(writes[1]![2] as string) as {
+      preload_html?: string;
+      snapshot?: unknown;
+    };
     expect(artifact.preload_html).toContain('PRE-RENDERED API');
     expect(artifact.snapshot).toMatchObject({ generated_at: homepage.generated_at });
   });
@@ -893,8 +899,7 @@ describe('internal sharded public snapshot continuation route', () => {
       DB: createFakeD1Database([
         {
           match: (sql) =>
-            sql.includes('select generated_at from public_snapshots') &&
-            !sql.includes('body_json'),
+            sql.includes('select generated_at from public_snapshots') && !sql.includes('body_json'),
           first: (args) => (args[0] === 'homepage' ? { generated_at: payload.generated_at } : null),
         },
         {
@@ -950,7 +955,10 @@ describe('internal sharded public snapshot continuation route', () => {
       continued: false,
     });
     expect(writes.map((args) => args[0])).toEqual(['homepage:artifact']);
-    const artifact = JSON.parse(writes[0]![2] as string) as { preload_html?: string; snapshot?: unknown };
+    const artifact = JSON.parse(writes[0]![2] as string) as {
+      preload_html?: string;
+      snapshot?: unknown;
+    };
     expect(artifact.preload_html).toContain('uptimer-preload');
     expect(artifact.snapshot).toMatchObject({ generated_at: payload.generated_at });
   });
@@ -963,8 +971,7 @@ describe('internal sharded public snapshot continuation route', () => {
       DB: createFakeD1Database([
         {
           match: (sql) =>
-            sql.includes('select generated_at from public_snapshots') &&
-            !sql.includes('body_json'),
+            sql.includes('select generated_at from public_snapshots') && !sql.includes('body_json'),
           first: (args) => {
             if (args[0] === 'homepage') return { generated_at: payload.generated_at };
             if (args[0] === 'homepage:artifact') return { generated_at: payload.generated_at };

@@ -279,7 +279,9 @@ export function UptimeBar30d({
                   className="h-full w-full bg-transparent focus:outline-none"
                   onMouseEnter={(event) => showTooltip(day, index, event.currentTarget)}
                   onFocus={(event) => showTooltip(day, index, event.currentTarget)}
-                  onBlur={() => setTooltip((current) => (current?.index === index ? null : current))}
+                  onBlur={() =>
+                    setTooltip((current) => (current?.index === index ? null : current))
+                  }
                   onMouseLeave={() =>
                     setTooltip((current) => (current?.index === index ? null : current))
                   }

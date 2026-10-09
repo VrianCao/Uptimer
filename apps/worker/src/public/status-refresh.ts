@@ -15,11 +15,7 @@ import {
   type PublicMonitorRuntimeSnapshot,
 } from './monitor-runtime';
 
-import {
-  buildPublicStatusBanner,
-  toMonitorStatus,
-  utcDayStart,
-} from './data';
+import { buildPublicStatusBanner, toMonitorStatus, utcDayStart } from './data';
 import {
   incidentStatusPageVisibilityPredicate,
   maintenanceWindowStatusPageVisibilityPredicate,
@@ -559,7 +555,8 @@ function tryPatchPublicStatusPayloadFromRuntimeSnapshot(opts: {
     }
     if (
       baseMonitor.last_checked_at !== null &&
-      (runtimeEntry.last_checked_at === null || runtimeEntry.last_checked_at < baseMonitor.last_checked_at)
+      (runtimeEntry.last_checked_at === null ||
+        runtimeEntry.last_checked_at < baseMonitor.last_checked_at)
     ) {
       return null;
     }
@@ -736,11 +733,7 @@ export async function tryComputePublicStatusPayloadFromScheduledRuntimeUpdates(o
 }): Promise<PublicStatusResponse | null> {
   const baseSnapshot = opts.baseSnapshot
     ? { data: opts.baseSnapshot }
-    : await readStatusSnapshotPayloadAnyAge(
-        opts.db,
-        opts.now,
-        STATUS_FAST_PATCH_MAX_STALE_SECONDS,
-      );
+    : await readStatusSnapshotPayloadAnyAge(opts.db, opts.now, STATUS_FAST_PATCH_MAX_STALE_SECONDS);
   if (!baseSnapshot || !canPatchStatusFromRuntime(baseSnapshot.data)) {
     return null;
   }

@@ -1,9 +1,6 @@
 import { z } from 'zod';
 
-import {
-  parseMonitorRuntimeUpdate,
-  type MonitorRuntimeUpdate,
-} from '../public/monitor-runtime';
+import { parseMonitorRuntimeUpdate, type MonitorRuntimeUpdate } from '../public/monitor-runtime';
 import {
   homepageMonitorCardSchema,
   publicHomepageResponseSchema,
@@ -293,11 +290,7 @@ export function parseMonitorRuntimeUpdateFragmentRows(
     }
 
     const update = parseMonitorRuntimeUpdate(raw);
-    if (
-      !update ||
-      update.monitor_id !== monitorId ||
-      update.checked_at !== row.generated_at
-    ) {
+    if (!update || update.monitor_id !== monitorId || update.checked_at !== row.generated_at) {
       invalidCount += 1;
       continue;
     }
@@ -453,10 +446,12 @@ export function parseHomepageMonitorFragmentRows(
   const parsed = parseMonitorFragmentRows(rows, homepageMonitorCardSchema, opts);
   return {
     ...parsed,
-    data: parsed.data.map((monitor): HomepageMonitorFragment => ({
-      ...monitor,
-      display_url: normalizeDisplayUrl(monitor.display_url),
-    })),
+    data: parsed.data.map(
+      (monitor): HomepageMonitorFragment => ({
+        ...monitor,
+        display_url: normalizeDisplayUrl(monitor.display_url),
+      }),
+    ),
   };
 }
 
@@ -467,10 +462,12 @@ export function parseStatusMonitorFragmentRows(
   const parsed = parseMonitorFragmentRows(rows, statusMonitorFragmentSchema, opts);
   return {
     ...parsed,
-    data: parsed.data.map((monitor): StatusMonitorFragment => ({
-      ...monitor,
-      display_url: normalizeDisplayUrl(monitor.display_url),
-    })),
+    data: parsed.data.map(
+      (monitor): StatusMonitorFragment => ({
+        ...monitor,
+        display_url: normalizeDisplayUrl(monitor.display_url),
+      }),
+    ),
   };
 }
 
@@ -582,7 +579,9 @@ function assemblePublicSnapshotBodyJsonFromRawMonitorFragments<T extends { monit
   return `${envelopeJson.slice(0, -1)},"monitors":[${monitorJson.join(',')}]}`;
 }
 
-async function readSnapshotBodyJsonFromFragments<T extends { generated_at: number; monitor_ids: number[] }>(
+async function readSnapshotBodyJsonFromFragments<
+  T extends { generated_at: number; monitor_ids: number[] },
+>(
   db: D1Database,
   envelopeSnapshotKey: string,
   monitorSnapshotKey: string,

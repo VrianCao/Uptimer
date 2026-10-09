@@ -17,11 +17,7 @@ export async function acquireLease(
   return (r.meta.changes ?? 0) > 0;
 }
 
-export async function releaseLease(
-  db: D1Database,
-  name: string,
-  expiresAt: number,
-): Promise<void> {
+export async function releaseLease(db: D1Database, name: string, expiresAt: number): Promise<void> {
   const cached = releaseLeaseStatementByDb.get(db);
   const statement = cached ?? db.prepare(RELEASE_LEASE_SQL);
   if (!cached) {

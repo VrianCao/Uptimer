@@ -55,8 +55,18 @@ const BENCH_LABEL = process.env.HOMEPAGE_BENCH_LABEL ?? 'current-working-tree';
 const OUTPUT_PATH = process.env.HOMEPAGE_BENCH_OUTPUT ?? null;
 
 const SCENARIOS: Scenario[] = [
-  { name: '1000 monitors / 30 heartbeats / 14 uptime days', monitorCount: 1000, heartbeatPoints: 30, uptimeDays: 14 },
-  { name: '5000 monitors / 30 heartbeats / 14 uptime days', monitorCount: 5000, heartbeatPoints: 30, uptimeDays: 14 },
+  {
+    name: '1000 monitors / 30 heartbeats / 14 uptime days',
+    monitorCount: 1000,
+    heartbeatPoints: 30,
+    uptimeDays: 14,
+  },
+  {
+    name: '5000 monitors / 30 heartbeats / 14 uptime days',
+    monitorCount: 5000,
+    heartbeatPoints: 30,
+    uptimeDays: 14,
+  },
 ];
 
 const ROOT_MISS_SCENARIOS: RootMissScenario[] = [
@@ -296,7 +306,10 @@ function buildSyntheticHomepagePayload(
       is_stale: false,
       last_checked_at: now - 30,
       heartbeat_strip: {
-        checked_at: Array.from({ length: heartbeatPoints }, (_, pointIndex) => now - (pointIndex + 1) * 60),
+        checked_at: Array.from(
+          { length: heartbeatPoints },
+          (_, pointIndex) => now - (pointIndex + 1) * 60,
+        ),
         status_codes: 'u'.repeat(heartbeatPoints),
         latency_ms: Array.from(
           { length: heartbeatPoints },
@@ -359,10 +372,13 @@ async function runOneRootMiss(scenario: RootMissScenario): Promise<RootMissSampl
         UPTIMER_API_ORIGIN: 'https://api.example.com',
         ASSETS: {
           fetch: async () =>
-            new Response('<!doctype html><html><head><title>Uptimer</title></head><body><div id="root"></div></body></html>', {
-              status: 200,
-              headers: { 'Content-Type': 'text/html; charset=utf-8' },
-            }),
+            new Response(
+              '<!doctype html><html><head><title>Uptimer</title></head><body><div id="root"></div></body></html>',
+              {
+                status: 200,
+                headers: { 'Content-Type': 'text/html; charset=utf-8' },
+              },
+            ),
         },
       },
       { waitUntil: () => undefined } as ExecutionContext,
@@ -376,8 +392,8 @@ async function runOneRootMiss(scenario: RootMissScenario): Promise<RootMissSampl
       preloadKB: Number((artifact.preload_html.length / 1024).toFixed(1)),
       snapshotKB: Number(
         (
-          (('snapshot_json' in artifact ? artifact.snapshot_json : JSON.stringify(artifact.snapshot))
-            .length / 1024)
+          ('snapshot_json' in artifact ? artifact.snapshot_json : JSON.stringify(artifact.snapshot))
+            .length / 1024
         ).toFixed(1),
       ),
     };
@@ -411,7 +427,8 @@ async function runOneRouteRead(scenario: RouteReadScenario): Promise<RouteReadSa
   const now = Math.floor(Date.now() / 1000);
   const payload = buildSyntheticHomepagePayload(scenario.monitorCount, 30, 14, now);
   const artifact = buildHomepageRenderArtifact(payload);
-  const bodyJson = scenario.endpoint === 'homepage' ? JSON.stringify(payload) : JSON.stringify(artifact);
+  const bodyJson =
+    scenario.endpoint === 'homepage' ? JSON.stringify(payload) : JSON.stringify(artifact);
   const key = scenario.endpoint === 'homepage' ? 'homepage' : 'homepage:artifact';
   const originalCaches = globalThis.caches;
 

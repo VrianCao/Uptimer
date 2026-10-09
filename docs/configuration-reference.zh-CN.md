@@ -19,17 +19,17 @@ Uptimer 所有可配置参数，按部署时、运行时、本地开发分类。
 
 ### Variables
 
-| 名称                    | 默认值               | 说明                                        |
-| ----------------------- | -------------------- | ------------------------------------------- |
-| `UPTIMER_PREFIX`        | 仓库名 slug          | 统一资源名前缀                              |
-| `UPTIMER_WORKER_NAME`   | `${UPTIMER_PREFIX}`  | Worker 名称                                 |
-| `UPTIMER_PAGES_PROJECT` | `${UPTIMER_PREFIX}`  | Pages 项目名                                |
-| `UPTIMER_D1_NAME`       | `${UPTIMER_PREFIX}`  | D1 数据库名                                 |
-| `UPTIMER_D1_BINDING`    | `DB`                 | Worker 中 D1 binding 名称                   |
-| `UPTIMER_API_BASE`      | 自动推导或 `/api/v1` | API 地址（如 `https://my-worker.example.com/api/v1` 或 `/api/v1`） |
+| 名称                    | 默认值               | 说明                                                                 |
+| ----------------------- | -------------------- | -------------------------------------------------------------------- |
+| `UPTIMER_PREFIX`        | 仓库名 slug          | 统一资源名前缀                                                       |
+| `UPTIMER_WORKER_NAME`   | `${UPTIMER_PREFIX}`  | Worker 名称                                                          |
+| `UPTIMER_PAGES_PROJECT` | `${UPTIMER_PREFIX}`  | Pages 项目名                                                         |
+| `UPTIMER_D1_NAME`       | `${UPTIMER_PREFIX}`  | D1 数据库名                                                          |
+| `UPTIMER_D1_BINDING`    | `DB`                 | Worker 中 D1 binding 名称                                            |
+| `UPTIMER_API_BASE`      | 自动推导或 `/api/v1` | API 地址（如 `https://my-worker.example.com/api/v1` 或 `/api/v1`）   |
 | `UPTIMER_API_ORIGIN`    | 自动推导             | API 源地址（如 `https://my-worker.example.com`）；自动拼接 `/api/v1` |
-| `VITE_ADMIN_PATH`       | —                    | 管理后台路径（可被 Secret 覆盖）            |
-| `UPTIMER_ADMIN_PATH`    | —                    | 兼容变量名（`VITE_ADMIN_PATH` 的 fallback） |
+| `VITE_ADMIN_PATH`       | —                    | 管理后台路径（可被 Secret 覆盖）                                     |
+| `UPTIMER_ADMIN_PATH`    | —                    | 兼容变量名（`VITE_ADMIN_PATH` 的 fallback）                          |
 
 > **API 地址**：通常无需配置——工作流会自动从 Worker URL 推导。仅当 API 使用自定义域名时，设置 `UPTIMER_API_BASE` 或 `UPTIMER_API_ORIGIN` 其中一个即可，两者只是格式不同。
 

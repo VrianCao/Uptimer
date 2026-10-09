@@ -347,7 +347,9 @@ describe('snapshots/public-status', () => {
     ]);
     expect(normalizedSql).toContain('from locks refresh_lock');
     expect(normalizedSql).toContain('refresh_lock.expires_at = ?10');
-    expect(normalizedSql).toContain("refresh_lock.expires_at > cast(strftime('%s', 'now') as integer)");
+    expect(normalizedSql).toContain(
+      "refresh_lock.expires_at > cast(strftime('%s', 'now') as integer)",
+    );
   });
 
   it('reports conditional status writes as skipped when homepage or lease guards do not match', async () => {
@@ -400,8 +402,16 @@ describe('snapshots/public-status', () => {
           }
 
           const existing = rows.get(key);
-          if (!existing || generatedAt >= existing.generated_at || existing.generated_at > futureCutoff) {
-            rows.set(key, { generated_at: generatedAt, updated_at: updatedAt, body_json: bodyJson });
+          if (
+            !existing ||
+            generatedAt >= existing.generated_at ||
+            existing.generated_at > futureCutoff
+          ) {
+            rows.set(key, {
+              generated_at: generatedAt,
+              updated_at: updatedAt,
+              body_json: bodyJson,
+            });
             return { meta: { changes: 1 } };
           }
           return { meta: { changes: 0 } };

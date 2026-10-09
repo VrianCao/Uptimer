@@ -59,7 +59,9 @@ function buildPlaceholders(count: number): string {
   return Array.from({ length: count }, (_, index) => `?${index + 1}`).join(', ');
 }
 
-function groupRowsByMonitorId<T extends { monitor_id: number }>(rows: readonly T[]): Map<number, T[]> {
+function groupRowsByMonitorId<T extends { monitor_id: number }>(
+  rows: readonly T[],
+): Map<number, T[]> {
   const grouped = new Map<number, T[]>();
   for (const row of rows) {
     const existing = grouped.get(row.monitor_id);
@@ -186,14 +188,14 @@ export async function runDailyRollup(
     }
 
     const earliestRangeStart = monitorBatch.reduce(
-      (min, monitor) =>
-        Math.min(min, rangeStartByMonitorId.get(monitor.id) ?? targetDayEnd),
+      (min, monitor) => Math.min(min, rangeStartByMonitorId.get(monitor.id) ?? targetDayEnd),
       targetDayEnd,
     );
     const monitorIds = monitorBatch.map((monitor) => monitor.id);
     const checkRowsByStart = groupMonitorRowsByNumber(
       monitorBatch,
-      (monitor) => (rangeStartByMonitorId.get(monitor.id) ?? targetDayStart) - monitor.interval_sec * 2,
+      (monitor) =>
+        (rangeStartByMonitorId.get(monitor.id) ?? targetDayStart) - monitor.interval_sec * 2,
     );
     const [outageRows, checkRowGroups] = await Promise.all([
       listOutageRowsForMonitorBatch(env.DB, monitorIds, targetDayEnd, earliestRangeStart),

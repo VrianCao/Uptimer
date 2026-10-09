@@ -100,11 +100,7 @@ export function cachePublic(opts: {
     }
 
     const cache = await openNamedCache(opts.cacheName);
-    const cacheKey = buildCacheKey(
-      c.req.url,
-      c.req.header('Origin'),
-      opts.normalizeCacheKeyUrl,
-    );
+    const cacheKey = buildCacheKey(c.req.url, c.req.header('Origin'), opts.normalizeCacheKeyUrl);
 
     const bypassCache = trace?.mode === 'bypass-cache';
     if (!bypassCache) {

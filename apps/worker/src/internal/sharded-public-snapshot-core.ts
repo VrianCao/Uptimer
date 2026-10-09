@@ -121,21 +121,18 @@ function isTruthyEnvFlag(value: unknown): boolean {
     return false;
   }
   const normalized = value.trim().toLowerCase();
-  return (
-    normalized === '1' ||
-    normalized === 'true' ||
-    normalized === 'yes' ||
-    normalized === 'on'
-  );
+  return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on';
 }
 
 function shouldWriteHomepageArtifactFragments(env: Env): boolean {
-  const raw = (env as unknown as Record<string, unknown>).UPTIMER_PUBLIC_HOMEPAGE_ARTIFACT_FRAGMENT_WRITES;
+  const raw = (env as unknown as Record<string, unknown>)
+    .UPTIMER_PUBLIC_HOMEPAGE_ARTIFACT_FRAGMENT_WRITES;
   return isTruthyEnvFlag(raw);
 }
 
 function shouldSeedHomepageFromRuntimeSnapshot(env: Env): boolean {
-  const raw = (env as unknown as Record<string, unknown>).UPTIMER_PUBLIC_SHARDED_HOMEPAGE_RUNTIME_SEED;
+  const raw = (env as unknown as Record<string, unknown>)
+    .UPTIMER_PUBLIC_SHARDED_HOMEPAGE_RUNTIME_SEED;
   return isTruthyEnvFlag(raw);
 }
 
@@ -245,13 +242,11 @@ async function readRawPublicSnapshotRow(
   env: Env,
   key: PublicSnapshotPublishKey,
 ): Promise<{ generated_at: number; body_json: string } | null> {
-  const row = await rawPublicSnapshotReadStatement(env.DB, key)
-    .first<{ generated_at: number; body_json: string }>();
-  if (
-    !row ||
-    !Number.isFinite(row.generated_at) ||
-    typeof row.body_json !== 'string'
-  ) {
+  const row = await rawPublicSnapshotReadStatement(env.DB, key).first<{
+    generated_at: number;
+    body_json: string;
+  }>();
+  if (!row || !Number.isFinite(row.generated_at) || typeof row.body_json !== 'string') {
     return null;
   }
   return row;
@@ -261,8 +256,9 @@ async function readRawPublicSnapshotGeneratedAt(
   env: Env,
   key: PublicSnapshotPublishKey,
 ): Promise<number | null> {
-  const row = await rawPublicSnapshotGeneratedAtStatement(env.DB, key)
-    .first<{ generated_at: number }>();
+  const row = await rawPublicSnapshotGeneratedAtStatement(env.DB, key).first<{
+    generated_at: number;
+  }>();
   return row && Number.isFinite(row.generated_at) ? row.generated_at : null;
 }
 
@@ -412,7 +408,10 @@ export async function publishHomepageArtifactSnapshotFromPublishedHomepage(opts:
         skip: 'stale_homepage',
       };
     }
-    const artifactGeneratedAt = await readRawPublicSnapshotGeneratedAt(opts.env, 'homepage:artifact');
+    const artifactGeneratedAt = await readRawPublicSnapshotGeneratedAt(
+      opts.env,
+      'homepage:artifact',
+    );
     if (artifactGeneratedAt !== null && artifactGeneratedAt >= homepageGeneratedAt) {
       const updatedAt = Math.max(opts.now, Math.floor(Date.now() / 1000));
       const touched = await touchRawPublicSnapshotUpdatedAt({
@@ -464,7 +463,10 @@ export async function publishHomepageArtifactSnapshotFromPublishedHomepage(opts:
   }
 }
 
-function normalizeSliceBounds(offset: number | undefined, limit: number | undefined): {
+function normalizeSliceBounds(
+  offset: number | undefined,
+  limit: number | undefined,
+): {
   offset: number;
   limit: number;
 } {
@@ -493,29 +495,28 @@ async function readHomepageSeedPayload(
   }
 
   try {
-    const [{ tryComputePublicHomepagePayloadFromScheduledRuntimeUpdates }, { readPublicMonitorRuntimeSnapshot }] =
-      await Promise.all([import('../public/homepage'), import('../public/monitor-runtime')]);
+    const [
+      { tryComputePublicHomepagePayloadFromScheduledRuntimeUpdates },
+      { readPublicMonitorRuntimeSnapshot },
+    ] = await Promise.all([import('../public/homepage'), import('../public/monitor-runtime')]);
     const runtimeSnapshot = await readPublicMonitorRuntimeSnapshot(env.DB, now);
     const seedNow = runtimeSnapshot?.generated_at ?? now;
     return (
-      await tryComputePublicHomepagePayloadFromScheduledRuntimeUpdates({
+      (await tryComputePublicHomepagePayloadFromScheduledRuntimeUpdates({
         db: env.DB,
         now: seedNow,
         baseSnapshot: base.snapshot,
         baseSnapshotBodyJson: null,
         updates: [],
-      })
-    ) ?? base.snapshot;
+      })) ?? base.snapshot
+    );
   } catch (err) {
     console.warn('internal sharded homepage runtime seed failed', err);
     return base.snapshot;
   }
 }
 
-async function readStatusSeedPayload(
-  env: Env,
-  now: number,
-): Promise<PublicStatusResponse | null> {
+async function readStatusSeedPayload(env: Env, now: number): Promise<PublicStatusResponse | null> {
   const { readStatusSnapshotPayloadAnyAge } = await import('../snapshots/public-status-read');
   return (await readStatusSnapshotPayloadAnyAge(env.DB, now))?.data ?? null;
 }
@@ -555,9 +556,10 @@ export async function seedShardedPublicSnapshotFragments(
 ): Promise<ShardedPublicSnapshotSeedResult> {
   const { offset, limit } = normalizeSliceBounds(opts.offset, opts.limit);
   try {
-    const payload = opts.kind === 'homepage'
-      ? await readHomepageSeedPayload(opts.env, opts.now)
-      : await readStatusSeedPayload(opts.env, opts.now);
+    const payload =
+      opts.kind === 'homepage'
+        ? await readHomepageSeedPayload(opts.env, opts.now)
+        : await readStatusSeedPayload(opts.env, opts.now);
     if (!payload) {
       return {
         ok: true,
@@ -600,7 +602,8 @@ export async function seedShardedPublicSnapshotFragments(
       (opts.part === 'monitors' || opts.part === 'all') &&
       shouldWriteHomepageArtifactFragments(opts.env)
     ) {
-      const { buildHomepageArtifactMonitorFragmentWrites } = await import('../snapshots/public-homepage');
+      const { buildHomepageArtifactMonitorFragmentWrites } =
+        await import('../snapshots/public-homepage');
       writes.push(
         ...buildHomepageArtifactMonitorFragmentWrites(
           payload as PublicHomepageResponse,
@@ -658,9 +661,10 @@ export async function assembleShardedPublicSnapshot(
   const mode = opts.mode ?? 'validated';
   try {
     if (mode === 'json') {
-      const assembled = opts.kind === 'homepage'
-        ? await readHomepageSnapshotBodyJsonFromFragments(opts.env.DB)
-        : await readStatusSnapshotBodyJsonFromFragments(opts.env.DB);
+      const assembled =
+        opts.kind === 'homepage'
+          ? await readHomepageSnapshotBodyJsonFromFragments(opts.env.DB)
+          : await readStatusSnapshotBodyJsonFromFragments(opts.env.DB);
       if (!assembled) {
         return {
           ok: true,
@@ -684,14 +688,15 @@ export async function assembleShardedPublicSnapshot(
           })
         : false;
       const shouldPublishArtifact = (opts.publishArtifact ?? true) && opts.kind === 'homepage';
-      const artifactResult = opts.publish && shouldPublishArtifact
-        ? await publishRawHomepageArtifactSnapshot({
-            env: opts.env,
-            generatedAt: assembled.generatedAt,
-            bodyJson: assembled.bodyJson,
-            now: publishNow,
-          })
-        : null;
+      const artifactResult =
+        opts.publish && shouldPublishArtifact
+          ? await publishRawHomepageArtifactSnapshot({
+              env: opts.env,
+              generatedAt: assembled.generatedAt,
+              bodyJson: assembled.bodyJson,
+              now: publishNow,
+            })
+          : null;
       const artifactPublished = artifactResult?.artifactPublished ?? false;
       return {
         ok: true,
@@ -702,9 +707,7 @@ export async function assembleShardedPublicSnapshot(
         invalidCount: assembled.invalidCount,
         staleCount: assembled.staleCount,
         mode,
-        ...(opts.measureBodyBytes
-          ? { bodyBytes: bodyJsonBytes(assembled.bodyJson, true) }
-          : {}),
+        ...(opts.measureBodyBytes ? { bodyBytes: bodyJsonBytes(assembled.bodyJson, true) } : {}),
         ...(opts.publish
           ? {
               published,
@@ -760,9 +763,7 @@ export async function assembleShardedPublicSnapshot(
         invalidCount: fragments.monitors.invalidCount,
         staleCount: fragments.monitors.staleCount,
         mode,
-        ...(opts.measureBodyBytes
-          ? { bodyBytes: measuredBodyBytes(assembled, true) }
-          : {}),
+        ...(opts.measureBodyBytes ? { bodyBytes: measuredBodyBytes(assembled, true) } : {}),
       };
     }
 

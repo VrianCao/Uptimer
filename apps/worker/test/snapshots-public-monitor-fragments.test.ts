@@ -245,8 +245,14 @@ describe('snapshots/public-monitor-fragments', () => {
   it('reads and assembles status/homepage snapshots from envelope and monitor fragments', async () => {
     const statusEnvelopeWrite = buildStatusEnvelopeFragmentWrite(statusPayload(), 1_700_000_005);
     const statusMonitorWrites = buildStatusMonitorFragmentWrites(statusPayload(), 1_700_000_005);
-    const homepageEnvelopeWrite = buildHomepageEnvelopeFragmentWrite(homepagePayload(), 1_700_000_005);
-    const homepageMonitorWrites = buildHomepageMonitorFragmentWrites(homepagePayload(), 1_700_000_005);
+    const homepageEnvelopeWrite = buildHomepageEnvelopeFragmentWrite(
+      homepagePayload(),
+      1_700_000_005,
+    );
+    const homepageMonitorWrites = buildHomepageMonitorFragmentWrites(
+      homepagePayload(),
+      1_700_000_005,
+    );
 
     const statusEnvelope = parseStatusEnvelopeFragmentRows([
       {
@@ -297,12 +303,14 @@ describe('snapshots/public-monitor-fragments', () => {
         match: 'from public_snapshot_fragments',
         all: (args) => {
           if (args[0] === STATUS_ENVELOPE_FRAGMENT_KEY) {
-            return [{
-              fragment_key: statusEnvelopeWrite.fragmentKey,
-              generated_at: statusEnvelopeWrite.generatedAt,
-              body_json: statusEnvelopeWrite.bodyJson,
-              updated_at: statusEnvelopeWrite.updatedAt,
-            }];
+            return [
+              {
+                fragment_key: statusEnvelopeWrite.fragmentKey,
+                generated_at: statusEnvelopeWrite.generatedAt,
+                body_json: statusEnvelopeWrite.bodyJson,
+                updated_at: statusEnvelopeWrite.updatedAt,
+              },
+            ];
           }
           if (args[0] === STATUS_MONITOR_FRAGMENTS_KEY) {
             return statusMonitorWrites.map((write) => ({
@@ -313,12 +321,14 @@ describe('snapshots/public-monitor-fragments', () => {
             }));
           }
           if (args[0] === HOMEPAGE_ENVELOPE_FRAGMENT_KEY) {
-            return [{
-              fragment_key: homepageEnvelopeWrite.fragmentKey,
-              generated_at: homepageEnvelopeWrite.generatedAt,
-              body_json: homepageEnvelopeWrite.bodyJson,
-              updated_at: homepageEnvelopeWrite.updatedAt,
-            }];
+            return [
+              {
+                fragment_key: homepageEnvelopeWrite.fragmentKey,
+                generated_at: homepageEnvelopeWrite.generatedAt,
+                body_json: homepageEnvelopeWrite.bodyJson,
+                updated_at: homepageEnvelopeWrite.updatedAt,
+              },
+            ];
           }
           if (args[0] === HOMEPAGE_MONITOR_FRAGMENTS_KEY) {
             return homepageMonitorWrites.map((write) => ({
@@ -345,20 +355,31 @@ describe('snapshots/public-monitor-fragments', () => {
 
   it('assembles public body JSON from envelope and raw monitor fragments', async () => {
     const statusEnvelopeWrite = buildStatusEnvelopeFragmentWrite(statusPayload(), 1_700_000_005);
-    const statusMonitorWrites = buildStatusMonitorFragmentWrites(statusPayload(), 1_700_000_005).reverse();
-    const homepageEnvelopeWrite = buildHomepageEnvelopeFragmentWrite(homepagePayload(), 1_700_000_005);
-    const homepageMonitorWrites = buildHomepageMonitorFragmentWrites(homepagePayload(), 1_700_000_005).reverse();
+    const statusMonitorWrites = buildStatusMonitorFragmentWrites(
+      statusPayload(),
+      1_700_000_005,
+    ).reverse();
+    const homepageEnvelopeWrite = buildHomepageEnvelopeFragmentWrite(
+      homepagePayload(),
+      1_700_000_005,
+    );
+    const homepageMonitorWrites = buildHomepageMonitorFragmentWrites(
+      homepagePayload(),
+      1_700_000_005,
+    ).reverse();
     const db = createFakeD1Database([
       {
         match: 'from public_snapshot_fragments',
         all: (args) => {
           if (args[0] === STATUS_ENVELOPE_FRAGMENT_KEY) {
-            return [{
-              fragment_key: statusEnvelopeWrite.fragmentKey,
-              generated_at: statusEnvelopeWrite.generatedAt,
-              body_json: statusEnvelopeWrite.bodyJson,
-              updated_at: statusEnvelopeWrite.updatedAt,
-            }];
+            return [
+              {
+                fragment_key: statusEnvelopeWrite.fragmentKey,
+                generated_at: statusEnvelopeWrite.generatedAt,
+                body_json: statusEnvelopeWrite.bodyJson,
+                updated_at: statusEnvelopeWrite.updatedAt,
+              },
+            ];
           }
           if (args[0] === STATUS_MONITOR_FRAGMENTS_KEY) {
             return statusMonitorWrites.map((write) => ({
@@ -369,12 +390,14 @@ describe('snapshots/public-monitor-fragments', () => {
             }));
           }
           if (args[0] === HOMEPAGE_ENVELOPE_FRAGMENT_KEY) {
-            return [{
-              fragment_key: homepageEnvelopeWrite.fragmentKey,
-              generated_at: homepageEnvelopeWrite.generatedAt,
-              body_json: homepageEnvelopeWrite.bodyJson,
-              updated_at: homepageEnvelopeWrite.updatedAt,
-            }];
+            return [
+              {
+                fragment_key: homepageEnvelopeWrite.fragmentKey,
+                generated_at: homepageEnvelopeWrite.generatedAt,
+                body_json: homepageEnvelopeWrite.bodyJson,
+                updated_at: homepageEnvelopeWrite.updatedAt,
+              },
+            ];
           }
           if (args[0] === HOMEPAGE_MONITOR_FRAGMENTS_KEY) {
             return homepageMonitorWrites.map((write) => ({

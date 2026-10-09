@@ -355,7 +355,9 @@ export async function writeHomepageGuardCacheState(opts: {
   }
 }
 
-function uniqueComponentKeys(keys: readonly HomepageGuardComponentKey[]): HomepageGuardComponentKey[] {
+function uniqueComponentKeys(
+  keys: readonly HomepageGuardComponentKey[],
+): HomepageGuardComponentKey[] {
   return [...new Set(keys)];
 }
 
@@ -370,18 +372,30 @@ export async function bumpHomepageGuardVersions(
   await db.batch(uniqueKeys.map((key) => statement.bind(key, now)));
 }
 
-export async function bumpHomepageSettingsGuardVersion(db: D1Database, now?: number): Promise<void> {
+export async function bumpHomepageSettingsGuardVersion(
+  db: D1Database,
+  now?: number,
+): Promise<void> {
   await bumpHomepageGuardVersions(db, [SETTINGS_KEY], now);
 }
 
-export async function bumpHomepageMonitorGuardVersions(db: D1Database, now?: number): Promise<void> {
+export async function bumpHomepageMonitorGuardVersions(
+  db: D1Database,
+  now?: number,
+): Promise<void> {
   await bumpHomepageGuardVersions(db, [MONITOR_METADATA_KEY, INCIDENTS_KEY, MAINTENANCE_KEY], now);
 }
 
-export async function bumpHomepageIncidentGuardVersion(db: D1Database, now?: number): Promise<void> {
+export async function bumpHomepageIncidentGuardVersion(
+  db: D1Database,
+  now?: number,
+): Promise<void> {
   await bumpHomepageGuardVersions(db, [INCIDENTS_KEY], now);
 }
 
-export async function bumpHomepageMaintenanceGuardVersion(db: D1Database, now?: number): Promise<void> {
+export async function bumpHomepageMaintenanceGuardVersion(
+  db: D1Database,
+  now?: number,
+): Promise<void> {
   await bumpHomepageGuardVersions(db, [MAINTENANCE_KEY], now);
 }

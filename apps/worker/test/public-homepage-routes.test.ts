@@ -44,11 +44,9 @@ async function requestHomepage(handlers: FakeD1QueryHandler[]) {
   app.notFound(handleNotFound);
   app.route('/api/v1/public', publicRoutes);
 
-  return app.fetch(
-    new Request('https://status.example.com/api/v1/public/homepage'),
-    env,
-    { waitUntil: vi.fn() } as unknown as ExecutionContext,
-  );
+  return app.fetch(new Request('https://status.example.com/api/v1/public/homepage'), env, {
+    waitUntil: vi.fn(),
+  } as unknown as ExecutionContext);
 }
 
 async function requestHomepageArtifact(handlers: FakeD1QueryHandler[]) {
@@ -62,11 +60,9 @@ async function requestHomepageArtifact(handlers: FakeD1QueryHandler[]) {
   app.notFound(handleNotFound);
   app.route('/api/v1/public', publicRoutes);
 
-  return app.fetch(
-    new Request('https://status.example.com/api/v1/public/homepage-artifact'),
-    env,
-    { waitUntil: vi.fn() } as unknown as ExecutionContext,
-  );
+  return app.fetch(new Request('https://status.example.com/api/v1/public/homepage-artifact'), env, {
+    waitUntil: vi.fn(),
+  } as unknown as ExecutionContext);
 }
 
 async function requestHomepageViaApp(
@@ -365,9 +361,7 @@ describe('public homepage route', () => {
     ]);
 
     expect(res.status).toBe(200);
-    expect(res.headers.get('Access-Control-Allow-Origin')).toBe(
-      'https://status-web.example.com',
-    );
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBe('https://status-web.example.com');
     expect(res.headers.get('Vary')).toContain('Origin');
   });
 
@@ -396,9 +390,7 @@ describe('public homepage route', () => {
     ]);
 
     expect(res.status).toBe(200);
-    expect(res.headers.get('Access-Control-Allow-Origin')).toBe(
-      'https://status-web.example.com',
-    );
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBe('https://status-web.example.com');
     expect(res.headers.get('Vary')).toContain('Origin');
   });
 

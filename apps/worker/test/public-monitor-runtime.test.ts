@@ -169,9 +169,7 @@ describe('public/monitor-runtime', () => {
   });
 
   it('parses compact runtime update tuples on the hot path', () => {
-    expect(
-      parseMonitorRuntimeUpdate([1, 60, 0, 60, 'up', 'up', -3.7]),
-    ).toEqual({
+    expect(parseMonitorRuntimeUpdate([1, 60, 0, 60, 'up', 'up', -3.7])).toEqual({
       monitor_id: 1,
       interval_sec: 60,
       created_at: 0,
@@ -371,62 +369,65 @@ describe('public/monitor-runtime', () => {
     vi.setSystemTime(new Date('1970-01-01T00:02:20.000Z'));
 
     try {
-    const rows = new Map<string, { generated_at: number; body_json: string; updated_at: number }>();
-    const db = createFakeD1Database([
-      {
-        match: 'insert into public_snapshots',
-        run: (args) => {
-          const tuples = [
-            args.slice(0, 4) as [string, number, string, number],
-            args.slice(4, 8) as [string, number, string, number],
-          ];
-          for (const [key, generatedAt, bodyJson, updatedAt] of tuples) {
-            const existing = rows.get(key);
-            if (!existing || generatedAt >= existing.generated_at) {
-              rows.set(key, {
-                generated_at: generatedAt,
-                body_json: bodyJson,
-                updated_at: updatedAt,
-              });
+      const rows = new Map<
+        string,
+        { generated_at: number; body_json: string; updated_at: number }
+      >();
+      const db = createFakeD1Database([
+        {
+          match: 'insert into public_snapshots',
+          run: (args) => {
+            const tuples = [
+              args.slice(0, 4) as [string, number, string, number],
+              args.slice(4, 8) as [string, number, string, number],
+            ];
+            for (const [key, generatedAt, bodyJson, updatedAt] of tuples) {
+              const existing = rows.get(key);
+              if (!existing || generatedAt >= existing.generated_at) {
+                rows.set(key, {
+                  generated_at: generatedAt,
+                  body_json: bodyJson,
+                  updated_at: updatedAt,
+                });
+              }
             }
-          }
-          return { meta: { changes: 1 } };
+            return { meta: { changes: 1 } };
+          },
         },
-      },
-    ]);
+      ]);
 
-    const newer: PublicMonitorRuntimeSnapshot = {
-      version: 1,
-      generated_at: 120,
-      day_start_at: 0,
-      monitors: [],
-    };
-    const older: PublicMonitorRuntimeSnapshot = {
-      version: 1,
-      generated_at: 90,
-      day_start_at: 0,
-      monitors: [],
-    };
-
-    await writePublicMonitorRuntimeSnapshot(db, newer, 140);
-    vi.setSystemTime(new Date('1970-01-01T00:02:40.000Z'));
-    await writePublicMonitorRuntimeSnapshot(db, older, 160);
-
-    expect(rows.get('monitor-runtime')).toEqual({
-      generated_at: 120,
-      body_json: JSON.stringify(newer),
-      updated_at: 140,
-    });
-    expect(rows.get('monitor-runtime:totals')).toEqual({
-      generated_at: 120,
-      body_json: JSON.stringify({
+      const newer: PublicMonitorRuntimeSnapshot = {
         version: 1,
         generated_at: 120,
         day_start_at: 0,
         monitors: [],
-      }),
-      updated_at: 140,
-    });
+      };
+      const older: PublicMonitorRuntimeSnapshot = {
+        version: 1,
+        generated_at: 90,
+        day_start_at: 0,
+        monitors: [],
+      };
+
+      await writePublicMonitorRuntimeSnapshot(db, newer, 140);
+      vi.setSystemTime(new Date('1970-01-01T00:02:40.000Z'));
+      await writePublicMonitorRuntimeSnapshot(db, older, 160);
+
+      expect(rows.get('monitor-runtime')).toEqual({
+        generated_at: 120,
+        body_json: JSON.stringify(newer),
+        updated_at: 140,
+      });
+      expect(rows.get('monitor-runtime:totals')).toEqual({
+        generated_at: 120,
+        body_json: JSON.stringify({
+          version: 1,
+          generated_at: 120,
+          day_start_at: 0,
+          monitors: [],
+        }),
+        updated_at: 140,
+      });
     } finally {
       vi.useRealTimers();
     }
@@ -437,34 +438,36 @@ describe('public/monitor-runtime', () => {
     vi.setSystemTime(new Date('1970-01-01T00:03:20.000Z'));
 
     try {
-      const rows = new Map<string, { generated_at: number; body_json: string; updated_at: number }>([
+      const rows = new Map<string, { generated_at: number; body_json: string; updated_at: number }>(
         [
-          'monitor-runtime',
-          {
-            generated_at: 170,
-            body_json: JSON.stringify({
-              version: 1,
+          [
+            'monitor-runtime',
+            {
               generated_at: 170,
-              day_start_at: 0,
-              monitors: [],
-            }),
-            updated_at: 170,
-          },
-        ],
-        [
-          'monitor-runtime:totals',
-          {
-            generated_at: 170,
-            body_json: JSON.stringify({
-              version: 1,
+              body_json: JSON.stringify({
+                version: 1,
+                generated_at: 170,
+                day_start_at: 0,
+                monitors: [],
+              }),
+              updated_at: 170,
+            },
+          ],
+          [
+            'monitor-runtime:totals',
+            {
               generated_at: 170,
-              day_start_at: 0,
-              monitors: [],
-            }),
-            updated_at: 170,
-          },
+              body_json: JSON.stringify({
+                version: 1,
+                generated_at: 170,
+                day_start_at: 0,
+                monitors: [],
+              }),
+              updated_at: 170,
+            },
+          ],
         ],
-      ]);
+      );
       const db = createFakeD1Database([
         {
           match: 'insert into public_snapshots',
@@ -522,81 +525,84 @@ describe('public/monitor-runtime', () => {
     vi.setSystemTime(new Date('1970-01-01T00:01:40.000Z'));
 
     try {
-    const rows = new Map<string, { generated_at: number; body_json: string; updated_at: number }>();
-    const db = createFakeD1Database([
-      {
-        match: 'from public_snapshots',
-        first: (args) => rows.get(args[0] as string) ?? null,
-      },
-      {
-        match: 'insert into public_snapshots',
-        run: (args) => {
-          const futureCutoff = args[8] as number;
-          const tuples = [
-            args.slice(0, 4) as [string, number, string, number],
-            args.slice(4, 8) as [string, number, string, number],
-          ];
-          for (const [key, generatedAt, bodyJson, updatedAt] of tuples) {
-            const existing = rows.get(key);
-            if (
-              !existing ||
-              generatedAt >= existing.generated_at ||
-              existing.generated_at > futureCutoff
-            ) {
-              rows.set(key, {
-                generated_at: generatedAt,
-                body_json: bodyJson,
-                updated_at: updatedAt,
-              });
-            }
-          }
-          return { meta: { changes: 1 } };
+      const rows = new Map<
+        string,
+        { generated_at: number; body_json: string; updated_at: number }
+      >();
+      const db = createFakeD1Database([
+        {
+          match: 'from public_snapshots',
+          first: (args) => rows.get(args[0] as string) ?? null,
         },
-      },
-    ]);
+        {
+          match: 'insert into public_snapshots',
+          run: (args) => {
+            const futureCutoff = args[8] as number;
+            const tuples = [
+              args.slice(0, 4) as [string, number, string, number],
+              args.slice(4, 8) as [string, number, string, number],
+            ];
+            for (const [key, generatedAt, bodyJson, updatedAt] of tuples) {
+              const existing = rows.get(key);
+              if (
+                !existing ||
+                generatedAt >= existing.generated_at ||
+                existing.generated_at > futureCutoff
+              ) {
+                rows.set(key, {
+                  generated_at: generatedAt,
+                  body_json: bodyJson,
+                  updated_at: updatedAt,
+                });
+              }
+            }
+            return { meta: { changes: 1 } };
+          },
+        },
+      ]);
 
-    const future: PublicMonitorRuntimeSnapshot = {
-      version: 1,
-      generated_at: 1_000,
-      day_start_at: 0,
-      monitors: [],
-    };
-    const real: PublicMonitorRuntimeSnapshot = {
-      version: 1,
-      generated_at: 200,
-      day_start_at: 0,
-      monitors: [],
-    };
-
-    await writePublicMonitorRuntimeSnapshot(db, future, 100);
-    await expect(readPublicMonitorRuntimeSnapshot(db, 100)).resolves.toBeNull();
-    await expect(readPublicMonitorRuntimeTotalsSnapshot(db, 100)).resolves.toBeNull();
-
-    vi.setSystemTime(new Date('1970-01-01T00:03:20.000Z'));
-    await writePublicMonitorRuntimeSnapshot(db, real, 200);
-
-    expect(rows.get('monitor-runtime')).toEqual({
-      generated_at: 200,
-      body_json: JSON.stringify(real),
-      updated_at: 200,
-    });
-    expect(rows.get('monitor-runtime:totals')).toEqual({
-      generated_at: 200,
-      body_json: JSON.stringify({
+      const future: PublicMonitorRuntimeSnapshot = {
+        version: 1,
+        generated_at: 1_000,
+        day_start_at: 0,
+        monitors: [],
+      };
+      const real: PublicMonitorRuntimeSnapshot = {
         version: 1,
         generated_at: 200,
         day_start_at: 0,
         monitors: [],
-      }),
-      updated_at: 200,
-    });
-    await expect(readPublicMonitorRuntimeSnapshot(db, 200)).resolves.toEqual(real);
-    await expect(readPublicMonitorRuntimeTotalsSnapshot(db, 200)).resolves.toEqual({
-      version: 1,
-      generated_at: 200,
-      day_start_at: 0,
-      monitors: [],
-    });
+      };
+
+      await writePublicMonitorRuntimeSnapshot(db, future, 100);
+      await expect(readPublicMonitorRuntimeSnapshot(db, 100)).resolves.toBeNull();
+      await expect(readPublicMonitorRuntimeTotalsSnapshot(db, 100)).resolves.toBeNull();
+
+      vi.setSystemTime(new Date('1970-01-01T00:03:20.000Z'));
+      await writePublicMonitorRuntimeSnapshot(db, real, 200);
+
+      expect(rows.get('monitor-runtime')).toEqual({
+        generated_at: 200,
+        body_json: JSON.stringify(real),
+        updated_at: 200,
+      });
+      expect(rows.get('monitor-runtime:totals')).toEqual({
+        generated_at: 200,
+        body_json: JSON.stringify({
+          version: 1,
+          generated_at: 200,
+          day_start_at: 0,
+          monitors: [],
+        }),
+        updated_at: 200,
+      });
+      await expect(readPublicMonitorRuntimeSnapshot(db, 200)).resolves.toEqual(real);
+      await expect(readPublicMonitorRuntimeTotalsSnapshot(db, 200)).resolves.toEqual({
+        version: 1,
+        generated_at: 200,
+        day_start_at: 0,
+        monitors: [],
+      });
     } finally {
       vi.useRealTimers();
     }

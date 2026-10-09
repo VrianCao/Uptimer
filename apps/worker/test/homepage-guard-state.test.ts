@@ -113,7 +113,14 @@ describe('homepage guard DB cache state', () => {
       {
         match: 'from public_snapshot_guard_versions',
         all: () => [
-          { key: 'homepage:guard', version: 1, state_json: validStateJson({ settings: 0, monitorMetadata: 0, incidents: 0, maintenance: 0 }, 1_700_000_010) },
+          {
+            key: 'homepage:guard',
+            version: 1,
+            state_json: validStateJson(
+              { settings: 0, monitorMetadata: 0, incidents: 0, maintenance: 0 },
+              1_700_000_010,
+            ),
+          },
         ],
       },
     ]);

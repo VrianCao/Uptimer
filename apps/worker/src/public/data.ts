@@ -754,15 +754,13 @@ async function computeTodayPartialUptimeBatchSql(
       args.push(monitor.id, monitor.interval_sec, monitor.created_at, monitor.last_checked_at);
     }
 
-    const { results } = await stmt
-      .bind(...args)
-      .all<{
-        monitor_id: number;
-        start_at: number;
-        total_sec: number;
-        downtime_sec: number;
-        unknown_sec: number;
-      }>();
+    const { results } = await stmt.bind(...args).all<{
+      monitor_id: number;
+      start_at: number;
+      total_sec: number;
+      downtime_sec: number;
+      unknown_sec: number;
+    }>();
 
     const rows = results ?? [];
     const shouldReturnAtLeastOneRow = chunk.some(
@@ -1315,9 +1313,8 @@ export async function listVisibleMaintenanceWindows(
   upcoming: FilteredMaintenanceWindowEntry[];
   activeMonitorIds: ReadonlySet<number>;
 }> {
-  const maintenanceVisibilitySql = maintenanceWindowStatusPageVisibilityPredicate(
-    includeHiddenMonitors,
-  );
+  const maintenanceVisibilitySql =
+    maintenanceWindowStatusPageVisibilityPredicate(includeHiddenMonitors);
 
   const [{ results: activeResults }, { results: upcomingResults }] = await Promise.all([
     db
@@ -1366,7 +1363,10 @@ export async function listVisibleMaintenanceWindows(
     ? new Set<number>()
     : await listStatusPageVisibleMonitorIds(
         db,
-        [...activeWindowMonitorIdsByWindowId.values(), ...upcomingWindowMonitorIdsByWindowId.values()].flat(),
+        [
+          ...activeWindowMonitorIdsByWindowId.values(),
+          ...upcomingWindowMonitorIdsByWindowId.values(),
+        ].flat(),
       );
 
   const active = activeRows
@@ -1448,10 +1448,7 @@ export async function listVisibleMaintenanceWindows(
   return { active, upcoming, activeMonitorIds };
 }
 
-export async function readPublicSiteSettings(
-  db: D1Database,
-  opts?: { bypassCache?: boolean },
-) {
+export async function readPublicSiteSettings(db: D1Database, opts?: { bypassCache?: boolean }) {
   return readSettings(db, opts);
 }
 

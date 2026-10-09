@@ -46,8 +46,9 @@ describe('scheduler/daily-rollup', () => {
       },
       {
         match: (sql) =>
-          sql.includes('coalesce(sum(case when r.day_start_at >= ?2 then r.total_sec else 0 end), 0) as total_sec_30d') &&
-          sql.includes('left join monitor_daily_rollups r'),
+          sql.includes(
+            'coalesce(sum(case when r.day_start_at >= ?2 then r.total_sec else 0 end), 0) as total_sec_30d',
+          ) && sql.includes('left join monitor_daily_rollups r'),
         all: () => [
           {
             monitor_id: 1,
@@ -177,8 +178,9 @@ describe('scheduler/daily-rollup', () => {
       },
       {
         match: (sql) =>
-          sql.includes('coalesce(sum(case when r.day_start_at >= ?2 then r.total_sec else 0 end), 0) as total_sec_30d') &&
-          sql.includes('left join monitor_daily_rollups r'),
+          sql.includes(
+            'coalesce(sum(case when r.day_start_at >= ?2 then r.total_sec else 0 end), 0) as total_sec_30d',
+          ) && sql.includes('left join monitor_daily_rollups r'),
         all: () => [],
       },
       {
@@ -233,8 +235,9 @@ describe('scheduler/daily-rollup', () => {
       },
       {
         match: (sql) =>
-          sql.includes('coalesce(sum(case when r.day_start_at >= ?2 then r.total_sec else 0 end), 0) as total_sec_30d') &&
-          sql.includes('left join monitor_daily_rollups r'),
+          sql.includes(
+            'coalesce(sum(case when r.day_start_at >= ?2 then r.total_sec else 0 end), 0) as total_sec_30d',
+          ) && sql.includes('left join monitor_daily_rollups r'),
         all: () => [],
       },
       {

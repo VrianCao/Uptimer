@@ -565,9 +565,7 @@ describe('internal scheduled check-batch route', () => {
 
     expect(res.status).toBe(200);
     expect(res.headers.get('X-Uptimer-Trace-Id')).toBe('batch-trace-id');
-    expect(res.headers.get('X-Uptimer-Trace')).toContain(
-      'route=internal/scheduled-check-batch',
-    );
+    expect(res.headers.get('X-Uptimer-Trace')).toContain('route=internal/scheduled-check-batch');
     expect(res.headers.get('X-Uptimer-Trace')).toContain('ids=2');
     expect(res.headers.get('Server-Timing')).toContain('w_check_batch_run');
     expect(log).toHaveBeenCalledWith(expect.stringContaining('internal-check-batch:'));

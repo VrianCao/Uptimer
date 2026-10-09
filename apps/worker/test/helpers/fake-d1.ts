@@ -58,7 +58,9 @@ class FakePreparedStatement {
   }
 
   async all<T = unknown>(): Promise<{ results: T[] }> {
-    const handler = this.handlers.find((item) => item.all && matchesQuery(this.normalizedSql, item.match));
+    const handler = this.handlers.find(
+      (item) => item.all && matchesQuery(this.normalizedSql, item.match),
+    );
     if (handler?.all) {
       const rows = await handler.all(this.args, this.normalizedSql);
       return { results: (rows ?? []) as T[] };
@@ -74,10 +76,7 @@ class FakePreparedStatement {
     const rows: unknown[] = [];
     if (this.args.length > 0) {
       for (const arg of this.args) {
-        const row = withSyntheticKey(
-          await firstHandler.first([arg], this.normalizedSql),
-          arg,
-        );
+        const row = withSyntheticKey(await firstHandler.first([arg], this.normalizedSql), arg);
         if (row !== null && row !== undefined) {
           rows.push(row);
         }
@@ -87,7 +86,10 @@ class FakePreparedStatement {
       }
     }
 
-    const row = withSyntheticKey(await firstHandler.first(this.args, this.normalizedSql), this.args[0]);
+    const row = withSyntheticKey(
+      await firstHandler.first(this.args, this.normalizedSql),
+      this.args[0],
+    );
     return { results: row === null || row === undefined ? [] : ([row] as T[]) };
   }
 
@@ -103,13 +105,17 @@ class FakePreparedStatement {
   }
 
   async raw<T = unknown>(): Promise<T[]> {
-    const rawHandler = this.handlers.find((item) => item.raw && matchesQuery(this.normalizedSql, item.match));
+    const rawHandler = this.handlers.find(
+      (item) => item.raw && matchesQuery(this.normalizedSql, item.match),
+    );
     if (rawHandler?.raw) {
       const rows = await rawHandler.raw(this.args, this.normalizedSql);
       return (rows ?? []) as T[];
     }
 
-    const allHandler = this.handlers.find((item) => item.all && matchesQuery(this.normalizedSql, item.match));
+    const allHandler = this.handlers.find(
+      (item) => item.all && matchesQuery(this.normalizedSql, item.match),
+    );
     if (allHandler?.all) {
       const rows = await allHandler.all(this.args, this.normalizedSql);
       return (rows ?? []).map(toRawRow) as T[];
@@ -127,7 +133,9 @@ class FakePreparedStatement {
   }
 
   async run<T = unknown>(): Promise<D1Result<T>> {
-    const handler = this.handlers.find((item) => item.run && matchesQuery(this.normalizedSql, item.match));
+    const handler = this.handlers.find(
+      (item) => item.run && matchesQuery(this.normalizedSql, item.match),
+    );
     if (!handler || !handler.run) {
       throw new Error(`No fake D1 run() handler matched SQL: ${this.sql}`);
     }
@@ -141,10 +149,7 @@ class FakePreparedStatement {
       } as unknown as D1Result<T>;
     }
 
-    const meta =
-      outcome?.meta !== undefined
-        ? { ...outcome.meta }
-        : {};
+    const meta = outcome?.meta !== undefined ? { ...outcome.meta } : {};
 
     return {
       success: outcome?.success ?? true,
