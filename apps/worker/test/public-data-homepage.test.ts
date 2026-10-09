@@ -24,16 +24,10 @@ describe('public data consistency', () => {
       },
       {
         match: (sql) => sql.includes('select distinct mwm.monitor_id from maintenance_windows mw'),
-        all: () => [
-          { monitor_id: 11 },
-          { monitor_id: 12 },
-          { monitor_id: 13 },
-          { monitor_id: 14 },
-        ],
+        all: () => [{ monitor_id: 11 }, { monitor_id: 12 }, { monitor_id: 13 }, { monitor_id: 14 }],
       },
       {
-        match: (sql) =>
-          sql.includes('from maintenance_windows') && sql.includes('starts_at > ?1'),
+        match: (sql) => sql.includes('from maintenance_windows') && sql.includes('starts_at > ?1'),
         all: () => [],
       },
       {
@@ -110,7 +104,7 @@ describe('public data consistency', () => {
     const db = createFakeD1Database([
       {
         match: (sql) =>
-          sql.includes("from incidents") &&
+          sql.includes('from incidents') &&
           sql.includes("where status != 'resolved'") &&
           sql.includes('order by started_at desc, id desc') &&
           sql.includes('limit ?1'),
@@ -127,9 +121,9 @@ describe('public data consistency', () => {
       },
       {
         match: (sql) =>
-          sql.includes("from incidents") &&
+          sql.includes('from incidents') &&
           sql.includes("where status != 'resolved'") &&
-          sql.includes("case impact") &&
+          sql.includes('case impact') &&
           sql.includes('limit 1'),
         first: () => ({
           id: 99,
@@ -170,7 +164,8 @@ describe('public data consistency', () => {
   it('reads homepage history previews by completion time instead of raw id order', async () => {
     const db = createFakeD1Database([
       {
-        match: (sql) => sql.includes('from incidents') && sql.includes('order by resolved_at desc, id desc'),
+        match: (sql) =>
+          sql.includes('from incidents') && sql.includes('order by resolved_at desc, id desc'),
         all: () => [
           {
             id: 5,
@@ -201,7 +196,8 @@ describe('public data consistency', () => {
       },
       {
         match: (sql) =>
-          sql.includes('from maintenance_windows') && sql.includes('order by ends_at desc, id desc'),
+          sql.includes('from maintenance_windows') &&
+          sql.includes('order by ends_at desc, id desc'),
         all: () => [
           {
             id: 4,

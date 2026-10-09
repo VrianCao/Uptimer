@@ -317,9 +317,7 @@ export function renderHomepageMonitorPreloadCardFragment(
   return renderHomepageMonitorPreloadCard(monitor, formatTimestamp);
 }
 
-export type HomepageArtifactMonitorFragment = z.infer<
-  typeof homepageArtifactMonitorFragmentSchema
->;
+export type HomepageArtifactMonitorFragment = z.infer<typeof homepageArtifactMonitorFragmentSchema>;
 
 export type HomepageArtifactMonitorFragmentParseResult = {
   cardHtmlByMonitorId: Map<number, string>;
@@ -448,7 +446,7 @@ function renderPreload(
     snapshot.maintenance_windows.upcoming.length > 0 ||
     snapshot.maintenance_history_preview !== null;
   const monitorNames: ReadonlyMap<number, string> | null = needsMonitorNames
-    ? monitorNameById ?? new Map(snapshot.monitors.map((monitor) => [monitor.id, monitor.name]))
+    ? (monitorNameById ?? new Map(snapshot.monitors.map((monitor) => [monitor.id, monitor.name])))
     : null;
   const groups = new Map<string, PublicHomepageResponse['monitors']>();
   for (const monitor of snapshot.monitors) {
@@ -537,7 +535,8 @@ function buildHomepageRenderArtifactWithPreloadOptions(
     fullSnapshot.maintenance_windows.upcoming.length > 0 ||
     fullSnapshot.maintenance_history_preview !== null;
   const allMonitorNames = needsMonitorNames
-    ? opts.monitorNameById ?? new Map(fullSnapshot.monitors.map((monitor) => [monitor.id, monitor.name]))
+    ? (opts.monitorNameById ??
+      new Map(fullSnapshot.monitors.map((monitor) => [monitor.id, monitor.name])))
     : undefined;
   const metaTitle = normalizeSnapshotText(fullSnapshot.site_title, 'Uptimer');
   const fallbackDescription = normalizeSnapshotText(
@@ -570,7 +569,9 @@ export function buildHomepageRenderArtifact(
 export function buildHomepageRenderArtifactFromMonitorFragments(
   snapshot: PublicHomepageResponse,
   rows: readonly PublicSnapshotFragmentRow[],
-): { artifact: StoredPublicHomepageRenderArtifact | null } & HomepageArtifactMonitorFragmentParseResult {
+): {
+  artifact: StoredPublicHomepageRenderArtifact | null;
+} & HomepageArtifactMonitorFragmentParseResult {
   const parsed = parseHomepageArtifactMonitorFragmentRows(rows, snapshot);
   if (parsed.missingCount > 0 || parsed.staleCount > 0 || parsed.invalidCount > 0) {
     return {
@@ -725,7 +726,10 @@ function normalizeHomepageArtifactBodyJson(bodyJson: string): string | null {
 
   const directArtifact = publicHomepageStoredRenderArtifactSchema.safeParse(parsed);
   if (directArtifact.success) {
-    if (!('snapshot' in directArtifact.data) && !readStoredHomepageSnapshotData(safeJsonParse(directArtifact.data.snapshot_json))) {
+    if (
+      !('snapshot' in directArtifact.data) &&
+      !readStoredHomepageSnapshotData(safeJsonParse(directArtifact.data.snapshot_json))
+    ) {
       return null;
     }
     return JSON.stringify(directArtifact.data);
@@ -767,9 +771,10 @@ function readSnapshotValueFromRows<T>(opts: {
     if (row.generated_at > opts.now + FUTURE_SNAPSHOT_TOLERANCE_SECONDS) {
       continue;
     }
-    const ageBase = opts.ageFromUpdatedAt && typeof row.updated_at === 'number'
-      ? row.updated_at
-      : row.generated_at;
+    const ageBase =
+      opts.ageFromUpdatedAt && typeof row.updated_at === 'number'
+        ? row.updated_at
+        : row.generated_at;
     const age = Math.max(0, opts.now - ageBase);
     if (age > opts.maxAgeSeconds) {
       continue;
@@ -956,9 +961,7 @@ export async function readStaleHomepageSnapshotArtifactJson(
   return snapshot ? { bodyJson: snapshot.value, age: snapshot.age } : null;
 }
 
-export async function readHomepageSnapshotGeneratedAt(
-  db: D1Database,
-): Promise<number | null> {
+export async function readHomepageSnapshotGeneratedAt(db: D1Database): Promise<number | null> {
   const rows = await readSnapshotRowsByPriority(db);
   let freshest: number | null = null;
 
@@ -1000,7 +1003,8 @@ function homepageSnapshotUpsertStatement(
   const cached = lease
     ? upsertSnapshotWhileLeaseStatementByDb.get(db)
     : upsertSnapshotStatementByDb.get(db);
-  const statement = cached ?? db.prepare(lease ? UPSERT_SNAPSHOT_WHILE_LEASE_SQL : UPSERT_SNAPSHOT_SQL);
+  const statement =
+    cached ?? db.prepare(lease ? UPSERT_SNAPSHOT_WHILE_LEASE_SQL : UPSERT_SNAPSHOT_SQL);
   if (!cached) {
     if (lease) {
       upsertSnapshotWhileLeaseStatementByDb.set(db, statement);
@@ -1010,13 +1014,19 @@ function homepageSnapshotUpsertStatement(
   }
 
   return lease
-    ? statement.bind(key, generatedAt, bodyJson, updatedAt, futureCutoffAt, lease.name, lease.expiresAt)
+    ? statement.bind(
+        key,
+        generatedAt,
+        bodyJson,
+        updatedAt,
+        futureCutoffAt,
+        lease.name,
+        lease.expiresAt,
+      )
     : statement.bind(key, generatedAt, bodyJson, updatedAt, futureCutoffAt);
 }
 
-function didApplySnapshotWrite(
-  result: Awaited<ReturnType<D1PreparedStatement['run']>>,
-): boolean {
+function didApplySnapshotWrite(result: Awaited<ReturnType<D1PreparedStatement['run']>>): boolean {
   const changes = result?.meta?.changes;
   if (typeof changes === 'number' && Number.isFinite(changes)) {
     return changes > 0;
@@ -1043,8 +1053,10 @@ async function releaseRefreshLease(
   }
 
   try {
-    await withTraceAsync(trace, spanName, async () =>
-      await releaseLease(db, REFRESH_LOCK_NAME, lease.getExpiresAt()),
+    await withTraceAsync(
+      trace,
+      spanName,
+      async () => await releaseLease(db, REFRESH_LOCK_NAME, lease.getExpiresAt()),
     );
   } catch (err) {
     console.warn('homepage snapshot: failed to release refresh lease', err);
@@ -1141,8 +1153,10 @@ export async function writeHomepageSnapshot(
 ): Promise<boolean> {
   const prepared = prepareHomepageSnapshotWrite(db, now, payload, trace, seedDataSnapshot, lease);
 
-  const writeResult = await withTraceAsync(trace, 'homepage_write_artifact_run', async () =>
-    await prepared.statement.run(),
+  const writeResult = await withTraceAsync(
+    trace,
+    'homepage_write_artifact_run',
+    async () => await prepared.statement.run(),
   );
   const wrote = didApplySnapshotWrite(writeResult);
   if (!wrote) {
@@ -1167,16 +1181,19 @@ export async function writeHomepageArtifactSnapshot(
     JSON.stringify(render),
   );
 
-  const writeResult = await withTraceAsync(trace, 'homepage_artifact_write_run', async () =>
-    await homepageSnapshotUpsertStatement(
-      db,
-      SNAPSHOT_ARTIFACT_KEY,
-      render.generated_at,
-      renderBodyJson,
-      now,
-      now + FUTURE_SNAPSHOT_TOLERANCE_SECONDS,
-      lease,
-    ).run(),
+  const writeResult = await withTraceAsync(
+    trace,
+    'homepage_artifact_write_run',
+    async () =>
+      await homepageSnapshotUpsertStatement(
+        db,
+        SNAPSHOT_ARTIFACT_KEY,
+        render.generated_at,
+        renderBodyJson,
+        now,
+        now + FUTURE_SNAPSHOT_TOLERANCE_SECONDS,
+        lease,
+      ).run(),
   );
   const wrote = didApplySnapshotWrite(writeResult);
   if (!wrote) {
@@ -1221,8 +1238,10 @@ export async function refreshPublicHomepageSnapshot(opts: {
   lease?: HomepageRefreshLease;
 }): Promise<boolean> {
   opts.lease?.assertHeld('computing homepage snapshot');
-  const computed = await withTraceAsync(opts.trace, 'homepage_refresh_compute', async () =>
-    await opts.compute(),
+  const computed = await withTraceAsync(
+    opts.trace,
+    'homepage_refresh_compute',
+    async () => await opts.compute(),
   );
   const payload = withTraceSync(opts.trace, 'homepage_refresh_validate', () =>
     toHomepageSnapshotPayload(computed),
@@ -1231,16 +1250,16 @@ export async function refreshPublicHomepageSnapshot(opts: {
   return await writeHomepageSnapshot(
     opts.db,
     opts.now,
-      payload,
-      opts.trace,
-      opts.seedDataSnapshot ?? false,
-      opts.lease
-        ? {
-            name: REFRESH_LOCK_NAME,
-            expiresAt: opts.lease.getExpiresAt(),
-          }
-        : undefined,
-    );
+    payload,
+    opts.trace,
+    opts.seedDataSnapshot ?? false,
+    opts.lease
+      ? {
+          name: REFRESH_LOCK_NAME,
+          expiresAt: opts.lease.getExpiresAt(),
+        }
+      : undefined,
+  );
 }
 
 export async function refreshPublicHomepageArtifactSnapshot(opts: {
@@ -1293,8 +1312,11 @@ export async function refreshPublicHomepageSnapshotIfNeeded(opts: {
     }
   }
 
-  const acquired = await withTraceAsync(opts.trace, 'homepage_refresh_lease', async () =>
-    await acquireLease(opts.db, REFRESH_LOCK_NAME, opts.now, REFRESH_LOCK_LEASE_SECONDS),
+  const acquired = await withTraceAsync(
+    opts.trace,
+    'homepage_refresh_lease',
+    async () =>
+      await acquireLease(opts.db, REFRESH_LOCK_NAME, opts.now, REFRESH_LOCK_LEASE_SECONDS),
   );
   if (!acquired) {
     return false;
@@ -1321,11 +1343,14 @@ export async function refreshPublicHomepageSnapshotIfNeeded(opts: {
       }
     }
 
-    const wrote = await withTraceAsync(opts.trace, 'homepage_refresh_write', async () =>
-      await refreshPublicHomepageSnapshot({
-        ...opts,
-        lease: refreshLease,
-      }),
+    const wrote = await withTraceAsync(
+      opts.trace,
+      'homepage_refresh_write',
+      async () =>
+        await refreshPublicHomepageSnapshot({
+          ...opts,
+          lease: refreshLease,
+        }),
     );
     return wrote;
   } catch (err) {
@@ -1334,12 +1359,7 @@ export async function refreshPublicHomepageSnapshotIfNeeded(opts: {
     }
     throw err;
   } finally {
-    await releaseRefreshLease(
-      opts.db,
-      opts.trace,
-      'homepage_refresh_release_lease',
-      refreshLease,
-    );
+    await releaseRefreshLease(opts.db, opts.trace, 'homepage_refresh_release_lease', refreshLease);
   }
 }
 
@@ -1358,8 +1378,11 @@ export async function refreshPublicHomepageArtifactSnapshotIfNeeded(opts: {
     return false;
   }
 
-  const acquired = await withTraceAsync(opts.trace, 'homepage_artifact_refresh_lease', async () =>
-    await acquireLease(opts.db, REFRESH_LOCK_NAME, opts.now, REFRESH_LOCK_LEASE_SECONDS),
+  const acquired = await withTraceAsync(
+    opts.trace,
+    'homepage_artifact_refresh_lease',
+    async () =>
+      await acquireLease(opts.db, REFRESH_LOCK_NAME, opts.now, REFRESH_LOCK_LEASE_SECONDS),
   );
   if (!acquired) {
     return false;
@@ -1384,11 +1407,14 @@ export async function refreshPublicHomepageArtifactSnapshotIfNeeded(opts: {
       return false;
     }
 
-    const wrote = await withTraceAsync(opts.trace, 'homepage_artifact_refresh_write', async () =>
-      await refreshPublicHomepageArtifactSnapshot({
-        ...opts,
-        lease: refreshLease,
-      }),
+    const wrote = await withTraceAsync(
+      opts.trace,
+      'homepage_artifact_refresh_write',
+      async () =>
+        await refreshPublicHomepageArtifactSnapshot({
+          ...opts,
+          lease: refreshLease,
+        }),
     );
     return wrote;
   } catch (err) {

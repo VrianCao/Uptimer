@@ -283,11 +283,13 @@ function bindStatusSnapshotAfterHomepageUpsert(opts: {
   const cached = opts.homepageLease
     ? upsertStatusAfterHomepageAndLeaseStatementByDb.get(opts.db)
     : upsertStatusAfterHomepageStatementByDb.get(opts.db);
-  const statement = cached ?? opts.db.prepare(
-    opts.homepageLease
-      ? UPSERT_STATUS_AFTER_HOMEPAGE_AND_LEASE_SQL
-      : UPSERT_STATUS_AFTER_HOMEPAGE_SQL,
-  );
+  const statement =
+    cached ??
+    opts.db.prepare(
+      opts.homepageLease
+        ? UPSERT_STATUS_AFTER_HOMEPAGE_AND_LEASE_SQL
+        : UPSERT_STATUS_AFTER_HOMEPAGE_SQL,
+    );
   if (!cached) {
     if (opts.homepageLease) {
       upsertStatusAfterHomepageAndLeaseStatementByDb.set(opts.db, statement);

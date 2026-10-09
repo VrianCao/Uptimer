@@ -11,12 +11,7 @@ import {
   fetchPublicIncidentDetail,
   fetchPublicMonitorOutages,
 } from '../api/client';
-import type {
-  Incident,
-  IncidentSummary,
-  Outage,
-  PublicHomepageResponse,
-} from '../api/types';
+import type { Incident, IncidentSummary, Outage, PublicHomepageResponse } from '../api/types';
 import { DayDowntimeModal } from '../components/DayDowntimeModal';
 import { Markdown } from '../components/Markdown';
 import { MonitorCard } from '../components/MonitorCard';
@@ -297,9 +292,7 @@ function IncidentDetail({
           ))}
 
           {incident.updates.length === 0 && isLoadingDetails && (
-            <div className="text-sm text-slate-500 dark:text-slate-400">
-              {t('common.loading')}
-            </div>
+            <div className="text-sm text-slate-500 dark:text-slate-400">{t('common.loading')}</div>
           )}
 
           {incident.updates.length === 0 && hasDetailsError && (
@@ -761,9 +754,13 @@ export function StatusPage() {
                 </div>
                 <div className="text-sm text-slate-600 dark:text-slate-300 mb-2">
                   {t('common.affected')}:{' '}
-                  {maintenanceHistoryPreview.monitor_ids.map((id) => monitorNames.get(id) ?? `#${id}`).join(', ')}
+                  {maintenanceHistoryPreview.monitor_ids
+                    .map((id) => monitorNames.get(id) ?? `#${id}`)
+                    .join(', ')}
                 </div>
-                {maintenanceHistoryPreview.message && <Markdown text={maintenanceHistoryPreview.message} />}
+                {maintenanceHistoryPreview.message && (
+                  <Markdown text={maintenanceHistoryPreview.message} />
+                )}
               </Card>
             ) : (
               <Card className="p-6 text-center">

@@ -93,9 +93,7 @@ function samplePayload(now = 1_728_000_000) {
   };
 }
 
-function hydrateStoredRenderArtifact(
-  artifact: ReturnType<typeof buildHomepageRenderArtifact>,
-) {
+function hydrateStoredRenderArtifact(artifact: ReturnType<typeof buildHomepageRenderArtifact>) {
   if ('snapshot' in artifact) {
     return artifact;
   }
@@ -232,8 +230,11 @@ describe('snapshots/public-homepage', () => {
   });
 
   it('reads legacy homepage payloads but refuses to synthesize render artifacts on the read path', async () => {
-    const { bootstrap_mode: _ignoredMode, monitor_count_total: _ignoredCount, ...legacyPayload } =
-      samplePayload(190);
+    const {
+      bootstrap_mode: _ignoredMode,
+      monitor_count_total: _ignoredCount,
+      ...legacyPayload
+    } = samplePayload(190);
     const db = createFakeD1Database([
       {
         match: 'from public_snapshots',
@@ -286,7 +287,9 @@ describe('snapshots/public-homepage', () => {
     expect(artifact.preload_html).toContain('<path d="M');
     expect(artifact.preload_html).not.toContain('<rect ');
     expect(artifact.preload_html).not.toContain('#30');
-    expect(artifact.preload_html).not.toContain('more services will appear after the app finishes loading');
+    expect(artifact.preload_html).not.toContain(
+      'more services will appear after the app finishes loading',
+    );
   });
 
   it('returns null when homepage snapshot is too old or invalid', async () => {
@@ -334,9 +337,7 @@ describe('snapshots/public-homepage', () => {
 
     const storedRender = buildHomepageRenderArtifact(payload);
 
-    expect(boundArgs).toEqual([
-      ['homepage:artifact', 280, JSON.stringify(storedRender), 300, 360],
-    ]);
+    expect(boundArgs).toEqual([['homepage:artifact', 280, JSON.stringify(storedRender), 300, 360]]);
   });
 
   it('can bind homepage artifact writes to the current refresh lease', async () => {
@@ -371,7 +372,9 @@ describe('snapshots/public-homepage', () => {
     ]);
     expect(normalizedSql).toContain('from locks refresh_lock');
     expect(normalizedSql).toContain('refresh_lock.expires_at = ?7');
-    expect(normalizedSql).toContain("refresh_lock.expires_at > cast(strftime('%s', 'now') as integer)");
+    expect(normalizedSql).toContain(
+      "refresh_lock.expires_at > cast(strftime('%s', 'now') as integer)",
+    );
   });
 
   it('does not let an older homepage snapshot overwrite a newer one', async () => {
@@ -804,12 +807,7 @@ describe('snapshots/public-homepage', () => {
 
     await vi.advanceTimersByTimeAsync(45_000);
 
-    expect(renewLease).toHaveBeenCalledWith(
-      db,
-      'snapshot:homepage:refresh',
-      now + 55,
-      now + 100,
-    );
+    expect(renewLease).toHaveBeenCalledWith(db, 'snapshot:homepage:refresh', now + 55, now + 100);
 
     resolveCompute?.(samplePayload(now));
     await refreshPromise;
@@ -1257,7 +1255,9 @@ describe('snapshots/public-homepage', () => {
           }
           return {
             generated_at: artifactGeneratedAt,
-            body_json: JSON.stringify(buildHomepageRenderArtifact(samplePayload(artifactGeneratedAt))),
+            body_json: JSON.stringify(
+              buildHomepageRenderArtifact(samplePayload(artifactGeneratedAt)),
+            ),
           };
         },
       },
@@ -1338,5 +1338,4 @@ describe('snapshots/public-homepage', () => {
       ],
     ]);
   });
-
 });

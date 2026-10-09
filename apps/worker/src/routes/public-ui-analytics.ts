@@ -61,10 +61,7 @@ function withVisibilityAwareCaching(res: Response, includeHiddenMonitors: boolea
   return includeHiddenMonitors ? applyPrivateNoStore(res) : appendAuthorizationVary(res);
 }
 
-function createTrace(c: {
-  env: Env;
-  req: { header(name: string): string | undefined };
-}): Trace {
+function createTrace(c: { env: Env; req: { header(name: string): string | undefined } }): Trace {
   return new Trace(
     resolveTraceOptions({
       header: (name) => c.req.header(name),
@@ -159,8 +156,7 @@ async function readActiveMonitorRows(
         AND ${monitorVisibilityPredicate(includeHiddenMonitors, 'm')}
       ORDER BY m.id
     `,
-  )
-    .all<AnalyticsMonitorRow>();
+  ).all<AnalyticsMonitorRow>();
 
   const rows = (results ?? []) as AnalyticsMonitorRow[];
   cacheBucket[cacheKey] = {
@@ -237,11 +233,15 @@ export async function handlePublicAnalyticsUptime(c: {
           async () => await readPublicMonitorRuntimeTotalsSnapshot(c.env.DB, rangeEnd),
         )
       : null;
-  const runtimeByMonitorId = runtimeSnapshot ? toMonitorRuntimeTotalsEntryMap(runtimeSnapshot) : null;
+  const runtimeByMonitorId = runtimeSnapshot
+    ? toMonitorRuntimeTotalsEntryMap(runtimeSnapshot)
+    : null;
   const missingRuntimeHistoricalEntry =
     monitors.length > 0 &&
     (!runtimeByMonitorId ||
-      monitors.some((monitor) => !runtimeByMonitorId.has(monitor.id) && monitor.created_at < rangeEndFullDays));
+      monitors.some(
+        (monitor) => !runtimeByMonitorId.has(monitor.id) && monitor.created_at < rangeEndFullDays,
+      ));
   if (monitors.length > 0 && (historySnapshot === null || missingRuntimeHistoricalEntry)) {
     trace.setLabel('path', 'live-fallback');
     const { publicRoutes } = await import('./public');

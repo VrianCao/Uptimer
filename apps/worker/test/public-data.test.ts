@@ -56,10 +56,7 @@ describe('public/data', () => {
     expect(warnSpy).not.toHaveBeenCalled();
     expect(sqlChunkArgLengths).toEqual([98, 10]);
     expect(Math.max(...sqlChunkArgLengths)).toBeLessThanOrEqual(100);
-    expect(sqlChunkIds).toEqual([
-      Array.from({ length: 24 }, (_, index) => index + 1),
-      [25, 26],
-    ]);
+    expect(sqlChunkIds).toEqual([Array.from({ length: 24 }, (_, index) => index + 1), [25, 26]]);
     expect(result.size).toBe(26);
     expect(result.get(1)).toMatchObject({
       total_sec: 600,

@@ -1,6 +1,4 @@
-import {
-  type PublicStatusResponse,
-} from '../schemas/public-status';
+import { type PublicStatusResponse } from '../schemas/public-status';
 import { storedPublicStatusResponseSchema } from '../schemas/public-status-stored';
 
 const SNAPSHOT_KEY = 'status';
@@ -135,18 +133,14 @@ async function readStatusSnapshotMetadataRow(
   }
 }
 
-async function readStatusSnapshotRow(
-  db: D1Database,
-): Promise<StatusSnapshotRow | null> {
+async function readStatusSnapshotRow(db: D1Database): Promise<StatusSnapshotRow | null> {
   const cached = readStatusStatementByDb.get(db);
   const statement = cached ?? db.prepare(READ_STATUS_SQL);
   if (!cached) {
     readStatusStatementByDb.set(db, statement);
   }
 
-  return await statement
-    .bind(SNAPSHOT_KEY)
-    .first<StatusSnapshotRow>();
+  return await statement.bind(SNAPSHOT_KEY).first<StatusSnapshotRow>();
 }
 
 function readValidatedStatusSnapshotRow(
@@ -200,7 +194,11 @@ export async function readStatusSnapshotJson(
     }
 
     const row = await readStatusSnapshotRow(db);
-    if (!row || row.generated_at !== metadata.generated_at || toSnapshotUpdatedAt(row) !== updatedAt) {
+    if (
+      !row ||
+      row.generated_at !== metadata.generated_at ||
+      toSnapshotUpdatedAt(row) !== updatedAt
+    ) {
       return null;
     }
 
@@ -248,7 +246,11 @@ export async function readStatusSnapshotPayloadAnyAge(
     }
 
     const row = await readStatusSnapshotRow(db);
-    if (!row || row.generated_at !== metadata.generated_at || toSnapshotUpdatedAt(row) !== updatedAt) {
+    if (
+      !row ||
+      row.generated_at !== metadata.generated_at ||
+      toSnapshotUpdatedAt(row) !== updatedAt
+    ) {
       return null;
     }
 
@@ -307,7 +309,11 @@ export async function readStaleStatusSnapshotJson(
     }
 
     const row = await readStatusSnapshotRow(db);
-    if (!row || row.generated_at !== metadata.generated_at || toSnapshotUpdatedAt(row) !== updatedAt) {
+    if (
+      !row ||
+      row.generated_at !== metadata.generated_at ||
+      toSnapshotUpdatedAt(row) !== updatedAt
+    ) {
       return null;
     }
 

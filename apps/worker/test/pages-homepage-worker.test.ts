@@ -27,7 +27,9 @@ function installDefaultCacheMock(
   return { put };
 }
 
-function makeEnv(indexHtml = '<!doctype html><html><head></head><body><div id="root"></div></body></html>') {
+function makeEnv(
+  indexHtml = '<!doctype html><html><head></head><body><div id="root"></div></body></html>',
+) {
   return {
     ASSETS: {
       fetch: vi.fn(async () => new Response(indexHtml, { status: 200 })),
@@ -187,17 +189,18 @@ describe('pages homepage worker', () => {
   it('injects the precomputed homepage artifact and updates the html cache on success', async () => {
     const { put } = installDefaultCacheMock(() => undefined);
     const env = makeEnv();
-    globalThis.fetch = vi.fn(async () =>
-      new Response(
-        JSON.stringify({
-          generated_at: 1_728_000_000,
-          preload_html: '<div id="uptimer-preload"><main>artifact preload</main></div>',
-          snapshot_json: JSON.stringify({ site_title: 'Status Hub' }),
-          meta_title: 'Status Hub',
-          meta_description: 'Production',
-        }),
-        { status: 200 },
-      ),
+    globalThis.fetch = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            generated_at: 1_728_000_000,
+            preload_html: '<div id="uptimer-preload"><main>artifact preload</main></div>',
+            snapshot_json: JSON.stringify({ site_title: 'Status Hub' }),
+            meta_title: 'Status Hub',
+            meta_description: 'Production',
+          }),
+          { status: 200 },
+        ),
     ) as never;
 
     const res = await pageWorker.fetch(
@@ -218,17 +221,19 @@ describe('pages homepage worker', () => {
   it('sanitizes string snapshot_json payloads before inlining them into html', async () => {
     installDefaultCacheMock(() => undefined);
     const env = makeEnv();
-    globalThis.fetch = vi.fn(async () =>
-      new Response(
-        JSON.stringify({
-          generated_at: 1_728_000_000,
-          preload_html: '<div id="uptimer-preload"><main>artifact preload</main></div>',
-          snapshot_json: '{"site_title":"Status Hub","note":"</script><script>globalThis.pwned=1</script>"}',
-          meta_title: 'Status Hub',
-          meta_description: 'Production',
-        }),
-        { status: 200 },
-      ),
+    globalThis.fetch = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            generated_at: 1_728_000_000,
+            preload_html: '<div id="uptimer-preload"><main>artifact preload</main></div>',
+            snapshot_json:
+              '{"site_title":"Status Hub","note":"</script><script>globalThis.pwned=1</script>"}',
+            meta_title: 'Status Hub',
+            meta_description: 'Production',
+          }),
+          { status: 200 },
+        ),
     ) as never;
 
     const res = await pageWorker.fetch(
@@ -248,18 +253,19 @@ describe('pages homepage worker', () => {
   it('rejects homepage artifacts whose preload_html contains executable markup', async () => {
     installDefaultCacheMock(() => undefined);
     const env = makeEnv();
-    globalThis.fetch = vi.fn(async () =>
-      new Response(
-        JSON.stringify({
-          generated_at: 1_728_000_000,
-          preload_html:
-            '<div id="uptimer-preload"><img src=x onerror="globalThis.pwned=1" /></div>',
-          snapshot_json: JSON.stringify({ site_title: 'Status Hub' }),
-          meta_title: 'Status Hub',
-          meta_description: 'Production',
-        }),
-        { status: 200 },
-      ),
+    globalThis.fetch = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            generated_at: 1_728_000_000,
+            preload_html:
+              '<div id="uptimer-preload"><img src=x onerror="globalThis.pwned=1" /></div>',
+            snapshot_json: JSON.stringify({ site_title: 'Status Hub' }),
+            meta_title: 'Status Hub',
+            meta_description: 'Production',
+          }),
+          { status: 200 },
+        ),
     ) as never;
 
     const res = await pageWorker.fetch(
@@ -284,17 +290,18 @@ describe('pages homepage worker', () => {
       installDefaultCacheMock(() => undefined);
       const env = makeEnv();
       const nowSec = Math.floor(Date.now() / 1000);
-      globalThis.fetch = vi.fn(async () =>
-        new Response(
-          JSON.stringify({
-            generated_at: nowSec + 3_600,
-            preload_html: '<div id="uptimer-preload"><main>artifact preload</main></div>',
-            snapshot_json: JSON.stringify({ site_title: 'Status Hub' }),
-            meta_title: 'Status Hub',
-            meta_description: 'Production',
-          }),
-          { status: 200 },
-        ),
+      globalThis.fetch = vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              generated_at: nowSec + 3_600,
+              preload_html: '<div id="uptimer-preload"><main>artifact preload</main></div>',
+              snapshot_json: JSON.stringify({ site_title: 'Status Hub' }),
+              meta_title: 'Status Hub',
+              meta_description: 'Production',
+            }),
+            { status: 200 },
+          ),
       ) as never;
 
       const res = await pageWorker.fetch(
@@ -358,22 +365,29 @@ describe('pages homepage worker', () => {
       },
     });
     const env = makeEnv();
-    env.ASSETS.fetch = vi.fn(async () => new Response('<!doctype html><html><head></head><body><div id="root"></div></body></html>', {
-      status: 200,
-      headers: { 'Set-Cookie': 'cf=1' },
-    }));
+    env.ASSETS.fetch = vi.fn(
+      async () =>
+        new Response(
+          '<!doctype html><html><head></head><body><div id="root"></div></body></html>',
+          {
+            status: 200,
+            headers: { 'Set-Cookie': 'cf=1' },
+          },
+        ),
+    );
 
-    globalThis.fetch = vi.fn(async () =>
-      new Response(
-        JSON.stringify({
-          generated_at: 1_728_000_000,
-          preload_html: '<div id="uptimer-preload"><main>artifact preload</main></div>',
-          snapshot_json: JSON.stringify({ site_title: 'Status Hub' }),
-          meta_title: 'Status Hub',
-          meta_description: 'Production',
-        }),
-        { status: 200 },
-      ),
+    globalThis.fetch = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            generated_at: 1_728_000_000,
+            preload_html: '<div id="uptimer-preload"><main>artifact preload</main></div>',
+            snapshot_json: JSON.stringify({ site_title: 'Status Hub' }),
+            meta_title: 'Status Hub',
+            meta_description: 'Production',
+          }),
+          { status: 200 },
+        ),
     ) as never;
 
     const res = await pageWorker.fetch(
@@ -397,11 +411,15 @@ describe('pages homepage worker', () => {
   it('strips Set-Cookie from fallback html responses served directly to the browser', async () => {
     installDefaultCacheMock(() => undefined);
     const env = makeEnv();
-    env.ASSETS.fetch = vi.fn(async () =>
-      new Response('<!doctype html><html><head></head><body><div id="root"></div></body></html>', {
-        status: 200,
-        headers: { 'Set-Cookie': 'cf=1' },
-      }),
+    env.ASSETS.fetch = vi.fn(
+      async () =>
+        new Response(
+          '<!doctype html><html><head></head><body><div id="root"></div></body></html>',
+          {
+            status: 200,
+            headers: { 'Set-Cookie': 'cf=1' },
+          },
+        ),
     );
     globalThis.fetch = vi.fn(async () => {
       throw new Error('network failed');
@@ -710,9 +728,7 @@ describe('pages homepage worker', () => {
     globalThis.fetch = upstreamFetch as never;
 
     const res = await pageWorker.fetch(
-      new Request(
-        'https://status.example.com/api/v1/internal%2525252Frefresh%2525252Fhomepage',
-      ),
+      new Request('https://status.example.com/api/v1/internal%2525252Frefresh%2525252Fhomepage'),
       env,
       { waitUntil: vi.fn() },
     );
@@ -971,18 +987,19 @@ describe('pages homepage worker', () => {
   it('strips hop-by-hop headers from proxied api responses', async () => {
     installDefaultCacheMock(() => undefined);
     const env = makeEnv();
-    globalThis.fetch = vi.fn(async () =>
-      new Response(JSON.stringify({ ok: true }), {
-        status: 200,
-        headers: {
-          Connection: 'keep-alive, X-Up',
-          'Keep-Alive': 'timeout=5',
-          'Proxy-Connection': 'keep-alive',
-          'Transfer-Encoding': 'chunked',
-          'X-Up': 'secret',
-          'Content-Type': 'application/json; charset=utf-8',
-        },
-      }),
+    globalThis.fetch = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: {
+            Connection: 'keep-alive, X-Up',
+            'Keep-Alive': 'timeout=5',
+            'Proxy-Connection': 'keep-alive',
+            'Transfer-Encoding': 'chunked',
+            'X-Up': 'secret',
+            'Content-Type': 'application/json; charset=utf-8',
+          },
+        }),
     ) as never;
 
     const res = await pageWorker.fetch(
@@ -1150,14 +1167,15 @@ describe('pages homepage worker', () => {
   it('strips Set-Cookie from proxied api responses', async () => {
     installDefaultCacheMock(() => undefined);
     const env = makeEnv();
-    const upstreamFetch = vi.fn(async () =>
-      new Response(JSON.stringify({ ok: true }), {
-        status: 200,
-        headers: {
-          'Content-Type': 'application/json; charset=utf-8',
-          'Set-Cookie': 'session=1; HttpOnly; Secure',
-        },
-      }),
+    const upstreamFetch = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/json; charset=utf-8',
+            'Set-Cookie': 'session=1; HttpOnly; Secure',
+          },
+        }),
     );
     globalThis.fetch = upstreamFetch as never;
 

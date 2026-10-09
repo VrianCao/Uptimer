@@ -39,7 +39,10 @@ import {
   toHomepageSnapshotPayload,
   writeHomepageSnapshot,
 } from '../src/snapshots/public-homepage';
-import { didApplyStatusSnapshotWrite, prepareStatusSnapshotWrite } from '../src/snapshots/public-status';
+import {
+  didApplyStatusSnapshotWrite,
+  prepareStatusSnapshotWrite,
+} from '../src/snapshots/public-status';
 import { primeStatusSnapshotCache } from '../src/snapshots/public-status-read';
 import { createFakeD1Database } from './helpers/fake-d1';
 
@@ -130,7 +133,10 @@ function createStatusSnapshot(now: number) {
   };
 }
 
-function createEnv(now: number, statusSnapshot: ReturnType<typeof createStatusSnapshot> | null = null): Env {
+function createEnv(
+  now: number,
+  statusSnapshot: ReturnType<typeof createStatusSnapshot> | null = null,
+): Env {
   const baseSnapshot = createBaseSnapshot(now);
   return {
     DB: createFakeD1Database([
@@ -360,12 +366,10 @@ describe('internal homepage refresh route', () => {
     vi.spyOn(Date, 'now').mockReturnValue(now * 1000);
     const env = createEnv(now);
     const baseSnapshot = createBaseSnapshot(now);
-    vi.mocked(tryComputePublicHomepagePayloadFromScheduledRuntimeUpdates).mockResolvedValue(
-      {
-        ...baseSnapshot,
-        generated_at: now,
-      } as never,
-    );
+    vi.mocked(tryComputePublicHomepagePayloadFromScheduledRuntimeUpdates).mockResolvedValue({
+      ...baseSnapshot,
+      generated_at: now,
+    } as never);
     const statusPayload = {
       generated_at: now,
       site_title: 'Status Hub',
@@ -832,12 +836,10 @@ describe('internal homepage refresh route', () => {
     vi.spyOn(Date, 'now').mockReturnValue(now * 1000);
     const env = createEnv(now);
     const baseSnapshot = createBaseSnapshot(now);
-    vi.mocked(tryComputePublicHomepagePayloadFromScheduledRuntimeUpdates).mockResolvedValue(
-      {
-        ...baseSnapshot,
-        generated_at: now,
-      } as never,
-    );
+    vi.mocked(tryComputePublicHomepagePayloadFromScheduledRuntimeUpdates).mockResolvedValue({
+      ...baseSnapshot,
+      generated_at: now,
+    } as never);
     vi.mocked(didApplyHomepageSnapshotWrite).mockReturnValue(false);
 
     const res = await worker.fetch(
@@ -868,12 +870,10 @@ describe('internal homepage refresh route', () => {
     vi.spyOn(Date, 'now').mockReturnValue(now * 1000);
     const env = createEnv(now);
     const baseSnapshot = createBaseSnapshot(now);
-    vi.mocked(tryComputePublicHomepagePayloadFromScheduledRuntimeUpdates).mockResolvedValue(
-      {
-        ...baseSnapshot,
-        generated_at: now,
-      } as never,
-    );
+    vi.mocked(tryComputePublicHomepagePayloadFromScheduledRuntimeUpdates).mockResolvedValue({
+      ...baseSnapshot,
+      generated_at: now,
+    } as never);
     vi.mocked(tryComputePublicStatusPayloadFromScheduledRuntimeUpdates).mockResolvedValue({
       generated_at: now,
       site_title: 'Status Hub',
@@ -934,12 +934,10 @@ describe('internal homepage refresh route', () => {
     vi.spyOn(Date, 'now').mockImplementation(() => currentNowMs);
     const env = createEnv(now);
     const baseSnapshot = createBaseSnapshot(now);
-    vi.mocked(tryComputePublicHomepagePayloadFromScheduledRuntimeUpdates).mockResolvedValue(
-      {
-        ...baseSnapshot,
-        generated_at: now,
-      } as never,
-    );
+    vi.mocked(tryComputePublicHomepagePayloadFromScheduledRuntimeUpdates).mockResolvedValue({
+      ...baseSnapshot,
+      generated_at: now,
+    } as never);
     vi.mocked(tryComputePublicStatusPayloadFromScheduledRuntimeUpdates).mockResolvedValue({
       generated_at: now,
       site_title: 'Status Hub',
@@ -1457,12 +1455,10 @@ describe('internal homepage refresh route', () => {
     const env = createEnv(now, statusSnapshot);
     (env as unknown as Record<string, unknown>).UPTIMER_TRACE_TOKEN = 'expected-token';
     const baseSnapshot = createBaseSnapshot(now);
-    vi.mocked(tryComputePublicHomepagePayloadFromScheduledRuntimeUpdates).mockResolvedValue(
-      {
-        ...baseSnapshot,
-        generated_at: now,
-      } as never,
-    );
+    vi.mocked(tryComputePublicHomepagePayloadFromScheduledRuntimeUpdates).mockResolvedValue({
+      ...baseSnapshot,
+      generated_at: now,
+    } as never);
     vi.mocked(tryComputePublicStatusPayloadFromScheduledRuntimeUpdates).mockResolvedValue({
       generated_at: now,
       site_title: 'Status Hub',
@@ -1541,12 +1537,10 @@ describe('internal homepage refresh route', () => {
       bodyJson: JSON.stringify(statusSnapshot),
       data: statusSnapshot,
     });
-    vi.mocked(tryComputePublicHomepagePayloadFromScheduledRuntimeUpdates).mockResolvedValue(
-      {
-        ...baseSnapshot,
-        generated_at: now,
-      } as never,
-    );
+    vi.mocked(tryComputePublicHomepagePayloadFromScheduledRuntimeUpdates).mockResolvedValue({
+      ...baseSnapshot,
+      generated_at: now,
+    } as never);
     vi.mocked(tryComputePublicStatusPayloadFromScheduledRuntimeUpdates).mockResolvedValue({
       ...statusSnapshot,
       generated_at: now,

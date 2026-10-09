@@ -123,9 +123,7 @@ export function prepareHttpResponseAssertions(input: {
   responseKeywordMode: HttpResponseMatchMode | null | undefined;
   responseForbiddenKeyword: string | null | undefined;
   responseForbiddenKeywordMode: HttpResponseMatchMode | null | undefined;
-}):
-  | { ok: true; assertions: PreparedHttpResponseAssertion[] }
-  | { ok: false; error: string } {
+}): { ok: true; assertions: PreparedHttpResponseAssertion[] } | { ok: false; error: string } {
   const validationIssues = validateHttpResponseAssertionConfig(input);
   if (validationIssues.length > 0) {
     return { ok: false, error: validationIssues[0]!.message };
@@ -176,7 +174,10 @@ export function prepareHttpResponseAssertions(input: {
   return { ok: true, assertions };
 }
 
-function assertionTruncationError(assertion: PreparedHttpResponseAssertion, maxBytes: number): string {
+function assertionTruncationError(
+  assertion: PreparedHttpResponseAssertion,
+  maxBytes: number,
+): string {
   if (assertion.kind === 'required') {
     return assertion.mode === 'regex'
       ? `Response body exceeded ${maxBytes} bytes; cannot assert required response regex`

@@ -68,11 +68,11 @@ function canonicalizeApiPathname(pathname) {
 }
 
 function resolveApiRequestPath(pathname) {
-  const normalizedRawPathname = normalizeApiPathname(pathname).replace(/[\u0000-\u001f\u007f]+/g, '');
-  if (
-    normalizedRawPathname !== API_PREFIX &&
-    !normalizedRawPathname.startsWith(`${API_PREFIX}/`)
-  ) {
+  const normalizedRawPathname = normalizeApiPathname(pathname).replace(
+    /[\u0000-\u001f\u007f]+/g,
+    '',
+  );
+  if (normalizedRawPathname !== API_PREFIX && !normalizedRawPathname.startsWith(`${API_PREFIX}/`)) {
     return null;
   }
   if (hasInvalidPercentEncoding(normalizedRawPathname)) {
@@ -111,7 +111,9 @@ function hasNonEmptyHeader(request, name) {
 
 function isInternalApiPath(pathname) {
   const canonicalPathname = normalizeApiPathname(pathname);
-  return canonicalPathname === '/api/v1/internal' || canonicalPathname.startsWith('/api/v1/internal/');
+  return (
+    canonicalPathname === '/api/v1/internal' || canonicalPathname.startsWith('/api/v1/internal/')
+  );
 }
 
 function isGetOnlyPublicApiPath(pathname) {
@@ -125,7 +127,8 @@ function isAllowedApiOriginUrl(url) {
 }
 
 function resolveApiOriginUrl(env) {
-  const apiOrigin = typeof env?.UPTIMER_API_ORIGIN === 'string' ? env.UPTIMER_API_ORIGIN.trim() : '';
+  const apiOrigin =
+    typeof env?.UPTIMER_API_ORIGIN === 'string' ? env.UPTIMER_API_ORIGIN.trim() : '';
   if (!apiOrigin) return null;
 
   try {
@@ -164,7 +167,9 @@ function resolveSensitiveApiOriginUrl(env) {
 function buildApiProxyUrl(url, env, apiOriginOverride, apiPathname) {
   const apiOrigin = apiOriginOverride || resolveApiOriginUrl(env);
   const apiPath =
-    typeof apiPathname === 'string' ? apiPathname : resolveApiRequestPath(url.pathname)?.canonicalPathname;
+    typeof apiPathname === 'string'
+      ? apiPathname
+      : resolveApiRequestPath(url.pathname)?.canonicalPathname;
   if (!apiOrigin || !apiPath) return null;
   return new URL(`${apiPath}${url.search}`, apiOrigin);
 }
@@ -188,7 +193,9 @@ function canForwardSensitiveHeaders(upstreamUrl, requestUrl, trustedSensitiveOri
 }
 
 function hasSensitiveProxyHeaders(request) {
-  return hasNonEmptyHeader(request, 'Authorization') || hasNonEmptyHeader(request, TRACE_TOKEN_HEADER);
+  return (
+    hasNonEmptyHeader(request, 'Authorization') || hasNonEmptyHeader(request, TRACE_TOKEN_HEADER)
+  );
 }
 
 function normalizeHeaderName(name) {
@@ -353,7 +360,9 @@ function buildApiPreflightResponse(request, canonicalPathname) {
 }
 
 function buildApiMethodNotAllowedResponse(request, canonicalPathname) {
-  const allowedMethods = isGetOnlyPublicApiPath(canonicalPathname) ? 'GET, OPTIONS' : CORS_ALLOW_METHODS;
+  const allowedMethods = isGetOnlyPublicApiPath(canonicalPathname)
+    ? 'GET, OPTIONS'
+    : CORS_ALLOW_METHODS;
   const res = jsonError(405, 'METHOD_NOT_ALLOWED', 'Method Not Allowed');
   res.headers.set('Allow', allowedMethods);
   res.headers.set('Cache-Control', 'no-store');
@@ -376,7 +385,8 @@ function resolveTraceContext(request, env) {
   const enabled = normalizeTruthyHeader(request.headers.get(TRACE_HEADER));
   if (!enabled) return null;
 
-  const tokenEnv = typeof env?.UPTIMER_TRACE_TOKEN === 'string' ? env.UPTIMER_TRACE_TOKEN.trim() : '';
+  const tokenEnv =
+    typeof env?.UPTIMER_TRACE_TOKEN === 'string' ? env.UPTIMER_TRACE_TOKEN.trim() : '';
   const fallbackEnvToken = typeof env?.TRACE_TOKEN === 'string' ? env.TRACE_TOKEN.trim() : '';
   const expectedToken = tokenEnv || fallbackEnvToken;
   if (!expectedToken) return null;
@@ -432,7 +442,10 @@ function resolveTraceContext(request, env) {
   function toServerTiming(prefix = 'p') {
     const p = prefix && String(prefix).trim().length > 0 ? `${String(prefix).trim()}_` : '';
     return spans
-      .map((span) => `${(p + span.name).replace(/[^a-zA-Z0-9_.-]/g, '_')};dur=${span.durMs.toFixed(2)}`)
+      .map(
+        (span) =>
+          `${(p + span.name).replace(/[^a-zA-Z0-9_.-]/g, '_')};dur=${span.durMs.toFixed(2)}`,
+      )
       .join(', ');
   }
 
@@ -841,9 +854,7 @@ async function fetchPublicHomepageArtifact(env, trace, now) {
 
     if (!resp.ok) return null;
 
-    const data = trace
-      ? await trace.timeAsync('api_json', () => resp.json())
-      : await resp.json();
+    const data = trace ? await trace.timeAsync('api_json', () => resp.json()) : await resp.json();
     return normalizeHomepageArtifactPayload(data, now);
   } catch {
     return null;
@@ -910,7 +921,10 @@ async function proxyApiRequest(request, env, trace, apiPathname) {
 
   if (hasSensitiveHeaders && !canForwardSensitiveHeaders(upstreamUrl, url, sensitiveApiOrigin)) {
     if (trace) {
-      trace.setLabel('auth_forward', hasNonEmptyHeader(request, 'Authorization') ? 'blocked' : 'none');
+      trace.setLabel(
+        'auth_forward',
+        hasNonEmptyHeader(request, 'Authorization') ? 'blocked' : 'none',
+      );
       trace.setLabel(
         'trace_token_forward',
         hasNonEmptyHeader(request, TRACE_TOKEN_HEADER) ? 'blocked' : 'none',
@@ -1136,8 +1150,7 @@ export default {
           );
         }
 
-        const generatedAt =
-          typeof artifact.generated_at === 'number' ? artifact.generated_at : now;
+        const generatedAt = typeof artifact.generated_at === 'number' ? artifact.generated_at : now;
         const age = computeHomepageAge(now, generatedAt) ?? 0;
 
         const snapshotInlineJson = artifact.snapshot_inline_json;
@@ -1149,10 +1162,7 @@ export default {
                 `${artifact.preload_html}<div id="root"></div>`,
               ),
             )
-          : html.replace(
-              '<div id="root"></div>',
-              `${artifact.preload_html}<div id="root"></div>`,
-            );
+          : html.replace('<div id="root"></div>', `${artifact.preload_html}<div id="root"></div>`);
 
         injected = trace
           ? trace.time('inject_meta', () => injectStatusMetaTags(injected, artifact, url))
@@ -1185,8 +1195,9 @@ export default {
         cacheHeaders.set(HOMEPAGE_CACHE_GENERATED_AT_HEADER, `${generatedAt}`);
         cacheHeaders.delete('Set-Cookie');
         const cacheResp = trace
-          ? trace.time('cache_resp_build', () =>
-              new Response(injected, { status: 200, headers: cacheHeaders }),
+          ? trace.time(
+              'cache_resp_build',
+              () => new Response(injected, { status: 200, headers: cacheHeaders }),
             )
           : new Response(injected, { status: 200, headers: cacheHeaders });
 

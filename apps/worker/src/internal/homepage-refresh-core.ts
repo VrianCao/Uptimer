@@ -23,12 +23,7 @@ export type InternalHomepageRefreshCoreResult = {
   refreshed: boolean;
   error?: boolean;
   baseSnapshotSource?: 'memory_cache' | 'd1';
-  skip?:
-    | 'fresh'
-    | 'lease'
-    | 'fresh_after_lease'
-    | 'homepage_write_noop'
-    | 'lease_lost';
+  skip?: 'fresh' | 'lease' | 'fresh_after_lease' | 'homepage_write_noop' | 'lease_lost';
 };
 
 export type InternalHomepageRefreshCoreOptions = {
@@ -50,15 +45,22 @@ export function normalizeInternalTruthy(value: string | null | undefined): boole
 export function normalizeInternalFalsy(value: string | null | undefined): boolean {
   if (!value) return false;
   const normalized = value.trim().toLowerCase();
-  return normalized === '0' || normalized === 'false' || normalized === 'no' || normalized === 'off';
+  return (
+    normalized === '0' || normalized === 'false' || normalized === 'no' || normalized === 'off'
+  );
 }
 
 export function isSameMinuteTimestamp(a: number, b: number): boolean {
   return Math.floor(a / 60) === Math.floor(b / 60);
 }
 
-export function shouldTraceHomepageResidualDetails(env: Env, trace: Trace | null | undefined): boolean {
-  return trace?.enabled === true && normalizeInternalTruthy(env.UPTIMER_HOMEPAGE_RESIDUAL_TRACE ?? null);
+export function shouldTraceHomepageResidualDetails(
+  env: Env,
+  trace: Trace | null | undefined,
+): boolean {
+  return (
+    trace?.enabled === true && normalizeInternalTruthy(env.UPTIMER_HOMEPAGE_RESIDUAL_TRACE ?? null)
+  );
 }
 
 export function toInternalHomepageRefreshCoreResult(
@@ -202,8 +204,9 @@ export async function sanitizeScheduledRuntimeUpdatesForFastPath(opts: {
 
       if (
         update.checked_at === persistedState.last_checked_at &&
-        normalizeRuntimeUpdateStatus(persistedState.status as MonitorRuntimeUpdate['next_status']) !==
-          readRuntimeUpdateCurrentStatus(update)
+        normalizeRuntimeUpdateStatus(
+          persistedState.status as MonitorRuntimeUpdate['next_status'],
+        ) !== readRuntimeUpdateCurrentStatus(update)
       ) {
         opts.trace?.setLabel('runtime_updates_baseline', 'stale');
         opts.trace?.setLabel('runtime_updates_stale_monitor_id', update.monitor_id);
@@ -241,7 +244,10 @@ export async function sanitizeScheduledRuntimeUpdatesForFastPath(opts: {
       continue;
     }
 
-    if (fromRuntimeStatusCode(runtimeEntry.last_status_code) !== readRuntimeUpdateCurrentStatus(update)) {
+    if (
+      fromRuntimeStatusCode(runtimeEntry.last_status_code) !==
+      readRuntimeUpdateCurrentStatus(update)
+    ) {
       opts.trace?.setLabel('runtime_updates_baseline', 'stale');
       opts.trace?.setLabel('runtime_updates_stale_monitor_id', update.monitor_id);
       opts.trace?.setLabel('runtime_updates_stale_reason', 'state_mismatch');
@@ -256,7 +262,10 @@ export async function sanitizeScheduledRuntimeUpdatesForFastPath(opts: {
       latestHeartbeatStatusCode === 'p' ||
       latestHeartbeatStatusCode === 'x'
     ) {
-      if (fromRuntimeStatusCode(latestHeartbeatStatusCode) !== readRuntimeUpdateHeartbeatStatus(update)) {
+      if (
+        fromRuntimeStatusCode(latestHeartbeatStatusCode) !==
+        readRuntimeUpdateHeartbeatStatus(update)
+      ) {
         opts.trace?.setLabel('runtime_updates_baseline', 'stale');
         opts.trace?.setLabel('runtime_updates_stale_monitor_id', update.monitor_id);
         opts.trace?.setLabel('runtime_updates_stale_reason', 'heartbeat_mismatch');
@@ -332,8 +341,7 @@ export async function runInternalHomepageRefreshCore({
 
   const scheduledRuntimeUpdatesRequested =
     scheduledRefreshRequest && (runtimeUpdates?.length ?? 0) > 0;
-  const useScheduledRuntimeFastPath =
-    scheduledRefreshRequest && fastPathRuntimeUpdates.length > 0;
+  const useScheduledRuntimeFastPath = scheduledRefreshRequest && fastPathRuntimeUpdates.length > 0;
   const skipInitialFreshnessCheck = scheduledRuntimeUpdatesRequested;
   if (trace?.enabled && skipInitialFreshnessCheck) {
     trace.setLabel('skip_initial_freshness_check', '1');
@@ -578,7 +586,9 @@ export async function runInternalHomepageRefreshCore({
     }
 
     payload = trace
-      ? trace.time('homepage_refresh_validate', () => snapshotMod.toHomepageSnapshotPayload(payload))
+      ? trace.time('homepage_refresh_validate', () =>
+          snapshotMod.toHomepageSnapshotPayload(payload),
+        )
       : snapshotMod.toHomepageSnapshotPayload(payload);
 
     let refreshedStatusPayload: PublicStatusResponse | null = null;
@@ -623,7 +633,9 @@ export async function runInternalHomepageRefreshCore({
                 statusRefreshArgs,
               ),
           )
-        : await statusMod.tryComputePublicStatusPayloadFromScheduledRuntimeUpdates(statusRefreshArgs);
+        : await statusMod.tryComputePublicStatusPayloadFromScheduledRuntimeUpdates(
+            statusRefreshArgs,
+          );
     } else if (trace?.enabled) {
       trace.setLabel('status_refresh', 'disabled');
     }
@@ -655,20 +667,21 @@ export async function runInternalHomepageRefreshCore({
         homepageWriteLease,
         shouldWriteHomepagePayloadSnapshot,
       );
-      const preparedStatusWrite = refreshedStatusPayload && statusSnapshotMod
-        ? statusSnapshotMod.prepareStatusSnapshotWrite({
-            db: env.DB,
-            now,
-            payload: refreshedStatusPayload,
-            ...(writeTrace ? { trace: writeTrace } : {}),
-            afterHomepage: {
-              key: snapshotMod.getHomepageSnapshotArtifactKey(),
-              generatedAt: preparedHomepageWrite.generatedAt,
-              updatedAt: now,
-              ...(homepageWriteLease ? { lease: homepageWriteLease } : {}),
-            },
-          })
-        : null;
+      const preparedStatusWrite =
+        refreshedStatusPayload && statusSnapshotMod
+          ? statusSnapshotMod.prepareStatusSnapshotWrite({
+              db: env.DB,
+              now,
+              payload: refreshedStatusPayload,
+              ...(writeTrace ? { trace: writeTrace } : {}),
+              afterHomepage: {
+                key: snapshotMod.getHomepageSnapshotArtifactKey(),
+                generatedAt: preparedHomepageWrite.generatedAt,
+                updatedAt: now,
+                ...(homepageWriteLease ? { lease: homepageWriteLease } : {}),
+              },
+            })
+          : null;
       return { preparedHomepageWrite, preparedStatusWrite };
     };
     const { preparedHomepageWrite, preparedStatusWrite } = detailTrace
@@ -701,11 +714,13 @@ export async function runInternalHomepageRefreshCore({
       if (!homepageWriteResult) {
         throw new Error('homepage snapshot write returned no result');
       }
-      const homepageSnapshotWritten = snapshotMod.didApplyHomepageSnapshotWrite(homepageWriteResult);
+      const homepageSnapshotWritten =
+        snapshotMod.didApplyHomepageSnapshotWrite(homepageWriteResult);
       const statusWriteResult = writeResults[homepageWriteStatements.length];
-      const statusSnapshotWritten = refreshedStatusPayload && statusSnapshotMod
-        ? statusSnapshotMod.didApplyStatusSnapshotWrite(statusWriteResult)
-        : false;
+      const statusSnapshotWritten =
+        refreshedStatusPayload && statusSnapshotMod
+          ? statusSnapshotMod.didApplyStatusSnapshotWrite(statusWriteResult)
+          : false;
       return { homepageSnapshotWritten, statusSnapshotWritten };
     };
     const writeInspection = detailTrace
@@ -730,9 +745,8 @@ export async function runInternalHomepageRefreshCore({
     }
 
     if (normalizeInternalTruthy(env.UPTIMER_PUBLIC_MONITOR_FRAGMENT_WRITES)) {
-      const { refreshPublicMonitorFragmentsFromPayloads } = await import(
-        './monitor-fragments-refresh-core'
-      );
+      const { refreshPublicMonitorFragmentsFromPayloads } =
+        await import('./monitor-fragments-refresh-core');
       const fragmentRefresh = trace
         ? await trace.timeAsync(
             'monitor_fragment_refresh',
@@ -781,7 +795,11 @@ export async function runInternalHomepageRefreshCore({
     const shouldReleaseHomepageRefreshLease = !normalizeInternalFalsy(
       env.UPTIMER_HOMEPAGE_RELEASE_LOCK,
     );
-    if (claimedLeaseExpiresAt !== null && releaseHomepageRefreshLease && shouldReleaseHomepageRefreshLease) {
+    if (
+      claimedLeaseExpiresAt !== null &&
+      releaseHomepageRefreshLease &&
+      shouldReleaseHomepageRefreshLease
+    ) {
       await releaseHomepageRefreshLease(
         env.DB,
         HOMEPAGE_REFRESH_LOCK_NAME,

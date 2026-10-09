@@ -88,13 +88,7 @@ function decodeCompactLatencyResponse(raw: CompactLatencyResponse): LatencyRespo
       return {
         checked_at,
         status:
-          code === 'u'
-            ? 'up'
-            : code === 'd'
-              ? 'down'
-              : code === 'm'
-                ? 'maintenance'
-                : 'unknown',
+          code === 'u' ? 'up' : code === 'd' ? 'down' : code === 'm' ? 'maintenance' : 'unknown',
         latency_ms: raw.points.latency_ms[index] ?? null,
       };
     }),

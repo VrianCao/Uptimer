@@ -76,10 +76,7 @@ function sampleRender(now = 190) {
   };
 }
 
-async function requestHomepage(
-  handlers: FakeD1QueryHandler[],
-  waitUntil = vi.fn(),
-) {
+async function requestHomepage(handlers: FakeD1QueryHandler[], waitUntil = vi.fn()) {
   installCacheMock();
 
   const env = {

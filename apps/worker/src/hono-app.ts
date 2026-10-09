@@ -17,7 +17,9 @@ function normalizeApiPathname(pathname: string): string {
 
 function isGetOnlyPublicApiPath(pathname: string): boolean {
   const normalizedPathname = normalizeApiPathname(pathname);
-  return normalizedPathname === '/api/v1/public' || normalizedPathname.startsWith('/api/v1/public/');
+  return (
+    normalizedPathname === '/api/v1/public' || normalizedPathname.startsWith('/api/v1/public/')
+  );
 }
 
 function allowedMethodsForApiPath(pathname: string): string {

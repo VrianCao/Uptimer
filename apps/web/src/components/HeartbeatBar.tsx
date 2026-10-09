@@ -150,7 +150,11 @@ function tooltipDotClass(status: CheckStatus): string {
   }
 }
 
-function buildSvgDataUri(slots: DisplaySlot[], compact: boolean, scale: LatencyScale | null): string {
+function buildSvgDataUri(
+  slots: DisplaySlot[],
+  compact: boolean,
+  scale: LatencyScale | null,
+): string {
   const height = compact ? 20 : 24;
   const barWidth = compact ? 4 : 6;
   const gap = compact ? 2 : 3;

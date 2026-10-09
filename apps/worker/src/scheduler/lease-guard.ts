@@ -51,12 +51,7 @@ export function startRenewableLease(opts: {
       const nextExpiresAt = renewalNow + opts.leaseSeconds;
 
       try {
-        const renewed = await renewLease(
-          opts.db,
-          opts.name,
-          claimedLeaseExpiresAt,
-          nextExpiresAt,
-        );
+        const renewed = await renewLease(opts.db, opts.name, claimedLeaseExpiresAt, nextExpiresAt);
         if (!renewed) {
           markLeaseLost('lease renewal lost');
           console.warn(`${opts.logPrefix}: lease renewal lost`);
@@ -85,9 +80,7 @@ export function startRenewableLease(opts: {
         return;
       }
 
-      throw new LeaseLostError(
-        `${opts.logPrefix}: ${context} aborted because ${leaseLossReason}`,
-      );
+      throw new LeaseLostError(`${opts.logPrefix}: ${context} aborted because ${leaseLossReason}`);
     },
     getExpiresAt() {
       return claimedLeaseExpiresAt;

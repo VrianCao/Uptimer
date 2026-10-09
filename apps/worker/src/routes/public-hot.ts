@@ -3,11 +3,7 @@ import { Hono } from 'hono';
 import type { Env } from '../env';
 import { hasValidAdminTokenRequest } from '../middleware/auth';
 import { AppError, handleError, handleNotFound } from '../middleware/errors';
-import {
-  Trace,
-  applyTraceToResponse,
-  resolveTraceOptions,
-} from '../observability/trace';
+import { Trace, applyTraceToResponse, resolveTraceOptions } from '../observability/trace';
 
 function appendVaryHeader(res: Response, value: string): void {
   const next = value.trim();
@@ -77,9 +73,8 @@ publicHotRoutes.onError(handleError);
 publicHotRoutes.notFound(handleNotFound);
 
 publicHotRoutes.get('/homepage', async (c) => {
-  const { applyHomepageCacheHeaders, readHomepageSnapshotJson } = await import(
-    '../snapshots/public-homepage-read'
-  );
+  const { applyHomepageCacheHeaders, readHomepageSnapshotJson } =
+    await import('../snapshots/public-homepage-read');
   const now = Math.floor(Date.now() / 1000);
   const trace = new Trace(
     resolveTraceOptions({

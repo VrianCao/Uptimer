@@ -59,10 +59,7 @@ function withVisibilityAwareCaching(res: Response, includeHiddenMonitors: boolea
   return includeHiddenMonitors ? applyPrivateNoStore(res) : appendAuthorizationVary(res);
 }
 
-function createTrace(c: {
-  env: Env;
-  req: { header(name: string): string | undefined };
-}): Trace {
+function createTrace(c: { env: Env; req: { header(name: string): string | undefined } }): Trace {
   return new Trace(
     resolveTraceOptions({
       header: (name) => c.req.header(name),
@@ -370,8 +367,7 @@ async function listPublicMaintenanceWindowsPage(opts: {
     maintenance_windows: collected
       .slice(0, opts.limit)
       .map(({ row, monitorIds }) => maintenanceWindowRowToApi(row, monitorIds)),
-    next_cursor:
-      collected.length > opts.limit ? (collected[opts.limit - 1]?.row.id ?? null) : null,
+    next_cursor: collected.length > opts.limit ? (collected[opts.limit - 1]?.row.id ?? null) : null,
   };
 }
 
@@ -904,18 +900,31 @@ registerPublicUiAnalyticsRoutes(publicUiRoutes);
 
 publicUiRoutes.get('/incidents', async (c) => {
   const includeHiddenMonitors = isAuthorizedStatusAdminRequest(c);
-  const limit = z.coerce.number().int().min(1).max(200).optional().default(20).parse(c.req.query('limit'));
+  const limit = z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(200)
+    .optional()
+    .default(20)
+    .parse(c.req.query('limit'));
   const cursor = z.coerce.number().int().positive().optional().parse(c.req.query('cursor'));
   const resolvedOnly =
-    z.coerce.number().int().min(0).max(1).optional().default(0).parse(c.req.query('resolved_only')) === 1;
+    z.coerce
+      .number()
+      .int()
+      .min(0)
+      .max(1)
+      .optional()
+      .default(0)
+      .parse(c.req.query('resolved_only')) === 1;
   const incidentVisibilitySql = incidentStatusPageVisibilityPredicate(includeHiddenMonitors);
 
   let active: IncidentRow[] = [];
   let remaining = limit;
   if (!resolvedOnly) {
-    const { results } = await c.env.DB
-      .prepare(
-        `
+    const { results } = await c.env.DB.prepare(
+      `
           SELECT id, title, status, impact, message, started_at, resolved_at
           FROM incidents
           WHERE status != 'resolved'
@@ -923,7 +932,7 @@ publicUiRoutes.get('/incidents', async (c) => {
           ORDER BY started_at DESC, id DESC
           LIMIT ?1
         `,
-      )
+    )
       .bind(limit)
       .all<IncidentRow>();
     active = results ?? [];
@@ -946,25 +955,23 @@ publicUiRoutes.get('/incidents', async (c) => {
 
     while (collected.length < resolvedLimitPlusOne) {
       const { results } = seekCursor
-        ? await c.env.DB
-            .prepare(
-              `
+        ? await c.env.DB.prepare(
+            `
                 ${baseSql}
                   AND id < ?2
                 ORDER BY id DESC
                 LIMIT ?1
               `,
-            )
+          )
             .bind(batchLimit, seekCursor)
             .all<IncidentRow>()
-        : await c.env.DB
-            .prepare(
-              `
+        : await c.env.DB.prepare(
+            `
                 ${baseSql}
                 ORDER BY id DESC
                 LIMIT ?1
               `,
-            )
+          )
             .bind(batchLimit)
             .all<IncidentRow>();
 
@@ -1018,7 +1025,14 @@ publicUiRoutes.get('/incidents', async (c) => {
 
 publicUiRoutes.get('/maintenance-windows', async (c) => {
   const includeHiddenMonitors = isAuthorizedStatusAdminRequest(c);
-  const limit = z.coerce.number().int().min(1).max(200).optional().default(20).parse(c.req.query('limit'));
+  const limit = z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(200)
+    .optional()
+    .default(20)
+    .parse(c.req.query('limit'));
   const cursor = z.coerce.number().int().positive().optional().parse(c.req.query('cursor'));
   const now = Math.floor(Date.now() / 1000);
 
@@ -1057,8 +1071,7 @@ publicUiRoutes.get('/monitors/:id/day-context', async (c) => {
             WHERE id = ?1 AND is_active = 1
               AND ${monitorVisibilityPredicate(includeHiddenMonitors)}
           `,
-        )
-          .bind(id),
+        ).bind(id),
         preparePublicUiStatement(
           c.env.DB,
           `
@@ -1071,8 +1084,7 @@ publicUiRoutes.get('/monitors/:id/day-context', async (c) => {
             ORDER BY mw.starts_at ASC, mw.id ASC
             LIMIT 50
           `,
-        )
-          .bind(id, dayStartAt, dayEndAt),
+        ).bind(id, dayStartAt, dayEndAt),
         preparePublicUiStatement(
           c.env.DB,
           `
@@ -1085,8 +1097,7 @@ publicUiRoutes.get('/monitors/:id/day-context', async (c) => {
             ORDER BY i.started_at ASC, i.id ASC
             LIMIT 50
           `,
-        )
-          .bind(id, dayStartAt, dayEndAt),
+        ).bind(id, dayStartAt, dayEndAt),
       ]),
   );
   const monitor = takeBatchFirstRow<{ id: number }>(monitorResult);
@@ -1131,8 +1142,7 @@ publicUiRoutes.get('/monitors/:id/day-context', async (c) => {
           WHERE maintenance_window_id IN (${placeholders})
           ORDER BY maintenance_window_id, monitor_id
         `,
-      )
-        .bind(...maintenanceIds),
+      ).bind(...maintenanceIds),
     );
   }
 
@@ -1148,8 +1158,7 @@ publicUiRoutes.get('/monitors/:id/day-context', async (c) => {
           WHERE incident_id IN (${placeholders})
           ORDER BY incident_id, created_at, id
         `,
-      )
-        .bind(...incidentIds),
+      ).bind(...incidentIds),
     );
 
     expansionIndexes.incidentMonitorIds = expansionStatements.length;
@@ -1162,15 +1171,17 @@ publicUiRoutes.get('/monitors/:id/day-context', async (c) => {
           WHERE incident_id IN (${placeholders})
           ORDER BY incident_id, monitor_id
         `,
-      )
-        .bind(...incidentIds),
+      ).bind(...incidentIds),
     );
   }
 
   const expansionResults =
     expansionStatements.length === 0
       ? []
-      : await trace.timeAsync('expansion_queries', async () => await c.env.DB.batch(expansionStatements));
+      : await trace.timeAsync(
+          'expansion_queries',
+          async () => await c.env.DB.batch(expansionStatements),
+        );
   const monitorIdsByWindowId =
     expansionIndexes.windowMonitorIds === -1
       ? new Map<number, number[]>()
@@ -1202,7 +1213,10 @@ publicUiRoutes.get('/monitors/:id/day-context', async (c) => {
   const visibleMonitorIds = includeHiddenMonitors
     ? new Set<number>()
     : await trace.timeAsync('visibility_query', async () => {
-        const scopedMonitorIds = [...monitorIdsByWindowId.values(), ...monitorIdsByIncidentId.values()].flat();
+        const scopedMonitorIds = [
+          ...monitorIdsByWindowId.values(),
+          ...monitorIdsByIncidentId.values(),
+        ].flat();
         return scopedMonitorIds.length === 0
           ? new Set<number>()
           : listStatusPageVisibleMonitorIds(c.env.DB, scopedMonitorIds);
@@ -1248,18 +1262,24 @@ publicUiRoutes.get('/monitors/:id/outages', async (c) => {
   const includeHiddenMonitors = isAuthorizedStatusAdminRequest(c);
   const id = z.coerce.number().int().positive().parse(c.req.param('id'));
   const range = z.enum(['30d']).optional().default('30d').parse(c.req.query('range'));
-  const limit = z.coerce.number().int().min(1).max(200).optional().default(200).parse(c.req.query('limit'));
+  const limit = z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(200)
+    .optional()
+    .default(200)
+    .parse(c.req.query('limit'));
   const cursor = z.coerce.number().int().positive().optional().parse(c.req.query('cursor'));
 
-  const monitor = await c.env.DB
-    .prepare(
-      `
+  const monitor = await c.env.DB.prepare(
+    `
         SELECT id, created_at
         FROM monitors
         WHERE id = ?1 AND is_active = 1
           AND ${monitorVisibilityPredicate(includeHiddenMonitors)}
       `,
-    )
+  )
     .bind(id)
     .first<{ id: number; created_at: number }>();
   if (!monitor) {
@@ -1279,15 +1299,14 @@ publicUiRoutes.get('/monitors/:id/outages', async (c) => {
   `;
 
   const { results } = cursor
-    ? await c.env.DB
-        .prepare(
-          `
+    ? await c.env.DB.prepare(
+        `
             ${sqlBase}
               AND id < ?4
             ORDER BY id DESC
             LIMIT ?5
           `,
-        )
+      )
         .bind(id, rangeEnd, rangeStart, cursor, take)
         .all<{
           id: number;
@@ -1296,14 +1315,13 @@ publicUiRoutes.get('/monitors/:id/outages', async (c) => {
           initial_error: string | null;
           last_error: string | null;
         }>()
-    : await c.env.DB
-        .prepare(
-          `
+    : await c.env.DB.prepare(
+        `
             ${sqlBase}
             ORDER BY id DESC
             LIMIT ?4
           `,
-        )
+      )
         .bind(id, rangeEnd, rangeStart, take)
         .all<{
           id: number;
@@ -1345,15 +1363,14 @@ publicUiRoutes.get('/monitors/:id/latency', async (c) => {
     throw new AppError(400, 'INVALID_ARGUMENT', 'Unsupported latency format');
   }
 
-  const monitor = await c.env.DB
-    .prepare(
-      `
+  const monitor = await c.env.DB.prepare(
+    `
         SELECT id, name
         FROM monitors
         WHERE id = ?1 AND is_active = 1
           AND ${monitorVisibilityPredicate(includeHiddenMonitors)}
       `,
-    )
+  )
     .bind(id)
     .first<{ id: number; name: string }>();
   if (!monitor) {
@@ -1414,8 +1431,7 @@ publicUiRoutes.get('/monitors/:id/uptime', async (c) => {
         WHERE m.id = ?1 AND m.is_active = 1
           AND ${monitorVisibilityPredicate(includeHiddenMonitors, 'm')}
       `,
-    )
-      .bind(id),
+    ).bind(id),
   );
 
   windowIndexes.firstCheck = windowBatchStatements.length;
@@ -1431,8 +1447,7 @@ publicUiRoutes.get('/monitors/:id/uptime', async (c) => {
         ORDER BY checked_at
         LIMIT 1
       `,
-    )
-      .bind(id, requestedRangeStart, rangeEnd),
+    ).bind(id, requestedRangeStart, rangeEnd),
   );
 
   if (startDay === endDay) {
@@ -1602,8 +1617,7 @@ publicUiRoutes.get('/monitors/:id/uptime', async (c) => {
           LEFT JOIN unknown_overlap o ON o.monitor_id = e.monitor_id
           WHERE e.start_at IS NOT NULL
         `,
-      )
-        .bind(requestedRangeStart, rangeEnd, id),
+      ).bind(requestedRangeStart, rangeEnd, id),
     );
   } else {
     const startPartialEnd = Math.min(rangeEnd, startDay + 86400);
@@ -1773,8 +1787,7 @@ publicUiRoutes.get('/monitors/:id/uptime', async (c) => {
           LEFT JOIN unknown_overlap o ON o.monitor_id = e.monitor_id
           WHERE e.start_at IS NOT NULL
         `,
-      )
-        .bind(requestedRangeStart, startPartialEnd, id),
+      ).bind(requestedRangeStart, startPartialEnd, id),
     );
 
     const fullDaysStart = startDay + 86400;
@@ -1795,8 +1808,7 @@ publicUiRoutes.get('/monitors/:id/uptime', async (c) => {
               AND day_start_at >= ?2
               AND day_start_at < ?3
           `,
-        )
-          .bind(id, fullDaysStart, fullDaysEnd),
+        ).bind(id, fullDaysStart, fullDaysEnd),
       );
     }
 
@@ -1818,8 +1830,7 @@ publicUiRoutes.get('/monitors/:id/uptime', async (c) => {
             FROM public_snapshots
             WHERE key = ?1
           `,
-        )
-          .bind(MONITOR_RUNTIME_SNAPSHOT_KEY, id),
+        ).bind(MONITOR_RUNTIME_SNAPSHOT_KEY, id),
       );
     }
   }
@@ -1827,7 +1838,10 @@ publicUiRoutes.get('/monitors/:id/uptime', async (c) => {
   const windowResults =
     windowBatchStatements.length === 0
       ? []
-      : await trace.timeAsync('window_queries', async () => await c.env.DB.batch(windowBatchStatements));
+      : await trace.timeAsync(
+          'window_queries',
+          async () => await c.env.DB.batch(windowBatchStatements),
+        );
 
   const monitor = takeBatchFirstRow<{
     id: number;
@@ -1842,7 +1856,8 @@ publicUiRoutes.get('/monitors/:id/uptime', async (c) => {
 
   const rangeStart = Math.max(requestedRangeStart, monitor.created_at);
   const firstCheckCandidate =
-    takeBatchFirstRow<{ checked_at: number }>(windowResults[windowIndexes.firstCheck])?.checked_at ?? null;
+    takeBatchFirstRow<{ checked_at: number }>(windowResults[windowIndexes.firstCheck])
+      ?.checked_at ?? null;
   const firstCheckAt =
     typeof firstCheckCandidate === 'number' && firstCheckCandidate >= monitor.created_at
       ? firstCheckCandidate
@@ -1959,17 +1974,22 @@ publicUiRoutes.get('/monitors/:id/uptime', async (c) => {
     if (runtimeEntry) {
       addUptimeTotals(totals, materializeMonitorRuntimeTotals(runtimeEntry, rangeEnd));
     } else if (endDay < rangeEnd) {
-      addUptimeTotals(totals, await trace.timeAsync('end_partial_fallback', async () =>
-        await computePartialUptimeTotals(
-          c.env.DB,
-          monitor.id,
-          monitor.interval_sec,
-          monitor.created_at,
-          monitor.last_checked_at,
-          endDay,
-          rangeEnd,
+      addUptimeTotals(
+        totals,
+        await trace.timeAsync(
+          'end_partial_fallback',
+          async () =>
+            await computePartialUptimeTotals(
+              c.env.DB,
+              monitor.id,
+              monitor.interval_sec,
+              monitor.created_at,
+              monitor.last_checked_at,
+              endDay,
+              rangeEnd,
+            ),
         ),
-      ));
+      );
     }
   }
 

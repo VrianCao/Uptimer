@@ -162,7 +162,6 @@ describe('middleware/cache-public', () => {
     expect(waitUntil).not.toHaveBeenCalled();
   });
 
-
   it('bypasses shared cache for GET requests that carry Authorization', async () => {
     const store = new Map<string, Response>();
     const url = 'https://status.example.com/api/v1/public/status';

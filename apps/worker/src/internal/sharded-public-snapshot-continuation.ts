@@ -68,15 +68,21 @@ function isTruthyEnvFlag(value: unknown): boolean {
 }
 
 function readBoundedMonitorLimit(env: Env, requested?: number): number {
-  const raw = requested ?? (env as unknown as Record<string, unknown>).UPTIMER_SHARDED_FRAGMENT_SEED_BATCH_SIZE;
-  const parsed = typeof raw === 'number' ? raw : typeof raw === 'string' ? Number.parseInt(raw, 10) : NaN;
+  const raw =
+    requested ??
+    (env as unknown as Record<string, unknown>).UPTIMER_SHARDED_FRAGMENT_SEED_BATCH_SIZE;
+  const parsed =
+    typeof raw === 'number' ? raw : typeof raw === 'string' ? Number.parseInt(raw, 10) : NaN;
   if (!Number.isFinite(parsed)) return DEFAULT_MONITOR_LIMIT;
   return Math.max(1, Math.min(10, Math.floor(parsed)));
 }
 
 function readOptionalBoundedRuntimeUpdateLimit(env: Env, requested?: number): number | null {
-  const raw = requested ?? (env as unknown as Record<string, unknown>).UPTIMER_SHARDED_RUNTIME_UPDATE_BATCH_SIZE;
-  const parsed = typeof raw === 'number' ? raw : typeof raw === 'string' ? Number.parseInt(raw, 10) : NaN;
+  const raw =
+    requested ??
+    (env as unknown as Record<string, unknown>).UPTIMER_SHARDED_RUNTIME_UPDATE_BATCH_SIZE;
+  const parsed =
+    typeof raw === 'number' ? raw : typeof raw === 'string' ? Number.parseInt(raw, 10) : NaN;
   if (!Number.isFinite(parsed)) return null;
   return Math.max(1, Math.min(10, Math.floor(parsed)));
 }
@@ -87,7 +93,9 @@ function readAssemblyMode(env: Env): ShardedPublicSnapshotAssemblyMode {
 }
 
 function canRefreshRuntimeFragments(env: Env): boolean {
-  return isTruthyEnvFlag((env as unknown as Record<string, unknown>).UPTIMER_SCHEDULED_RUNTIME_FRAGMENT_REFRESH);
+  return isTruthyEnvFlag(
+    (env as unknown as Record<string, unknown>).UPTIMER_SCHEDULED_RUNTIME_FRAGMENT_REFRESH,
+  );
 }
 
 function canSeedShardedFragments(env: Env): boolean {
@@ -115,7 +123,9 @@ function shouldPublishShardedSnapshots(env: Env): boolean {
 }
 
 function shouldLogDiagnostics(env: Env): boolean {
-  return isTruthyEnvFlag((env as unknown as Record<string, unknown>).UPTIMER_SHARDED_CONTINUATION_DIAGNOSTICS);
+  return isTruthyEnvFlag(
+    (env as unknown as Record<string, unknown>).UPTIMER_SHARDED_CONTINUATION_DIAGNOSTICS,
+  );
 }
 
 function diagnosticStepName(step: ShardedPublicSnapshotContinuationStep): string {
@@ -332,7 +342,13 @@ export async function runShardedPublicSnapshotContinuation(opts: {
     const nextSteps: ShardedPublicSnapshotContinuationStep[] = !result.ok
       ? []
       : runtimeLimit && result.hasMore
-        ? [{ step: 'runtime', updateOffset: updateOffset + runtimeLimit, updateLimit: runtimeLimit }]
+        ? [
+            {
+              step: 'runtime',
+              updateOffset: updateOffset + runtimeLimit,
+              updateLimit: runtimeLimit,
+            },
+          ]
         : firstSeedSteps(readBoundedMonitorLimit(opts.env));
     const queueStartedAt = diagnostics ? Date.now() : 0;
     const continuedCount = queueContinuations(opts.env, opts.ctx, nextSteps);
