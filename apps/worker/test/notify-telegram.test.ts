@@ -114,6 +114,37 @@ describe('notify/webhook Telegram preset', () => {
     expect(finalizeArgs).toEqual(['success', 200, null, 'monitor:1:down:100', 7]);
   });
 
+  it('skips monitor events outside the configured monitor scope', async () => {
+    const fetchMock = vi.fn();
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const result = await dispatchWebhookToChannel({
+      db: notificationDb(() => {
+        throw new Error('delivery should not be finalized');
+      }),
+      env: { UPTIMER_TELEGRAM_BOT_TOKEN: '123456:TEST' },
+      channel: {
+        id: 70,
+        name: 'Scoped Telegram',
+        config: {
+          preset: 'telegram',
+          bot_token_secret_ref: 'UPTIMER_TELEGRAM_BOT_TOKEN',
+          chat_id: '-1001234567890',
+          monitor_ids: [2, 3],
+        },
+      },
+      eventType: 'monitor.down',
+      eventKey: 'monitor:1:down:100',
+      payload: {
+        event: 'monitor.down',
+        monitor: { id: 1, name: 'API', type: 'http', target: 'https://api.example.com' },
+      },
+    });
+
+    expect(result).toBe('skipped');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it('marks Telegram ok=false responses as failed deliveries', async () => {
     let finalizeArgs: unknown[] | null = null;
     globalThis.fetch = vi.fn(
