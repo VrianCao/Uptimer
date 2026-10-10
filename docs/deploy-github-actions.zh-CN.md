@@ -24,7 +24,7 @@
 | `pages`         | 是       | Worker（API + 定时任务）+ Cloudflare Pages SPA           |
 | `single_worker` | 否       | 单个 Worker 同时提供 SPA 静态资源与 API（无 Pages 项目） |
 
-手动触发时的优先级：`workflow_dispatch` 输入 `deploy_mode` > 仓库变量 `UPTIMER_DEPLOY_MODE` > 默认 `pages`。
+手动触发时的优先级：`workflow_dispatch` 输入 `deploy_mode` > 仓库变量 `UPTIMER_DEPLOY_MODE` > 默认 `pages`。输入项默认为 `auto`，即沿用仓库变量。
 
 > **部署模式注意事项**：
 >
