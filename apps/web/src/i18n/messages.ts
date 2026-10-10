@@ -377,9 +377,12 @@ const en = {
   'notification_form.preset': 'Preset',
   'notification_form.preset_custom': 'Custom webhook',
   'notification_form.preset_telegram': 'Telegram',
+  'notification_form.preset_wpush': 'WPush',
   'notification_form.preset_custom_help': 'Send the configured webhook request directly.',
   'notification_form.preset_telegram_help':
     'Send Telegram Bot API messages with a BotFather token and chat ID.',
+  'notification_form.preset_wpush_help':
+    'Send through wpush.cn. The API key is encrypted before storage or can be referenced from a Worker Secret.',
   'notification_form.advanced_options': 'Advanced options',
   'notification_form.webhook_url': 'Webhook URL',
   'notification_form.webhook_url_placeholder': 'https://example.com/webhook',
@@ -433,6 +436,22 @@ const en = {
   'notification_form.telegram_message_thread_id_placeholder': 'Forum topic ID',
   'notification_form.telegram_disable_notification': 'Send silently',
   'notification_form.telegram_protect_content': 'Protect message content',
+  'notification_form.wpush_api_key': 'WPush API Key',
+  'notification_form.wpush_api_key_help':
+    'Paste the API key from WPush settings. Uptimer encrypts it before storing channel config.',
+  'notification_form.wpush_api_key_keep_help': 'Leave blank to keep the existing API key.',
+  'notification_form.wpush_channel': 'WPush Channel(s)',
+  'notification_form.wpush_channel_help':
+    'Comma-separated channel values such as wechat,app,mail,webhook,dingtalk,feishu,wechat_work.',
+  'notification_form.wpush_key_source': 'API Key Source',
+  'notification_form.wpush_key_source_encrypted': 'Store encrypted API key',
+  'notification_form.wpush_key_source_secret': 'Use Worker Secret ref',
+  'notification_form.wpush_api_key_secret_ref': 'API Key Secret Ref',
+  'notification_form.wpush_option_optional': 'Channel instance option (optional)',
+  'notification_form.wpush_option_help':
+    'Select a configured channel instance, for example an ops group code.',
+  'notification_form.wpush_url_optional': 'Message URL (optional)',
+  'notification_form.wpush_title_template_optional': 'Title Template (optional)',
   'notification_form.error_headers_invalid_json': 'Headers JSON must be valid JSON',
   'notification_form.error_headers_must_object':
     'Headers JSON must be an object (e.g. {"Authorization":"Bearer ..."})',
@@ -832,9 +851,12 @@ const zhCn: LocaleMessages = {
   'notification_form.preset': '预设',
   'notification_form.preset_custom': '自定义 Webhook',
   'notification_form.preset_telegram': 'Telegram',
+  'notification_form.preset_wpush': 'WPush',
   'notification_form.preset_custom_help': '按下方配置直接发送 Webhook 请求。',
   'notification_form.preset_telegram_help':
     '填写 BotFather Token 和 Chat ID 后，通过 Telegram Bot API 发送消息。',
+  'notification_form.preset_wpush_help':
+    '通过 wpush.cn 推送；API Key 可加密保存在 D1 中，也可使用 Worker Secret 引用。',
   'notification_form.advanced_options': '高级设置',
   'notification_form.webhook_url': 'Webhook URL',
   'notification_form.webhook_url_placeholder': 'https://example.com/webhook',
@@ -887,6 +909,21 @@ const zhCn: LocaleMessages = {
   'notification_form.telegram_message_thread_id_placeholder': '论坛话题 ID',
   'notification_form.telegram_disable_notification': '静默发送',
   'notification_form.telegram_protect_content': '保护消息内容',
+  'notification_form.wpush_api_key': 'WPush API Key',
+  'notification_form.wpush_api_key_help':
+    '填写 WPush 设置页中的 API Key，Uptimer 会加密后保存。',
+  'notification_form.wpush_api_key_keep_help': '留空表示继续使用已有 API Key。',
+  'notification_form.wpush_channel': 'WPush 渠道',
+  'notification_form.wpush_channel_help':
+    '可用逗号分隔多个渠道，例如 wechat,app,mail,webhook,dingtalk,feishu,wechat_work。',
+  'notification_form.wpush_key_source': 'API Key 来源',
+  'notification_form.wpush_key_source_encrypted': '保存加密 API Key',
+  'notification_form.wpush_key_source_secret': '使用 Worker Secret 引用',
+  'notification_form.wpush_api_key_secret_ref': 'API Key Secret 引用',
+  'notification_form.wpush_option_optional': '渠道实例 option（可选）',
+  'notification_form.wpush_option_help': '指定 WPush 中配置的渠道实例编码，例如 ops。',
+  'notification_form.wpush_url_optional': '消息跳转 URL（可选）',
+  'notification_form.wpush_title_template_optional': '标题模板（可选）',
   'notification_form.error_headers_invalid_json': '请求头 JSON 格式无效',
   'notification_form.error_headers_must_object':
     '请求头 JSON 必须是对象（例如 {"Authorization":"Bearer ..."}）',
@@ -1285,9 +1322,12 @@ const zhTw: LocaleMessages = {
   'notification_form.preset': '預設',
   'notification_form.preset_custom': '自訂 Webhook',
   'notification_form.preset_telegram': 'Telegram',
+  'notification_form.preset_wpush': 'WPush',
   'notification_form.preset_custom_help': '依下方設定直接發送 Webhook 請求。',
   'notification_form.preset_telegram_help':
     '填寫 BotFather Token 與 Chat ID 後，透過 Telegram Bot API 發送訊息。',
+  'notification_form.preset_wpush_help':
+    '透過 wpush.cn 推送；API Key 可加密儲存在 D1，或使用 Worker Secret 參照。',
   'notification_form.advanced_options': '進階設定',
   'notification_form.webhook_url': 'Webhook URL',
   'notification_form.webhook_url_placeholder': 'https://example.com/webhook',
@@ -1340,6 +1380,21 @@ const zhTw: LocaleMessages = {
   'notification_form.telegram_message_thread_id_placeholder': '論壇話題 ID',
   'notification_form.telegram_disable_notification': '靜音發送',
   'notification_form.telegram_protect_content': '保護訊息內容',
+  'notification_form.wpush_api_key': 'WPush API Key',
+  'notification_form.wpush_api_key_help':
+    '填入 WPush 設定頁的 API Key，Uptimer 會加密後儲存。',
+  'notification_form.wpush_api_key_keep_help': '留空表示繼續使用現有 API Key。',
+  'notification_form.wpush_channel': 'WPush 管道',
+  'notification_form.wpush_channel_help':
+    '可用逗號分隔多個管道，例如 wechat,app,mail,webhook,dingtalk,feishu,wechat_work。',
+  'notification_form.wpush_key_source': 'API Key 來源',
+  'notification_form.wpush_key_source_encrypted': '儲存加密 API Key',
+  'notification_form.wpush_key_source_secret': '使用 Worker Secret 參照',
+  'notification_form.wpush_api_key_secret_ref': 'API Key Secret 參照',
+  'notification_form.wpush_option_optional': '管道實例 option（選填）',
+  'notification_form.wpush_option_help': '指定 WPush 中設定的管道實例編碼，例如 ops。',
+  'notification_form.wpush_url_optional': '訊息跳轉 URL（選填）',
+  'notification_form.wpush_title_template_optional': '標題模板（選填）',
   'notification_form.error_headers_invalid_json': '請求標頭的 JSON 格式無效',
   'notification_form.error_headers_must_object':
     '請求標頭 JSON 必須為物件（例如 {"Authorization":"Bearer ..."}）',

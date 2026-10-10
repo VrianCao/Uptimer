@@ -16,6 +16,7 @@ import {
   serializeDbJson,
   serializeDbJsonNullable,
   type TelegramChannelConfig,
+  type WpushChannelConfig,
   type WebhookChannelConfig,
   webhookChannelConfigSchema,
 } from '@uptimer/db';
@@ -45,6 +46,7 @@ import {
   type WebhookChannel,
 } from '../notify/webhook';
 import { encryptTelegramBotToken } from '../notify/telegram-token';
+import { encryptWpushApiKey } from '../notify/wpush-token';
 import { adminAnalyticsRoutes } from './admin-analytics';
 import { adminExportsRoutes } from './admin-exports';
 import { adminSettingsRoutes } from './admin-settings';
@@ -68,6 +70,8 @@ import {
   patchNotificationChannelInputSchema,
   type TelegramChannelCreateInput,
   type TelegramChannelPatchInput,
+  type WpushChannelCreateInput,
+  type WpushChannelPatchInput,
 } from '../schemas/notification-channels';
 
 export const adminRoutes = new Hono<{ Bindings: Env }>();
@@ -843,14 +847,24 @@ type NotificationChannelRow = {
 type NotificationChannelInputConfig =
   | CustomWebhookChannelConfig
   | TelegramChannelCreateInput
-  | TelegramChannelPatchInput;
+  | TelegramChannelPatchInput
+  | WpushChannelCreateInput
+  | WpushChannelPatchInput;
 
 type TelegramApiChannelConfig = Omit<TelegramChannelConfig, 'bot_token_encrypted'> & {
   bot_token_configured: boolean;
   bot_token_source: 'stored' | 'secret_ref';
 };
 
-type NotificationChannelApiConfig = CustomWebhookChannelConfig | TelegramApiChannelConfig;
+type WpushApiChannelConfig = Omit<WpushChannelConfig, 'api_key_encrypted'> & {
+  api_key_configured: boolean;
+  api_key_source: 'stored' | 'secret_ref';
+};
+
+type NotificationChannelApiConfig =
+  | CustomWebhookChannelConfig
+  | TelegramApiChannelConfig
+  | WpushApiChannelConfig;
 
 function isTelegramInputConfig(
   config: NotificationChannelInputConfig,
@@ -864,11 +878,62 @@ function isTelegramStoredConfig(
   return config?.preset === 'telegram';
 }
 
+function isWpushInputConfig(
+  config: NotificationChannelInputConfig,
+): config is WpushChannelCreateInput | WpushChannelPatchInput {
+  return config.preset === 'wpush';
+}
+
+function isWpushStoredConfig(
+  config: WebhookChannelConfig | undefined,
+): config is WpushChannelConfig {
+  return config?.preset === 'wpush';
+}
+
 async function normalizeNotificationConfigForStorage(
   env: Env,
   inputConfig: NotificationChannelInputConfig,
   existingConfig?: WebhookChannelConfig,
 ): Promise<WebhookChannelConfig> {
+  if (isWpushInputConfig(inputConfig)) {
+    const { api_key: apiKey, api_key_secret_ref: apiKeySecretRef, ...wpushConfig } = inputConfig;
+    const baseWpushConfig = isWpushStoredConfig(existingConfig) ? existingConfig : undefined;
+
+    if (apiKey) {
+      const adminToken = env.ADMIN_TOKEN?.trim();
+      if (!adminToken) {
+        throw new AppError(500, 'INTERNAL', 'Admin token not configured');
+      }
+      return {
+        ...wpushConfig,
+        api_key_encrypted: await encryptWpushApiKey(adminToken, apiKey),
+      };
+    }
+
+    if (apiKeySecretRef) {
+      return {
+        ...wpushConfig,
+        api_key_secret_ref: apiKeySecretRef,
+      };
+    }
+
+    if (baseWpushConfig?.api_key_encrypted) {
+      return {
+        ...wpushConfig,
+        api_key_encrypted: baseWpushConfig.api_key_encrypted,
+      };
+    }
+
+    if (baseWpushConfig?.api_key_secret_ref) {
+      return {
+        ...wpushConfig,
+        api_key_secret_ref: baseWpushConfig.api_key_secret_ref,
+      };
+    }
+
+    throw new AppError(400, 'INVALID_ARGUMENT', 'WPush API key is required');
+  }
+
   if (!isTelegramInputConfig(inputConfig)) {
     return inputConfig;
   }
@@ -919,6 +984,15 @@ async function normalizeNotificationConfigForStorage(
 function sanitizeNotificationConfigForApi(
   config: WebhookChannelConfig,
 ): NotificationChannelApiConfig {
+  if (isWpushStoredConfig(config)) {
+    const { api_key_encrypted: encryptedKey, ...wpushConfig } = config;
+    return {
+      ...wpushConfig,
+      api_key_configured: Boolean(encryptedKey || wpushConfig.api_key_secret_ref),
+      api_key_source: wpushConfig.api_key_secret_ref ? 'secret_ref' : 'stored',
+    };
+  }
+
   if (!isTelegramStoredConfig(config)) {
     return config;
   }

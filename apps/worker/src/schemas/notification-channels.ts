@@ -81,10 +81,67 @@ export const telegramChannelPatchInputSchema = telegramChannelBaseInputSchema.su
 export type TelegramChannelCreateInput = z.infer<typeof telegramChannelCreateInputSchema>;
 export type TelegramChannelPatchInput = z.infer<typeof telegramChannelPatchInputSchema>;
 
+const wpushChannelBaseInputSchema = z.object({
+  preset: z.literal('wpush'),
+  api_key: z.string().trim().min(1).max(4096).optional(),
+  api_key_secret_ref: workerSecretRefSchema.optional(),
+  channel: z.string().trim().min(1).max(256).default('wechat'),
+  option: z.string().trim().min(1).max(32).optional(),
+  url: z
+    .string()
+    .url()
+    .refine((value) => {
+      try {
+        const url = new URL(value);
+        return url.protocol === 'http:' || url.protocol === 'https:';
+      } catch {
+        return false;
+      }
+    }, 'url protocol must be http or https')
+    .optional(),
+  timeout_ms: notificationChannelTimeoutMsSchema,
+  title_template: z.string().min(1).max(255).optional(),
+  message_template: notificationMessageTemplateSchema,
+  enabled_events: z.array(notificationEventTypeSchema).min(1).optional(),
+});
+
+export const wpushChannelCreateInputSchema = wpushChannelBaseInputSchema.superRefine((val, ctx) => {
+  const hasDirectKey = hasText(val.api_key);
+  const hasSecretRef = hasText(val.api_key_secret_ref);
+
+  if (hasDirectKey === hasSecretRef) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['api_key'],
+      message: 'provide exactly one of api_key or api_key_secret_ref',
+    });
+  }
+});
+
+export const wpushChannelPatchInputSchema = wpushChannelBaseInputSchema.superRefine((val, ctx) => {
+  const hasDirectKey = hasText(val.api_key);
+  const hasSecretRef = hasText(val.api_key_secret_ref);
+
+  if (hasDirectKey && hasSecretRef) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['api_key'],
+      message: 'provide only one of api_key or api_key_secret_ref',
+    });
+  }
+});
+
+export type WpushChannelCreateInput = z.infer<typeof wpushChannelCreateInputSchema>;
+export type WpushChannelPatchInput = z.infer<typeof wpushChannelPatchInputSchema>;
+
 export const createNotificationChannelInputSchema = z.object({
   name: z.string().min(1),
   type: z.literal('webhook').default('webhook'),
-  config_json: z.union([customWebhookChannelConfigSchema, telegramChannelCreateInputSchema]),
+  config_json: z.union([
+    customWebhookChannelConfigSchema,
+    telegramChannelCreateInputSchema,
+    wpushChannelCreateInputSchema,
+  ]),
   is_active: z.boolean().optional(),
 });
 
@@ -94,7 +151,11 @@ export const patchNotificationChannelInputSchema = z
   .object({
     name: z.string().min(1).optional(),
     config_json: z
-      .union([customWebhookChannelConfigSchema, telegramChannelPatchInputSchema])
+      .union([
+        customWebhookChannelConfigSchema,
+        telegramChannelPatchInputSchema,
+        wpushChannelPatchInputSchema,
+      ])
       .optional(),
     is_active: z.boolean().optional(),
   })

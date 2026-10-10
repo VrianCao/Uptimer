@@ -75,6 +75,31 @@ Webhook 渠道的 `config_json` 字段（由 Zod 校验）：
 | `enabled_events`   | 否   | —      | 事件白名单数组。空 = 全部事件。`test.ping` 始终通过。                  |
 | `signing`          | 否   | —      | `{ enabled: boolean, secret_ref: string }` — HMAC-SHA256 签名          |
 
+## WPush 预设
+
+WPush 可以直接在通知渠道表单中配置，无需自行编写 Webhook 模板。
+
+该预设会向 `https://api.wpush.cn/api/v1/send` 发送表单编码请求，支持：
+
+- 使用 `ADMIN_TOKEN` 加密后保存在 D1 的 API Key，或 Worker Secret 引用
+- 一个或多个 WPush 渠道值，例如 `wechat,app`
+- 可选的渠道实例 `option`
+- 可选的消息跳转 URL
+- 超时、标题模板、消息模板和事件过滤
+
+使用 Worker Secret 的示例：
+
+```json
+{
+  "preset": "wpush",
+  "api_key_secret_ref": "UPTIMER_WPUSH_API_KEY",
+  "channel": "wechat",
+  "option": "ops"
+}
+```
+
+请把实际 API Key 保存为 `api_key_secret_ref` 指定的 Worker Secret。若直接在管理界面输入 API Key，Uptimer 会先加密再保存，并且管理 API 不会返回密文。
+
 ## Payload 模式
 
 ### 模式 1：默认 JSON（无模板）
@@ -289,7 +314,7 @@ wrangler d1 execute uptimer --local \
 
 ## 已知限制
 
-- 目前仅支持 Webhook 渠道（无内置 Email、Telegram 等）
+- 当前内置预设包括 Telegram 和 WPush；暂未内置 Email
 - 模板替换始终产生字符串（详见上方「类型说明」）
 - `payload_template` 的 JSON 深度上限为 32 层
 

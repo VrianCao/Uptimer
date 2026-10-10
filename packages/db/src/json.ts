@@ -265,8 +265,38 @@ export const telegramChannelConfigSchema = z
   });
 export type TelegramChannelConfig = z.infer<typeof telegramChannelConfigSchema>;
 
+export const wpushChannelConfigSchema = z
+  .object({
+    preset: z.literal('wpush'),
+    api_key_encrypted: z.string().min(1).max(8192).optional(),
+    api_key_secret_ref: workerSecretRefSchema.optional(),
+    channel: z.string().trim().min(1).max(256).default('wechat'),
+    option: z.string().trim().min(1).max(32).optional(),
+    url: webhookUrlSchema.optional(),
+    timeout_ms: notificationChannelTimeoutMsSchema,
+    title_template: z.string().min(1).max(255).optional(),
+    message_template: notificationMessageTemplateSchema,
+    enabled_events: z.array(notificationEventTypeSchema).min(1).optional(),
+  })
+  .superRefine((val, ctx) => {
+    const hasEncryptedKey =
+      typeof val.api_key_encrypted === 'string' && val.api_key_encrypted.trim().length > 0;
+    const hasSecretRef =
+      typeof val.api_key_secret_ref === 'string' && val.api_key_secret_ref.trim().length > 0;
+
+    if (hasEncryptedKey === hasSecretRef) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['api_key_encrypted'],
+        message: 'provide exactly one of api_key_encrypted or api_key_secret_ref',
+      });
+    }
+  });
+export type WpushChannelConfig = z.infer<typeof wpushChannelConfigSchema>;
+
 export const webhookChannelConfigSchema = z.union([
   customWebhookChannelConfigSchema,
   telegramChannelConfigSchema,
+  wpushChannelConfigSchema,
 ]);
 export type WebhookChannelConfig = z.infer<typeof webhookChannelConfigSchema>;
