@@ -4,6 +4,16 @@ on:
   push:
     branches: ['main', 'master']
   workflow_dispatch:
+    inputs:
+      deploy_mode:
+        description: 'Deploy mode (leave blank to use repository variable UPTIMER_DEPLOY_MODE, fallback pages)'
+        type: choice
+        options:
+          - ''
+          - pages
+          - single_worker
+        default: ''
+        required: false
 
 permissions:
   contents: read
@@ -26,6 +36,12 @@ jobs:
       # - Set repo secret `VITE_ADMIN_PATH` to customize the admin URL path (e.g. /37dh3hi2)
       # - If unset/empty, the web app falls back to /admin
       VITE_ADMIN_PATH: ${{ secrets.VITE_ADMIN_PATH || vars.VITE_ADMIN_PATH || vars.UPTIMER_ADMIN_PATH }}
+
+      # Dual-mode deploy (see config model below).
+      # - pages (default): Worker API + Cloudflare Pages SPA (decoupled)
+      # - single_worker: SPA uploaded as Worker static assets (same origin)
+      # Priority: workflow_dispatch input > repo variable > default pages.
+      UPTIMER_DEPLOY_MODE: ${{ inputs.deploy_mode || vars.UPTIMER_DEPLOY_MODE || 'pages' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -65,9 +81,20 @@ jobs:
       # 2) The defaults below derive from the fork repository name (lowercased),
       #    so they remain stable across upstream syncs.
       #
+      # 3) Deployment modes (variable `UPTIMER_DEPLOY_MODE`):
+      #    - pages (DEFAULT): Worker serves the API; the built SPA is deployed to
+      #      Cloudflare Pages. Frontend and API keep their historical origins
+      #      (Pages proxies /api/* to the Worker via apps/web/public/_worker.js).
+      #      The base wrangler.toml contains no [assets] block, so the Worker stays
+      #      API-only. CI validates that no assets block is present in wrangler.ci.toml.
+      #    - single_worker: Frontend + API ship as one Worker. The built SPA
+      #      (apps/web/dist) is uploaded as the Worker's static assets, so the
+      #      status page, admin dashboard, and API all share one origin. No Pages
+      #      project is created or updated.
+      #
       # Required secrets:
       # - CLOUDFLARE_API_TOKEN: Cloudflare API Token with permissions for
-      #   Workers, Pages and D1.
+      #   Workers, Pages (pages mode) and D1.
       #
       # Optional (recommended) secret/variable:
       # - CLOUDFLARE_ACCOUNT_ID: If not provided, we will fetch the first account
@@ -77,8 +104,10 @@ jobs:
       # - UPTIMER_PREFIX: Base name for Worker/Pages/D1. Defaults to repo name slug.
       # - UPTIMER_WORKER_NAME / UPTIMER_PAGES_PROJECT / UPTIMER_D1_NAME: Override individual names.
       # - UPTIMER_D1_BINDING: D1 binding name in Worker (default: DB).
-      # - UPTIMER_API_BASE / UPTIMER_API_ORIGIN: Either one can be set; workflow derives the other.
-      #   (API_BASE drives Vite build requests; API_ORIGIN drives Pages HTML preload worker.)
+      # - UPTIMER_DEPLOY_MODE: pages (default) or single_worker.
+      # - UPTIMER_API_BASE / UPTIMER_API_ORIGIN: pages mode only. Either one can be
+      #   set; workflow derives the other. (API_BASE drives Vite build requests;
+      #   API_ORIGIN drives Pages HTML preload worker.) Ignored in single_worker.
       #
       # Required secret:
       # - UPTIMER_ADMIN_TOKEN: Admin dashboard access key; written to Worker secret ADMIN_TOKEN.
@@ -128,16 +157,30 @@ jobs:
           d1_name="${UPTIMER_D1_NAME:-$prefix}"
           d1_binding="${UPTIMER_D1_BINDING:-DB}"
 
+          raw_mode="${INPUT_DEPLOY_MODE:-}"
+          if [[ -z "$raw_mode" || "$raw_mode" == "use repository variable"* ]]; then
+            deploy_mode="${REPO_DEPLOY_MODE:-pages}"
+          else
+            deploy_mode="$raw_mode"
+          fi
+
+          if [[ "$deploy_mode" != "pages" && "$deploy_mode" != "single_worker" ]]; then
+            echo "Invalid deploy_mode='$deploy_mode'. Expected 'pages' or 'single_worker'."
+            exit 1
+          fi
+
           echo "WORKER_NAME=$worker_name" >> "$GITHUB_ENV"
           echo "PAGES_PROJECT=$pages_project" >> "$GITHUB_ENV"
           echo "D1_NAME=$d1_name" >> "$GITHUB_ENV"
           echo "D1_BINDING=$d1_binding" >> "$GITHUB_ENV"
           echo "DEFAULT_BRANCH=${DEFAULT_BRANCH:-main}" >> "$GITHUB_ENV"
+          echo "UPTIMER_DEPLOY_MODE=$deploy_mode" >> "$GITHUB_ENV"
 
           echo "worker_name=$worker_name" >> "$GITHUB_OUTPUT"
           echo "pages_project=$pages_project" >> "$GITHUB_OUTPUT"
           echo "d1_name=$d1_name" >> "$GITHUB_OUTPUT"
           echo "d1_binding=$d1_binding" >> "$GITHUB_OUTPUT"
+          echo "deploy_mode=$deploy_mode" >> "$GITHUB_OUTPUT"
         env:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           UPTIMER_PREFIX: ${{ vars.UPTIMER_PREFIX }}
@@ -145,6 +188,8 @@ jobs:
           UPTIMER_PAGES_PROJECT: ${{ vars.UPTIMER_PAGES_PROJECT }}
           UPTIMER_D1_NAME: ${{ vars.UPTIMER_D1_NAME }}
           UPTIMER_D1_BINDING: ${{ vars.UPTIMER_D1_BINDING }}
+          INPUT_DEPLOY_MODE: ${{ inputs.deploy_mode }}
+          REPO_DEPLOY_MODE: ${{ vars.UPTIMER_DEPLOY_MODE }}
 
       - name: Ensure D1 exists and get id
         id: d1
@@ -208,7 +253,6 @@ jobs:
           import os
           import pathlib
           import re
-          import sys
 
           src = pathlib.Path("apps/worker/wrangler.toml")
           dst = pathlib.Path(os.environ["WRANGLER_CI_CONFIG"])
@@ -217,6 +261,7 @@ jobs:
           d1_binding = os.environ.get("D1_BINDING", "DB")
           d1_name = os.environ["D1_NAME"]
           d1_id = os.environ["D1_ID"]
+          deploy_mode = os.environ.get("UPTIMER_DEPLOY_MODE", "pages")
           migrations_dir = (src.parent / "migrations").resolve().as_posix()
 
           text = src.read_text(encoding="utf-8")
@@ -277,8 +322,46 @@ jobs:
           if 'binding = "SELF"' not in final:
               final = final.rstrip() + f'\n\n[[services]]\nbinding = "SELF"\nservice = "{worker_name}"\n'
 
+          # 3) Mode-specific [assets] handling.
+          #    pages (default): Worker stays API-only (base wrangler.toml has no [assets]).
+          #    single_worker: inject SPA static assets binding into wrangler.ci.toml.
+          import tomllib
+
+          if deploy_mode == "single_worker":
+              final = final.rstrip() + (
+                  '\n\n'
+                  '# SPA static assets for single_worker mode (injected by CI).\n'
+                  '[assets]\n'
+                  'directory = "../web/dist"\n'
+                  'not_found_handling = "single-page-application"\n'
+                  'run_worker_first = ["/api/*"]\n'
+              )
+
+          try:
+              parsed = tomllib.loads(final)
+          except tomllib.TOMLDecodeError as exc:
+              raise SystemExit(
+                  f'Generated wrangler.ci.toml is invalid TOML (deploy_mode={deploy_mode}): {exc}'
+              ) from exc
+
+          if deploy_mode == 'pages':
+              if 'assets' in parsed:
+                  raise SystemExit('pages mode generated config must not contain [assets]')
+          else:
+              assets = parsed.get('assets') or {}
+              if assets.get('directory') != '../web/dist':
+                  raise SystemExit(
+                      'single_worker assets.directory unexpected: '
+                      f'{assets.get("directory")!r}'
+                  )
+              if assets.get('run_worker_first') != ['/api/*']:
+                  raise SystemExit(
+                      'single_worker assets.run_worker_first unexpected: '
+                      f'{assets.get("run_worker_first")!r}'
+                  )
+
           dst.write_text(final, encoding="utf-8")
-          print(f"Wrote {dst}")
+          print(f"Wrote {dst} (deploy_mode={deploy_mode})")
           PY
 
       - name: Apply D1 migrations (remote)
@@ -288,13 +371,28 @@ jobs:
           set -euo pipefail
           pnpm exec wrangler d1 migrations apply "$D1_NAME" --remote --config "$WRANGLER_CI_CONFIG"
 
+      # single_worker uploads apps/web/dist as Worker static assets — build first.
+      # pages mode builds after Worker deploy + API base resolution (below).
+      - name: Build Web (Vite, single_worker)
+        if: ${{ env.UPTIMER_DEPLOY_MODE == 'single_worker' }}
+        working-directory: apps/web
+        run: |
+          set -euo pipefail
+          pnpm build
+          # Pages advanced-mode proxy is unused when SPA+API share one Worker.
+          # Drop it so it is not published as a public static asset.
+          rm -f dist/_worker.js
+        env:
+          VITE_ADMIN_PATH: ${{ env.VITE_ADMIN_PATH }}
+
       - name: Deploy Worker (idempotent)
         id: deploy_worker
         shell: bash
         working-directory: apps/worker
         run: |
           set -euo pipefail
-          # Capture output so we can derive workers.dev URL for the web build (optional).
+          # pages mode: API-only Worker (no [assets]).
+          # single_worker: SPA + API uploaded together via [assets].
           set +e
           deploy_out="$(pnpm exec wrangler deploy --config "$WRANGLER_CI_CONFIG" --keep-vars 2>&1)"
           deploy_code="$?"
@@ -304,7 +402,7 @@ jobs:
             exit "$deploy_code"
           fi
 
-          # Best-effort parse; if it fails we can still use a user-provided API base.
+          # Best-effort parse of the deployed URL for the warm-up step below.
           worker_url="$(echo "$deploy_out" | grep -oE 'https://[^ ]+[.]workers[.]dev' | head -n1 || true)"
           if [[ -n "$worker_url" ]]; then
             echo "WORKER_URL=$worker_url" >> "$GITHUB_ENV"
@@ -329,7 +427,13 @@ jobs:
           set -euo pipefail
           printf '%s' "$UPTIMER_ADMIN_TOKEN" | pnpm exec wrangler secret put ADMIN_TOKEN --name "$WORKER_NAME" --config "$WRANGLER_CI_CONFIG"
 
-      - name: Resolve API base + origin (for Vite build + Pages preload)
+      # ---------------------------------------------------------------------
+      # pages mode only: resolve API origin, rebuild SPA, deploy to Pages.
+      # single_worker skips everything below — SPA already shipped with Worker.
+      # ---------------------------------------------------------------------
+
+      - name: Resolve API base + origin (pages mode)
+        if: ${{ env.UPTIMER_DEPLOY_MODE != 'single_worker' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -397,11 +501,18 @@ jobs:
           UPTIMER_API_ORIGIN: ${{ vars.UPTIMER_API_ORIGIN }}
           WORKER_URL: ${{ steps.deploy_worker.outputs.worker_url }}
 
-      - name: Build Pages (Vite)
+      - name: Build Web (Vite, pages mode)
+        if: ${{ env.UPTIMER_DEPLOY_MODE != 'single_worker' }}
         working-directory: apps/web
         run: pnpm build
+        env:
+          VITE_ADMIN_PATH: ${{ env.VITE_ADMIN_PATH }}
+          # Rely on GITHUB_ENV from the resolve step; fall back if empty
+          # (client.ts uses `??`, so a blank string would break API calls).
+          VITE_API_BASE: ${{ env.UPTIMER_RESOLVED_API_BASE || '/api/v1' }}
 
       - name: Ensure Pages project exists (idempotent)
+        if: ${{ env.UPTIMER_DEPLOY_MODE != 'single_worker' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -431,6 +542,7 @@ jobs:
           exit "$code"
 
       - name: Upsert Pages secret for HTML preload (best-effort)
+        if: ${{ env.UPTIMER_DEPLOY_MODE != 'single_worker' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -444,6 +556,7 @@ jobs:
           printf %s "$api_origin" | pnpm -C apps/worker exec wrangler --cwd ../.. pages secret put UPTIMER_API_ORIGIN --project-name "$PAGES_PROJECT"
 
       - name: Deploy Pages (idempotent)
+        if: ${{ env.UPTIMER_DEPLOY_MODE != 'single_worker' }}
         shell: bash
         run: |
           set -euo pipefail

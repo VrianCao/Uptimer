@@ -26,7 +26,7 @@ Phased delivery plan from MVP to production. Each phase includes acceptance crit
 
 ## 0. Constraints (Locked)
 
-- 平台：Cloudflare Workers + Pages + D1
+- 平台：Cloudflare Workers + D1，默认前端托管在 Cloudflare Pages（可选 `UPTIMER_DEPLOY_MODE=single_worker` 将 SPA 作为 Worker `[assets]` 与 API 同源）
 - 前端：React + Vite + TypeScript + Tailwind + React Router + TanStack Query + Recharts
 - 后端：TypeScript + Hono + Zod
 - DB：D1 + Drizzle ORM；迁移用 Wrangler D1 migrations
@@ -197,7 +197,7 @@ Phased delivery plan from MVP to production. Each phase includes acceptance crit
 
 验收（DoD）：
 
-- MVP 可部署到 Cloudflare：Pages + Worker + D1 migrations 一次性跑通
+- MVP 可部署到 Cloudflare：默认 Pages 前端 + Worker API + D1 migrations 一次性跑通（可选 `UPTIMER_DEPLOY_MODE=single_worker` 为单 Worker 托管）
 - 数据不会无限膨胀（Retention 生效）
 
 ---
@@ -310,10 +310,10 @@ Phased delivery plan from MVP to production. Each phase includes acceptance crit
   - 用 `settings` 表存非敏感配置：站点标题/描述、时区、默认 range、保留天数、阈值默认值（连续失败/成功等）
   - 管理端 settings API：`GET/PATCH /api/v1/admin/settings`（Zod 校验）
 - 状态页可定制：
-  - Logo/Favicon（Pages 静态资源）与主题色（Tailwind tokens）
+  - Logo/Favicon（前端静态资源：Pages `public/` 或 Worker `[assets]`）与主题色（Tailwind tokens）
   - 可选：自定义公告（类似 Statuspage 的 notice）
 - 文档与上线：
-  - 增补 README：Pages 自定义域名/HTTPS、Worker 环境变量、迁移步骤
+  - 增补 README：自定义域名/HTTPS、Worker 环境变量、迁移步骤
 
 验收（DoD）：
 

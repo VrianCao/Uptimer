@@ -22,7 +22,7 @@ English | **[中文](README.zh-CN.md)**
 
 - **Zero ops** — No servers, containers, or databases to manage. Runs entirely on Cloudflare's free/paid tiers.
 - **Edge-native** — Monitoring probes run from Cloudflare Workers; your status page is served from the CDN edge.
-- **One-click deploy** — Push to `main` and GitHub Actions handles everything: D1 migrations, Worker deployment, Pages build.
+- **One-click deploy** — Push to `main` and GitHub Actions handles everything: D1 migrations, Worker API, and the Pages frontend (optional single-Worker mode available).
 - **Full-featured** — HTTP/TCP checks, incident management, maintenance windows, webhook notifications, admin dashboard.
 
 ## Features
@@ -63,12 +63,14 @@ English | **[中文](README.zh-CN.md)**
 
 ## Architecture
 
+Default deployment is **Pages + Workers** (decoupled). An optional **single_worker** mode ships the SPA and API from one Worker origin.
+
 ```
                 ┌──────────────────────────────────────────┐
                 │            Cloudflare Network            │
                 │                                          │
 Visitors ──────►│  Pages (React SPA)                       │
-                │      │                                   │
+                │      │  /api/*  →  proxy                 │
                 │      ▼                                   │
 Admin ─────────►│  Workers (Hono API)                      │
                 │      │              │                    │
@@ -85,16 +87,20 @@ Admin ─────────►│  Workers (Hono API)                     
                               Webhooks ──► Discord / Slack / ntfy
 ```
 
+**Default (`pages`)**: status page + admin dashboard are deployed to Cloudflare Pages; the Worker serves the API and cron probes. Pages proxies `/api/*` to the Worker via `apps/web/public/_worker.js`, preloading homepage data directly into the initial HTML.
+
+**Optional (`single_worker`)**: set GitHub Actions variable `UPTIMER_DEPLOY_MODE=single_worker` to upload the built SPA as Worker `[assets]`. Frontend, admin, and API then share one origin (no Pages project). Note: first visit renders after the SPA fetches `/api/v1/public/homepage` (no HTML preload injection). If switching from an existing `pages` deployment, manually remove or redirect the old Pages project.
+
 ## Tech Stack
 
-| Layer           | Technology                                                         |
-| --------------- | ------------------------------------------------------------------ |
-| Frontend        | React 18, Vite, TypeScript, Tailwind CSS, TanStack Query, Recharts |
-| Backend         | Cloudflare Workers, Hono, Zod                                      |
-| Database        | Cloudflare D1 (SQLite), Drizzle ORM                                |
-| Hosting         | Cloudflare Pages (frontend), Workers (API)                         |
-| CI/CD           | GitHub Actions                                                     |
-| Package Manager | pnpm (monorepo)                                                    |
+| Layer           | Technology                                                          |
+| --------------- | ------------------------------------------------------------------- |
+| Frontend        | React 18, Vite, TypeScript, Tailwind CSS, TanStack Query, Recharts  |
+| Backend         | Cloudflare Workers, Hono, Zod                                       |
+| Database        | Cloudflare D1 (SQLite), Drizzle ORM                                 |
+| Hosting         | Cloudflare Pages (frontend) + Workers (API); optional single Worker |
+| CI/CD           | GitHub Actions                                                      |
+| Package Manager | pnpm (monorepo)                                                     |
 
 ## Quick Deploy (5 Steps)
 
@@ -114,6 +120,8 @@ Click the **Fork** button at the top-right of this repository to create your own
    - `Account / Account Settings / Read`
 4. Copy the generated token
 
+> `Cloudflare Pages / Edit` is only required for the default `pages` deploy mode. Single-worker mode (`UPTIMER_DEPLOY_MODE=single_worker`) does not need Pages permission.
+
 ### Step 3 — Add GitHub Secrets
 
 Go to your forked repo → **Settings** → **Secrets and variables** → **Actions** → **New repository secret**, and add:
@@ -124,6 +132,8 @@ Go to your forked repo → **Settings** → **Secrets and variables** → **Acti
 | `UPTIMER_ADMIN_TOKEN`   | Any strong string (this is your admin dashboard password)                                                     |     Yes     |
 | `CLOUDFLARE_ACCOUNT_ID` | Your [Cloudflare Account ID](https://developers.cloudflare.com/fundamentals/setup/find-account-and-zone-ids/) | Recommended |
 
+Optional repository **variable** (not secret): `UPTIMER_DEPLOY_MODE` = `pages` (default) or `single_worker`.
+
 ### Step 4 — Run GitHub Actions
 
 Go to **Actions** → **Deploy to Cloudflare** → **Run workflow** (or simply push a commit to `main`/`master`).
@@ -132,16 +142,25 @@ The workflow automatically:
 
 - Creates the D1 database and runs migrations
 - Deploys the Worker (API + cron-based monitoring)
-- Builds and deploys the Pages frontend (status page)
+- Default mode: builds the frontend (Vite) and deploys it to Cloudflare Pages
+- Single-worker mode: builds the frontend and uploads it with the Worker as static assets
 - Injects the admin token as a Worker secret
 
 ### Step 5 — Visit Your Status Page
 
 Once the workflow succeeds (usually ~2 min for first deploy):
 
-- **Status page** → `https://<your-repo-name>.pages.dev`
-- **Admin dashboard** → `https://<your-repo-name>.pages.dev/admin`
-- **API** → `https://<your-repo-name>.workers.dev/api/v1/public/status`
+**Default (`pages` mode):**
+
+- **Status page** → `https://<your-pages-project>.pages.dev`
+- **Admin dashboard** → `https://<your-pages-project>.pages.dev/admin`
+- **API** → `https://<your-worker-name>.workers.dev/api/v1/public/status`
+
+**Optional (`single_worker` mode):**
+
+- **Status page** → `https://<your-worker-name>.workers.dev`
+- **Admin dashboard** → `https://<your-worker-name>.workers.dev/admin`
+- **API** → `https://<your-worker-name>.workers.dev/api/v1/public/status`
 
 Log in to the admin dashboard with the `UPTIMER_ADMIN_TOKEN` you set, and start adding monitors.
 

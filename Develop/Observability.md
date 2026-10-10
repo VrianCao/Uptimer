@@ -82,12 +82,12 @@ pnpm --filter @uptimer/worker exec wrangler tail uptimer --format json --samplin
 
 ### 2.1 Header 协议（请求端）
 
-所有 trace 都基于这组 header（Workers 与 Pages Worker 一致）：
+所有 trace 都基于这组 header（Workers 与 Pages Worker 一致；`single_worker` 模式仅有 Worker 层）：
 
 - `X-Uptimer-Trace: 1|true|yes|on`：开启 trace（默认关闭）
 - `X-Uptimer-Trace-Id: <id>`：可选；用于跨层关联（不传会自动生成 UUID）
 - `X-Uptimer-Trace-Token: <token>`：可选；若环境变量设置了 token，则必须匹配才启用
-- `X-Uptimer-Trace-Mode: <mode>`：可选；目前 Pages Worker 支持 `bypass-cache`
+- `X-Uptimer-Trace-Mode: <mode>`：可选；Worker 热路径与 Pages Worker 均支持 `bypass-cache`
 
 注意：
 
@@ -110,7 +110,7 @@ Token 的环境变量（两处都支持）：
 span 前缀约定：
 
 - Worker API（TS Worker）：通常以 `w_` 前缀输出（由调用方传入 prefix）
-- Pages Worker（`apps/web/public/_worker.js`）：以 `p_` 表示页面层 span，并把 API 的 `Server-Timing` 重命名为 `api_*` 合并进来，方便端到端阅读
+- Pages Worker（`apps/web/public/_worker.js`，仅 `pages` 模式）：以 `p_` 表示页面层 span，并把 API 的 `Server-Timing` 重命名为 `api_*` 合并进来，方便端到端阅读
 - span 名和标签只应表达执行路径、cache 命中、age、payload 形态等低敏信息；不要写入 token、header 原文、完整目标 URL 或用户输入。
 
 ---
@@ -142,7 +142,7 @@ curl -sS -D - -o /dev/null \
 
 ## 4. Pages Worker（HTML 注入层）的 Trace 实现位置
 
-- Pages Worker：`apps/web/public/_worker.js`
+- Pages Worker：`apps/web/public/_worker.js`（默认 `pages` 部署模式）
 - 行为：
   - 当 HTML 导航请求携带 `X-Uptimer-Trace`（且 token 校验通过）时：
     - Pages Worker 会在自身逻辑中记录 `p_*` span（cache 命中、index fetch、API fetch、注入等）
@@ -162,6 +162,11 @@ curl -sS -D - -o /dev/null \
   -H 'X-Uptimer-Trace-Mode: bypass-cache' \
   'https://<your-pages-origin>/'
 ```
+
+> **部署模式说明**：
+>
+> - 默认 `pages` 模式下，首屏 HTML 预注入由 Pages Worker 完成；端到端 trace 会同时输出 `p_*` 与 `api_*` span。
+> - 可选 `single_worker` 模式下，SPA 静态资源直接由 Worker `[assets]` 提供，没有 Pages Worker 中间代理层（不经过 `_worker.js`，首屏由 SPA 运行时拉取 `/api/v1/public/homepage`），端到端排查直接观测 Worker 的 `w_*` span。
 
 ---
 
