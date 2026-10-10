@@ -6,13 +6,13 @@ on:
   workflow_dispatch:
     inputs:
       deploy_mode:
-        description: 'Deploy mode (leave blank to use repository variable UPTIMER_DEPLOY_MODE, fallback pages)'
+        description: 'Deploy mode (auto = use repository variable UPTIMER_DEPLOY_MODE, fallback pages)'
         type: choice
         options:
-          - ''
+          - auto
           - pages
           - single_worker
-        default: ''
+        default: auto
         required: false
 
 permissions:
@@ -37,11 +37,12 @@ jobs:
       # - If unset/empty, the web app falls back to /admin
       VITE_ADMIN_PATH: ${{ secrets.VITE_ADMIN_PATH || vars.VITE_ADMIN_PATH || vars.UPTIMER_ADMIN_PATH }}
 
-      # Dual-mode deploy (see config model below).
+      # Dual-mode deploy (see config model below). The effective mode is resolved
+      # once in the "Compute deploy names" step (id: names) and read from
+      # `steps.names.outputs.deploy_mode` / env `UPTIMER_DEPLOY_MODE` afterwards.
       # - pages (default): Worker API + Cloudflare Pages SPA (decoupled)
       # - single_worker: SPA uploaded as Worker static assets (same origin)
-      # Priority: workflow_dispatch input > repo variable > default pages.
-      UPTIMER_DEPLOY_MODE: ${{ inputs.deploy_mode || vars.UPTIMER_DEPLOY_MODE || 'pages' }}
+      # Priority: workflow_dispatch input (unless `auto`) > repo variable > default pages.
     steps:
       - uses: actions/checkout@v4
 
@@ -158,7 +159,7 @@ jobs:
           d1_binding="${UPTIMER_D1_BINDING:-DB}"
 
           raw_mode="${INPUT_DEPLOY_MODE:-}"
-          if [[ -z "$raw_mode" || "$raw_mode" == "use repository variable"* ]]; then
+          if [[ -z "$raw_mode" || "$raw_mode" == "auto" ]]; then
             deploy_mode="${REPO_DEPLOY_MODE:-pages}"
           else
             deploy_mode="$raw_mode"
@@ -374,7 +375,7 @@ jobs:
       # single_worker uploads apps/web/dist as Worker static assets — build first.
       # pages mode builds after Worker deploy + API base resolution (below).
       - name: Build Web (Vite, single_worker)
-        if: ${{ env.UPTIMER_DEPLOY_MODE == 'single_worker' }}
+        if: ${{ steps.names.outputs.deploy_mode == 'single_worker' }}
         working-directory: apps/web
         run: |
           set -euo pipefail
@@ -433,7 +434,7 @@ jobs:
       # ---------------------------------------------------------------------
 
       - name: Resolve API base + origin (pages mode)
-        if: ${{ env.UPTIMER_DEPLOY_MODE != 'single_worker' }}
+        if: ${{ steps.names.outputs.deploy_mode != 'single_worker' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -502,7 +503,7 @@ jobs:
           WORKER_URL: ${{ steps.deploy_worker.outputs.worker_url }}
 
       - name: Build Web (Vite, pages mode)
-        if: ${{ env.UPTIMER_DEPLOY_MODE != 'single_worker' }}
+        if: ${{ steps.names.outputs.deploy_mode != 'single_worker' }}
         working-directory: apps/web
         run: pnpm build
         env:
@@ -512,7 +513,7 @@ jobs:
           VITE_API_BASE: ${{ env.UPTIMER_RESOLVED_API_BASE || '/api/v1' }}
 
       - name: Ensure Pages project exists (idempotent)
-        if: ${{ env.UPTIMER_DEPLOY_MODE != 'single_worker' }}
+        if: ${{ steps.names.outputs.deploy_mode != 'single_worker' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -542,7 +543,7 @@ jobs:
           exit "$code"
 
       - name: Upsert Pages secret for HTML preload (best-effort)
-        if: ${{ env.UPTIMER_DEPLOY_MODE != 'single_worker' }}
+        if: ${{ steps.names.outputs.deploy_mode != 'single_worker' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -556,7 +557,7 @@ jobs:
           printf %s "$api_origin" | pnpm -C apps/worker exec wrangler --cwd ../.. pages secret put UPTIMER_API_ORIGIN --project-name "$PAGES_PROJECT"
 
       - name: Deploy Pages (idempotent)
-        if: ${{ env.UPTIMER_DEPLOY_MODE != 'single_worker' }}
+        if: ${{ steps.names.outputs.deploy_mode != 'single_worker' }}
         shell: bash
         run: |
           set -euo pipefail

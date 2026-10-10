@@ -24,7 +24,7 @@ Deploy Uptimer to Cloudflare using the built-in GitHub Actions workflow.
 | `pages`         | Yes     | Worker (API + cron) + Cloudflare Pages SPA                    |
 | `single_worker` | No      | One Worker serving SPA static assets + API (no Pages project) |
 
-Priority for manual runs: `workflow_dispatch` input `deploy_mode` > repository variable `UPTIMER_DEPLOY_MODE` > default `pages`.
+Priority for manual runs: `workflow_dispatch` input `deploy_mode` > repository variable `UPTIMER_DEPLOY_MODE` > default `pages`. The input defaults to `auto`, which defers to the repository variable.
 
 > **Deploy mode notes**:
 >
