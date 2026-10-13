@@ -39,6 +39,7 @@ const telegramChannelBaseInputSchema = z.object({
   timeout_ms: notificationChannelTimeoutMsSchema,
   message_template: notificationMessageTemplateSchema,
   enabled_events: z.array(notificationEventTypeSchema).min(1).optional(),
+  monitor_ids: z.array(z.number().int().positive()).max(200).optional(),
   parse_mode: z.enum(['Markdown', 'MarkdownV2', 'HTML']).optional(),
   disable_notification: z.boolean().optional(),
   protect_content: z.boolean().optional(),

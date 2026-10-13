@@ -185,6 +185,7 @@ export const customWebhookChannelConfigSchema = z
 
     // If omitted, the channel receives all events.
     enabled_events: z.array(notificationEventTypeSchema).min(1).optional(),
+    monitor_ids: z.array(z.number().int().positive()).max(200).optional(),
 
     signing: webhookSigningSchema.optional(),
   })
@@ -244,6 +245,7 @@ export const telegramChannelConfigSchema = z
 
     // If omitted, the channel receives all events.
     enabled_events: z.array(notificationEventTypeSchema).min(1).optional(),
+    monitor_ids: z.array(z.number().int().positive()).max(200).optional(),
 
     parse_mode: z.enum(['Markdown', 'MarkdownV2', 'HTML']).optional(),
     disable_notification: z.boolean().optional(),

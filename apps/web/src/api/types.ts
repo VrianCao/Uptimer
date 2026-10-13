@@ -479,6 +479,7 @@ export interface CustomWebhookChannelConfig {
     | 'maintenance.ended'
     | 'test.ping'
   >;
+  monitor_ids?: number[];
   signing?: {
     enabled: boolean;
     secret_ref: string;
@@ -496,6 +497,7 @@ export interface TelegramChannelConfig {
   timeout_ms?: number;
   message_template?: string;
   enabled_events?: CustomWebhookChannelConfig['enabled_events'];
+  monitor_ids?: number[];
   parse_mode?: TelegramParseMode;
   disable_notification?: boolean;
   protect_content?: boolean;

@@ -25,6 +25,7 @@ interface NotificationChannelFormProps {
   onCancel: () => void;
   isLoading?: boolean;
   error?: string | undefined;
+  monitors?: Array<{ id: number; name: string }> | undefined;
 }
 
 const inputClass = INPUT_CLASS;
@@ -114,6 +115,7 @@ export function NotificationChannelForm({
   onCancel,
   isLoading,
   error,
+  monitors = [],
 }: NotificationChannelFormProps) {
   const { t } = useI18n();
   const initialConfig = channel?.config_json;
@@ -148,6 +150,9 @@ export function NotificationChannelForm({
 
   const [enabledEvents, setEnabledEvents] = useState<NotificationEventType[]>(
     initialConfig?.enabled_events ?? [],
+  );
+  const [selectedMonitorIds, setSelectedMonitorIds] = useState<number[]>(
+    initialConfig?.monitor_ids ?? [],
   );
 
   const [signingEnabled, setSigningEnabled] = useState<boolean>(
@@ -292,6 +297,10 @@ export function NotificationChannelForm({
         }
       }
 
+      if (selectedMonitorIds.length > 0) {
+        config.monitor_ids = selectedMonitorIds;
+      }
+
       onSubmit({ name, type: 'webhook', config_json: config });
       return;
     }
@@ -322,6 +331,9 @@ export function NotificationChannelForm({
 
     if (signingEnabled) {
       config.signing = { enabled: true, secret_ref: signingSecretRef };
+    }
+    if (selectedMonitorIds.length > 0) {
+      config.monitor_ids = selectedMonitorIds;
     }
 
     onSubmit({ name, type: 'webhook', config_json: config });
@@ -738,6 +750,38 @@ export function NotificationChannelForm({
           )}
         </div>
       )}
+
+      <div className="border-t border-slate-200 pt-4 dark:border-slate-700">
+        <label className={labelClass}>{t('notification_form.monitor_scope')}</label>
+        <div className={FIELD_HELP_CLASS}>{t('notification_form.monitor_scope_help')}</div>
+        {monitors.length > 0 ? (
+          <div className="mt-2 max-h-44 space-y-2 overflow-y-auto rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+            {monitors.map((monitor) => (
+              <label
+                key={monitor.id}
+                className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300"
+              >
+                <input
+                  type="checkbox"
+                  checked={selectedMonitorIds.includes(monitor.id)}
+                  onChange={() =>
+                    setSelectedMonitorIds((prev) =>
+                      prev.includes(monitor.id)
+                        ? prev.filter((id) => id !== monitor.id)
+                        : [...prev, monitor.id],
+                    )
+                  }
+                />
+                <span>{monitor.name}</span>
+              </label>
+            ))}
+          </div>
+        ) : (
+          <div className="mt-2 text-xs text-slate-400 dark:text-slate-500">
+            {t('notification_form.monitor_scope_empty')}
+          </div>
+        )}
+      </div>
 
       <div className="flex gap-3 pt-2">
         <Button type="button" variant="secondary" onClick={onCancel} className="flex-1">
