@@ -22,7 +22,7 @@ import {
 
 import type { Env } from '../env';
 import { requireAdmin } from '../middleware/auth';
-import { AppError } from '../middleware/errors';
+import { AppError, handleError, handleNotFound } from '../middleware/errors';
 import { requireAdminRateLimit } from '../middleware/rate-limit';
 import { computePublicHomepagePayload } from '../public/homepage';
 import {
@@ -71,6 +71,13 @@ import {
 } from '../schemas/notification-channels';
 
 export const adminRoutes = new Hono<{ Bindings: Env }>();
+
+// Mounted via `adminRoutes.fetch()` (see src/hono-app.ts), not `app.route()`, so this
+// router must own the shared JSON error/not-found handlers; Hono's defaults would
+// otherwise return text/plain 500s for AppError/ZodErrors and text/plain 404s for
+// unknown routes.
+adminRoutes.onError(handleError);
+adminRoutes.notFound(handleNotFound);
 
 adminRoutes.use('*', requireAdminRateLimit);
 
