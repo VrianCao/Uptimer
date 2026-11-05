@@ -1,5 +1,11 @@
 # uptimer-cli
 
+## 0.2.1
+
+### Patch Changes
+
+- bc089e6: Publish through the CI trusted publisher with npm provenance attestations, so the released tarball is verifiably built from this repository by the tagged workflow run.
+
 ## 0.2.0
 
 ### Minor Changes

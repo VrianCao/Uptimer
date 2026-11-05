@@ -1,6 +1,6 @@
 {
   "name": "uptimer-cli",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Manage Uptimer configuration from coding agents and the terminal",
   "license": "MIT",
   "type": "module",
