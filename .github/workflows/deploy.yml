@@ -35,7 +35,7 @@ jobs:
 
       - uses: pnpm/action-setup@v4
         with:
-          version: '10.8.1'
+          version: '10.34.9'
 
       - name: Resolve pnpm store path
         id: pnpm_store
