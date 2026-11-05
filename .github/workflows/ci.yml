@@ -45,7 +45,10 @@ jobs:
       matrix:
         node: ['22.14.0', '24']
     steps:
+      # Full history: the changeset check needs the merge base with master.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: pnpm/action-setup@v4
         with:
@@ -65,13 +68,15 @@ jobs:
       - name: Test installed npm package
         run: pnpm --filter uptimer-cli test:package
 
+      # `changeset status` compares against a base ref, which a shallow checkout lacks.
       - name: Validate changesets
         run: |
-          if [ -n "$(find .changeset -maxdepth 1 -name '*.md' ! -name 'README.md')" ]; then
-            pnpm changeset status
-          else
+          if [ -z "$(find .changeset -maxdepth 1 -name '*.md' ! -name 'README.md')" ]; then
             echo 'No pending changesets'
+            exit 0
           fi
+          git fetch --no-tags origin '+refs/heads/master:refs/remotes/origin/master'
+          pnpm changeset status --since=origin/master
 
   worker-tests:
     runs-on: ubuntu-latest
