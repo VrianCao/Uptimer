@@ -2,8 +2,10 @@ import pLimit from 'p-limit';
 
 import {
   expectedStatusJsonSchema,
+  forbiddenStatusJsonSchema,
   httpHeadersJsonSchema,
   parseDbJsonNullable,
+  type StatusCodeRule,
 } from '@uptimer/db/json';
 import type { HttpResponseMatchMode, MonitorStatus } from '@uptimer/db/schema';
 
@@ -138,12 +140,7 @@ function isTruthyEnvFlag(value: unknown): boolean {
     return false;
   }
   const normalized = value.trim().toLowerCase();
-  return (
-    normalized === '1' ||
-    normalized === 'true' ||
-    normalized === 'yes' ||
-    normalized === 'on'
-  );
+  return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on';
 }
 
 function shouldTraceScheduledRefresh(env: Env): boolean {
@@ -381,7 +378,7 @@ function parseJsonObject(text: string): Record<string, unknown> | null {
   try {
     const parsed = JSON.parse(text) as unknown;
     return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-      ? parsed as Record<string, unknown>
+      ? (parsed as Record<string, unknown>)
       : null;
   } catch {
     return null;
@@ -455,7 +452,9 @@ async function assembleShardedPublicSnapshotViaService(
   );
   const bodyText = await res.text().catch(() => '');
   if (!res.ok) {
-    throw new Error(`sharded public snapshot assemble failed: HTTP ${res.status} ${bodyText}`.trim());
+    throw new Error(
+      `sharded public snapshot assemble failed: HTTP ${res.status} ${bodyText}`.trim(),
+    );
   }
 
   const parsed = parseJsonObject(bodyText);
@@ -569,7 +568,9 @@ async function startShardedPublicSnapshotContinuationViaService(
   );
   const bodyText = await res.text().catch(() => '');
   if (!res.ok) {
-    throw new Error(`sharded public snapshot continuation failed: HTTP ${res.status} ${bodyText}`.trim());
+    throw new Error(
+      `sharded public snapshot continuation failed: HTTP ${res.status} ${bodyText}`.trim(),
+    );
   }
   if (shouldLogScheduledRefresh(env)) {
     const parsed = parseJsonObject(bodyText);
@@ -797,8 +798,10 @@ async function runScheduledCheckBatchViaService(
 type CachedMonitorHttpJson = {
   http_headers_json: string | null;
   expected_status_json: string | null;
+  forbidden_status_json: string | null;
   httpHeaders: Record<string, string> | null;
-  expectedStatus: number[] | null;
+  expectedStatus: StatusCodeRule[] | null;
+  forbiddenStatus: StatusCodeRule[] | null;
 };
 
 const cachedMonitorHttpJsonById = new Map<number, CachedMonitorHttpJson>();
@@ -819,6 +822,7 @@ export type DueMonitorRow = {
   http_body: string | null;
   follow_redirects: number | boolean | null;
   expected_status_json: string | null;
+  forbidden_status_json: string | null;
   response_keyword: string | null;
   response_keyword_mode: HttpResponseMatchMode | null;
   response_forbidden_keyword: string | null;
@@ -894,6 +898,7 @@ const LIST_DUE_MONITORS_SQL = `
     m.http_body,
     m.follow_redirects,
     m.expected_status_json,
+    m.forbidden_status_json,
     m.response_keyword,
     m.response_keyword_mode,
     m.response_forbidden_keyword,
@@ -1062,6 +1067,7 @@ export async function listMonitorRowsByIds(
         m.http_body,
         m.follow_redirects,
         m.expected_status_json,
+        m.forbidden_status_json,
         m.response_keyword,
         m.response_keyword_mode,
         m.response_forbidden_keyword,
@@ -1558,7 +1564,8 @@ async function runDueMonitor(
         const cachedMatches =
           cached &&
           cached.http_headers_json === row.http_headers_json &&
-          cached.expected_status_json === row.expected_status_json;
+          cached.expected_status_json === row.expected_status_json &&
+          cached.forbidden_status_json === row.forbidden_status_json;
 
         const httpHeaders = cachedMatches
           ? cached.httpHeaders
@@ -1570,13 +1577,20 @@ async function runDueMonitor(
           : parseDbJsonNullable(expectedStatusJsonSchema, row.expected_status_json, {
               field: 'expected_status_json',
             });
+        const forbiddenStatus = cachedMatches
+          ? cached.forbiddenStatus
+          : parseDbJsonNullable(forbiddenStatusJsonSchema, row.forbidden_status_json, {
+              field: 'forbidden_status_json',
+            });
 
         if (!cachedMatches) {
           cachedMonitorHttpJsonById.set(row.id, {
             http_headers_json: row.http_headers_json,
             expected_status_json: row.expected_status_json,
+            forbidden_status_json: row.forbidden_status_json,
             httpHeaders,
             expectedStatus,
+            forbiddenStatus,
           });
         }
 
@@ -1589,6 +1603,7 @@ async function runDueMonitor(
           body: row.http_body,
           followRedirects: toBooleanDefaultTrue(row.follow_redirects),
           expectedStatus,
+          forbiddenStatus,
           responseKeyword: row.response_keyword,
           responseKeywordMode: row.response_keyword_mode,
           responseForbiddenKeyword: row.response_forbidden_keyword,
@@ -1721,7 +1736,10 @@ export async function runPersistedMonitorBatch(opts: {
   if (completed.length > 0) {
     if (opts.beforePersist) {
       if (opts.trace) {
-        await opts.trace.timeAsync('batch_before_persist', async () => await opts.beforePersist?.());
+        await opts.trace.timeAsync(
+          'batch_before_persist',
+          async () => await opts.beforePersist?.(),
+        );
       } else {
         await opts.beforePersist();
       }
@@ -1809,11 +1827,12 @@ export async function runScheduledTick(env: Env, ctx: ExecutionContext): Promise
         );
       }
       return shouldUseScheduledShardedContinuation(env)
-        ? startShardedPublicSnapshotContinuationViaService(env, { refreshRuntimeFragments: false })
-            .catch((err) => {
-              console.warn('scheduled sharded public snapshot continuation failed', err);
-              return queueShardedPublicSnapshotWork();
-            })
+        ? startShardedPublicSnapshotContinuationViaService(env, {
+            refreshRuntimeFragments: false,
+          }).catch((err) => {
+            console.warn('scheduled sharded public snapshot continuation failed', err);
+            return queueShardedPublicSnapshotWork();
+          })
         : queueShardedPublicSnapshotWork();
     }
 
@@ -1840,10 +1859,7 @@ export async function runScheduledTick(env: Env, ctx: ExecutionContext): Promise
         });
     } else {
       refreshPromise = env.SELF
-        ? refreshHomepageSnapshotViaService(
-            env,
-            runtimeUpdates ? { runtimeUpdates } : undefined,
-          )
+        ? refreshHomepageSnapshotViaService(env, runtimeUpdates ? { runtimeUpdates } : undefined)
             .then(async (result) => {
               if (!runtimeUpdates?.length || result.refreshed !== false) {
                 return;
@@ -2017,15 +2033,19 @@ export async function runScheduledTick(env: Env, ctx: ExecutionContext): Promise
             const ids = rows.map((row) => row.id);
             const suppressedIds = ids.filter((id) => suppressedMonitorIds.has(id));
             try {
-              return await runScheduledCheckBatchViaService(env, {
-                ids,
-                checkedAt,
-                suppressedMonitorIds: suppressedIds,
-                stateMachineConfig,
-                allowNotifications: Boolean(notify),
-                ...(activeRuntimeFragmentPipeline ? { runtimeFragmentsOnly: true } : {}),
-                ...(splitRuntimeFragmentWrites ? { splitRuntimeFragmentWrites: true } : {}),
-              }, schedulerLease.signal);
+              return await runScheduledCheckBatchViaService(
+                env,
+                {
+                  ids,
+                  checkedAt,
+                  suppressedMonitorIds: suppressedIds,
+                  stateMachineConfig,
+                  allowNotifications: Boolean(notify),
+                  ...(activeRuntimeFragmentPipeline ? { runtimeFragmentsOnly: true } : {}),
+                  ...(splitRuntimeFragmentWrites ? { splitRuntimeFragmentWrites: true } : {}),
+                },
+                schedulerLease.signal,
+              );
             } catch (err) {
               schedulerLease.assertHeld('dispatching inline fallback for service batch');
               const firstId = ids[0] ?? null;

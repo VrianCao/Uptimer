@@ -62,6 +62,7 @@ describe('validateTcpTarget', () => {
   it('accepts reachable public targets', () => {
     expect(validateTcpTarget('example.com:443')).toBeNull();
     expect(validateTcpTarget('[2606:4700:4700::1111]:53')).toBeNull();
+    expect(validateTcpTarget('[2001:3::1]:80')).toBeNull();
   });
 
   it('rejects blocked hosts and reserved IP ranges', () => {
@@ -71,7 +72,37 @@ describe('validateTcpTarget', () => {
     expect(validateTcpTarget('127.1:80')).toBe('target host is not allowed');
     expect(validateTcpTarget('0x7f000001:80')).toBe('target host is not allowed');
     expect(validateTcpTarget('[::1]:443')).toBe('target host is not allowed');
+    expect(validateTcpTarget('[::]:80')).toBe('target host is not allowed');
     expect(validateTcpTarget('[::ffff:127.0.0.1]:443')).toBe('target host is not allowed');
+  });
+
+  it('rejects the complete IPv6 link-local range', () => {
+    expect(validateTcpTarget('[fe80::1]:22')).toBe('target host is not allowed');
+    expect(validateTcpTarget('[fe90::1]:443')).toBe('target host is not allowed');
+    expect(validateTcpTarget('[febf::1]:443')).toBe('target host is not allowed');
+  });
+
+  it('rejects IPv6 multicast and unique-local targets', () => {
+    expect(validateTcpTarget('[ff02::1]:443')).toBe('target host is not allowed');
+    expect(validateTcpTarget('[ff05::1]:443')).toBe('target host is not allowed');
+    expect(validateTcpTarget('[fd12::1]:22')).toBe('target host is not allowed');
+  });
+
+  it('rejects equivalent IPv4-mapped blocked targets', () => {
+    expect(validateTcpTarget('[::ffff:7f00:1]:443')).toBe('target host is not allowed');
+    expect(validateTcpTarget('[0:0:0:0:0:ffff:7f00:1]:443')).toBe('target host is not allowed');
+    expect(validateTcpTarget('[0:0:0:0:0:FFFF:0A00:0001]:443')).toBe('target host is not allowed');
+  });
+
+  it('rejects non-global IPv6 special-purpose ranges', () => {
+    expect(validateTcpTarget('[64:ff9b:1::1]:80')).toBe('target host is not allowed');
+    expect(validateTcpTarget('[100::1]:80')).toBe('target host is not allowed');
+    expect(validateTcpTarget('[100:0:0:1::1]:80')).toBe('target host is not allowed');
+    expect(validateTcpTarget('[2001:100::1]:80')).toBe('target host is not allowed');
+    expect(validateTcpTarget('[2001:2::1]:80')).toBe('target host is not allowed');
+    expect(validateTcpTarget('[2001:db8::1]:80')).toBe('target host is not allowed');
+    expect(validateTcpTarget('[3fff::1]:80')).toBe('target host is not allowed');
+    expect(validateTcpTarget('[5f00::1]:80')).toBe('target host is not allowed');
   });
 
   it('rejects malformed payloads and out-of-range ports', () => {
@@ -82,5 +113,11 @@ describe('validateTcpTarget', () => {
       'target must be in host:port format (IPv6: [addr]:port)',
     );
     expect(validateTcpTarget('[]:443')).toBe('target host is required');
+  });
+
+  it('rejects invalid IPv6 literals', () => {
+    expect(validateTcpTarget('[garbage::1]:80')).toBe('target host is not allowed');
+    expect(validateTcpTarget('[12345::1]:80')).toBe('target host is not allowed');
+    expect(validateTcpTarget('[1::2::3]:80')).toBe('target host is not allowed');
   });
 });

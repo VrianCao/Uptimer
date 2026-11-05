@@ -145,8 +145,10 @@ graph TD
 - Headers：可配；默认附加 `User-Agent: Uptimer/<version>`。
 - Body：可选（主要用于 POST 探测）。
 - Status code assertion：
-  - 默认：2xx 视为成功（可选包含 3xx）。
-  - 可配置允许码列表（如 `[200,204,301]`）。
+  - 默认：2xx 视为成功。
+  - 可配置允许码/区间（`expected_status_json`，如 `[200,204,{"from":301,"to":399}]`）。
+  - 可配置禁止码/区间（`forbidden_status_json`）；**黑名单优先**于白名单。
+  - 仅配置黑名单时仍默认 2xx，再排除禁止码。
 - Response assertion：
   - `responseKeyword`：必须包含（可选）。
   - `responseForbiddenKeyword`：必须不包含（可选）。
@@ -279,7 +281,8 @@ CREATE TABLE IF NOT EXISTS monitors (
   http_method TEXT,
   http_headers_json TEXT,
   http_body TEXT,
-  expected_status_json TEXT, -- e.g. [200,204,301]
+  expected_status_json TEXT, -- e.g. [200,204,{"from":301,"to":399}]
+  forbidden_status_json TEXT, -- e.g. [204,{"from":500,"to":599}]; blacklist first
   response_keyword TEXT,
   response_forbidden_keyword TEXT,
 

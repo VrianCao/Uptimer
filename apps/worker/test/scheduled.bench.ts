@@ -63,6 +63,7 @@ function makeDueRows(count: number) {
     http_headers_json: null,
     http_body: null,
     expected_status_json: null,
+    forbidden_status_json: null,
     response_keyword: null,
     response_keyword_mode: null,
     response_forbidden_keyword: null,
@@ -235,9 +236,7 @@ async function runOne(scenario: Scenario): Promise<Sample> {
   const ctx = {
     waitUntil(promise: Promise<unknown>) {
       sampleState.waitUntilCalls += 1;
-      waitUntilPromises.push(
-        promise.catch(() => undefined),
-      );
+      waitUntilPromises.push(promise.catch(() => undefined));
     },
   } as unknown as ExecutionContext;
 
@@ -290,7 +289,8 @@ function summarize(samples: Sample[]) {
     batchCallsAvg: batchCalls.reduce((sum, value) => sum + value, 0) / batchCalls.length,
     statementCountAvg:
       statementCounts.reduce((sum, value) => sum + value, 0) / statementCounts.length,
-    waitUntilCallsAvg: waitUntilCalls.reduce((sum, value) => sum + value, 0) / waitUntilCalls.length,
+    waitUntilCallsAvg:
+      waitUntilCalls.reduce((sum, value) => sum + value, 0) / waitUntilCalls.length,
   };
 }
 
@@ -314,26 +314,22 @@ async function benchmarkScenario(scenario: Scenario) {
 }
 
 describe('scheduler benchmark', () => {
-  it(
-    'measures local scheduled tick throughput',
-    async () => {
-      const rows: Array<Record<string, unknown>> = [];
+  it('measures local scheduled tick throughput', async () => {
+    const rows: Array<Record<string, unknown>> = [];
 
-      await withMutedConsole(async () => {
-        for (const scenario of SCENARIOS) {
-          rows.push(await benchmarkScenario(scenario));
-        }
-      });
-
-      const payload = JSON.stringify(rows, null, 2);
-      if (OUTPUT_PATH) {
-        await writeFile(OUTPUT_PATH, payload, 'utf8');
-      } else {
-        console.log(payload);
+    await withMutedConsole(async () => {
+      for (const scenario of SCENARIOS) {
+        rows.push(await benchmarkScenario(scenario));
       }
+    });
 
-      expect(rows).toHaveLength(SCENARIOS.length);
-    },
-    120_000,
-  );
+    const payload = JSON.stringify(rows, null, 2);
+    if (OUTPUT_PATH) {
+      await writeFile(OUTPUT_PATH, payload, 'utf8');
+    } else {
+      console.log(payload);
+    }
+
+    expect(rows).toHaveLength(SCENARIOS.length);
+  }, 120_000);
 });

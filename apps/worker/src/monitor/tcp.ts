@@ -14,6 +14,10 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function toSocketHostname(host: string): string {
+  return host.includes(':') ? `[${host}]` : host;
+}
+
 function toErrorMessage(err: unknown): string {
   if (err instanceof Error) return err.message;
   return String(err);
@@ -30,7 +34,7 @@ async function attemptTcpCheck(config: TcpCheckConfig): Promise<Omit<CheckOutcom
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
   try {
-    socket = connect({ hostname: parsed.host, port: parsed.port });
+    socket = connect({ hostname: toSocketHostname(parsed.host), port: parsed.port });
 
     const opened = socket.opened.then(() => 'opened' as const).catch((err) => ({ err }));
     const timedOut = new Promise<'timeout'>((resolve) => {

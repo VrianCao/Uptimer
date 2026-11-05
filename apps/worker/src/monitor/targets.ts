@@ -47,6 +47,34 @@ function ipv4InCidr(ip: number, base: string, maskBits: number): boolean {
   return (ip & mask) === (baseInt & mask);
 }
 
+function ipv6ToInt(host: string): bigint | null {
+  const normalized = normalizeLiteralHost(host).toLowerCase();
+  const halves = normalized.split('::');
+  if (halves.length > 2) return null;
+
+  const parseHalf = (half: string): string[] => (half.length === 0 ? [] : half.split(':'));
+  const left = parseHalf(halves[0] ?? '');
+  const right = parseHalf(halves[1] ?? '');
+  const omittedHextets = 8 - left.length - right.length;
+
+  if (halves.length === 1 ? omittedHextets !== 0 : omittedHextets < 1) return null;
+
+  const hextets = [...left, ...Array<string>(omittedHextets).fill('0'), ...right];
+  if (hextets.length !== 8 || !hextets.every((hextet) => /^[0-9a-f]{1,4}$/.test(hextet))) {
+    return null;
+  }
+
+  return hextets.reduce((value, hextet) => (value << 16n) | BigInt(`0x${hextet}`), 0n);
+}
+
+function ipv6InCidr(ip: bigint, base: string, maskBits: number): boolean {
+  const baseInt = ipv6ToInt(base);
+  if (baseInt === null) throw new Error('Invalid IPv6 CIDR base');
+
+  const shift = BigInt(128 - maskBits);
+  return ip >> shift === baseInt >> shift;
+}
+
 function isBlockedIpv4Int(ip: number): boolean {
   return (
     ipv4InCidr(ip, '0.0.0.0', 8) || // "this" network
@@ -63,6 +91,34 @@ function isBlockedIpv4Int(ip: number): boolean {
     ipv4InCidr(ip, '203.0.113.0', 24) || // TEST-NET-3
     ipv4InCidr(ip, '224.0.0.0', 4) || // multicast
     ipv4InCidr(ip, '240.0.0.0', 4) // reserved
+  );
+}
+
+function isBlockedIpv6Int(ip: bigint): boolean {
+  const isAllowedException =
+    ipv6InCidr(ip, '2001::', 32) || // Teredo: reachability depends on embedded IPv4
+    ipv6InCidr(ip, '2001:1::1', 128) || // PCP anycast
+    ipv6InCidr(ip, '2001:1::2', 128) || // TURN anycast
+    ipv6InCidr(ip, '2001:1::3', 128) || // DNS-SD service registration anycast
+    ipv6InCidr(ip, '2001:3::', 32) || // AMT
+    ipv6InCidr(ip, '2001:4:112::', 48) || // AS112-v6
+    ipv6InCidr(ip, '2001:20::', 28) || // ORCHIDv2
+    ipv6InCidr(ip, '2001:30::', 28); // Drone Remote ID protocol entity tags
+  if (isAllowedException) return false;
+
+  return (
+    ipv6InCidr(ip, '::', 128) || // unspecified
+    ipv6InCidr(ip, '::1', 128) || // loopback
+    ipv6InCidr(ip, '64:ff9b:1::', 48) || // local-use IPv4/IPv6 translation
+    ipv6InCidr(ip, '100::', 64) || // discard-only
+    ipv6InCidr(ip, '100:0:0:1::', 64) || // dummy prefix
+    ipv6InCidr(ip, '2001::', 23) || // IETF protocol assignments
+    ipv6InCidr(ip, '2001:db8::', 32) || // documentation
+    ipv6InCidr(ip, '3fff::', 20) || // documentation
+    ipv6InCidr(ip, '5f00::', 16) || // segment routing SIDs
+    ipv6InCidr(ip, 'fc00::', 7) || // unique-local
+    ipv6InCidr(ip, 'fe80::', 10) || // link-local
+    ipv6InCidr(ip, 'ff00::', 8) // multicast
   );
 }
 
@@ -93,30 +149,32 @@ function parseIpv6MappedIpv4(host: string): number | null {
 
 function isBlockedIpLiteral(host: string): boolean {
   const normalized = normalizeLiteralHost(host);
-  const lower = normalized.toLowerCase();
-  if (lower === '::1' || lower === '::') return true;
-  if (lower === '0:0:0:0:0:0:0:1' || lower === '0:0:0:0:0:0:0:0') return true;
-  if (lower.includes(':')) {
-    if (lower.startsWith('fe80:')) return true; // IPv6 link-local
-    if (lower.startsWith('fc') || lower.startsWith('fd')) return true; // IPv6 ULA (fc00::/7)
-  }
 
   const mappedIpv4 = parseIpv6MappedIpv4(normalized);
   if (mappedIpv4 !== null) {
     return isBlockedIpv4Int(mappedIpv4);
   }
 
+  const ipv6 = ipv6ToInt(normalized);
+  if (ipv6 !== null) {
+    return isBlockedIpv6Int(ipv6);
+  }
+
   if (!isIpv4Literal(normalized)) return false;
   return isBlockedIpv4Int(ipv4ToInt(normalized));
 }
 
-function normalizeHostForValidation(host: string): string {
+function normalizeHostForValidation(host: string): string | null {
   const trimmed = normalizeLiteralHost(host.trim());
   if (!trimmed) return trimmed;
 
-  // Keep IPv6 literals as-is; URL parsing requires brackets and can reject shorthand forms we already handle.
+  // Canonicalize equivalent IPv6 forms so mapped IPv4 checks also cover expanded literals.
   if (trimmed.includes(':')) {
-    return trimmed;
+    try {
+      return normalizeLiteralHost(new URL(`http://[${trimmed}]`).hostname);
+    } catch {
+      return null;
+    }
   }
 
   // Normalize unusual IPv4 notations (e.g. 127.1 / 0x7f000001) before blocked-range checks.
@@ -181,6 +239,7 @@ export function validateTcpTarget(target: string): string | null {
   if (!parsed) return 'target must be in host:port format (IPv6: [addr]:port)';
 
   const host = normalizeHostForValidation(parsed.host);
+  if (host === null) return 'target host is not allowed';
   if (host.length === 0) return 'target host is required';
   if (host.toLowerCase() === 'localhost') return 'target host is not allowed';
   if (isBlockedIpLiteral(host)) return 'target host is not allowed';

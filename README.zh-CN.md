@@ -43,7 +43,7 @@
 
 **监控**
 
-- HTTP(S) 探测，支持自定义 Headers、Body、状态码与关键词断言
+- HTTP(S) 探测，支持自定义 Headers、Body、状态码白名单/黑名单（精确码与区间）与关键词断言
 - TCP 端口连通性检测
 - 可配置的超时、重试阈值与抖动控制
 - 自动状态机：UP / DOWN / MAINTENANCE / PAUSED / UNKNOWN

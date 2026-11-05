@@ -26,6 +26,7 @@ type StoredMonitorRow = {
   http_body: string | null;
   follow_redirects: number;
   expected_status_json: string | null;
+  forbidden_status_json: string | null;
   response_keyword: string | null;
   response_keyword_mode: 'contains' | 'regex' | null;
   response_forbidden_keyword: string | null;
@@ -53,6 +54,7 @@ function monitorRowToRaw(row: StoredMonitorRow): unknown[] {
     row.http_body,
     row.follow_redirects,
     row.expected_status_json,
+    row.forbidden_status_json,
     row.response_keyword,
     row.response_keyword_mode,
     row.response_forbidden_keyword,
@@ -99,18 +101,19 @@ function createEnv(monitorsById: Map<number, StoredMonitorRow>): Env {
           http_body: (args[8] as string | null) ?? null,
           follow_redirects: args[9] === false || args[9] === 0 ? 0 : 1,
           expected_status_json: (args[10] as string | null) ?? null,
-          response_keyword: (args[11] as string | null) ?? null,
-          response_keyword_mode: (args[12] as StoredMonitorRow['response_keyword_mode']) ?? null,
-          response_forbidden_keyword: (args[13] as string | null) ?? null,
+          forbidden_status_json: (args[11] as string | null) ?? null,
+          response_keyword: (args[12] as string | null) ?? null,
+          response_keyword_mode: (args[13] as StoredMonitorRow['response_keyword_mode']) ?? null,
+          response_forbidden_keyword: (args[14] as string | null) ?? null,
           response_forbidden_keyword_mode:
-            (args[14] as StoredMonitorRow['response_forbidden_keyword_mode']) ?? null,
-          group_name: (args[15] as string | null) ?? null,
-          group_sort_order: Number(args[16]),
-          sort_order: Number(args[17]),
-          show_on_status_page: Number(args[18]),
-          is_active: Number(args[19]),
-          created_at: Number(args[20]),
-          updated_at: Number(args[21]),
+            (args[15] as StoredMonitorRow['response_forbidden_keyword_mode']) ?? null,
+          group_name: (args[16] as string | null) ?? null,
+          group_sort_order: Number(args[17]),
+          sort_order: Number(args[18]),
+          show_on_status_page: Number(args[19]),
+          is_active: Number(args[20]),
+          created_at: Number(args[21]),
+          updated_at: Number(args[22]),
         };
         monitorsById.set(row.id, row);
         nextMonitorId += 1;
@@ -218,7 +221,9 @@ describe('admin monitor response assertion routes', () => {
       .mockResolvedValueOnce(new Response('ready:42\nFAIL_TOKEN', { status: 200 }))
       .mockResolvedValueOnce(new Response('starting up', { status: 200 }))
       .mockResolvedValueOnce(new Response('starting up', { status: 200 }))
-      .mockResolvedValueOnce(new Response('starting up', { status: 200 })) as unknown as typeof fetch;
+      .mockResolvedValueOnce(
+        new Response('starting up', { status: 200 }),
+      ) as unknown as typeof fetch;
 
     const upRes = await requestAdmin(app, env, `/api/v1/admin/monitors/${createdId}/test`, {
       method: 'POST',
@@ -297,9 +302,14 @@ describe('admin monitor response assertion routes', () => {
     });
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
-    const testRes = await requestAdmin(app, env, `/api/v1/admin/monitors/${created.monitor.id}/test`, {
-      method: 'POST',
-    });
+    const testRes = await requestAdmin(
+      app,
+      env,
+      `/api/v1/admin/monitors/${created.monitor.id}/test`,
+      {
+        method: 'POST',
+      },
+    );
 
     expect(testRes.status).toBe(200);
     await expect(testRes.json()).resolves.toMatchObject({
@@ -351,6 +361,7 @@ describe('admin monitor response assertion routes', () => {
       http_body: null,
       follow_redirects: 1,
       expected_status_json: null,
+      forbidden_status_json: null,
       response_keyword: null,
       response_keyword_mode: null,
       response_forbidden_keyword: null,

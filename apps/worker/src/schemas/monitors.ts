@@ -1,4 +1,8 @@
-import { expectedStatusJsonSchema, httpHeadersJsonSchema } from '@uptimer/db';
+import {
+  expectedStatusJsonSchema,
+  forbiddenStatusJsonSchema,
+  httpHeadersJsonSchema,
+} from '@uptimer/db';
 import { z } from 'zod';
 
 import {
@@ -47,6 +51,7 @@ export const createMonitorInputSchema = z
     http_body: z.string().optional(),
     follow_redirects: z.boolean().optional(),
     expected_status_json: expectedStatusJsonSchema.optional(),
+    forbidden_status_json: forbiddenStatusJsonSchema.optional(),
     response_keyword: z.string().min(1).optional(),
     response_keyword_mode: httpResponseMatchModeSchema.optional(),
     response_forbidden_keyword: z.string().min(1).optional(),
@@ -72,6 +77,7 @@ export const createMonitorInputSchema = z
         val.http_body !== undefined ||
         val.follow_redirects !== undefined ||
         val.expected_status_json !== undefined ||
+        val.forbidden_status_json !== undefined ||
         val.response_keyword !== undefined ||
         val.response_keyword_mode !== undefined ||
         val.response_forbidden_keyword !== undefined ||
@@ -113,6 +119,7 @@ export const patchMonitorInputSchema = z
     http_body: z.string().nullable().optional(),
     follow_redirects: z.boolean().optional(),
     expected_status_json: expectedStatusJsonSchema.nullable().optional(),
+    forbidden_status_json: forbiddenStatusJsonSchema.nullable().optional(),
     response_keyword: z.string().min(1).nullable().optional(),
     response_keyword_mode: httpResponseMatchModeSchema.nullable().optional(),
     response_forbidden_keyword: z.string().min(1).nullable().optional(),

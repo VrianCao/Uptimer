@@ -34,10 +34,13 @@ export const monitors = sqliteTable(
     httpBody: text('http_body'),
     followRedirects: integer('follow_redirects', { mode: 'boolean' }).notNull().default(true),
     expectedStatusJson: text('expected_status_json'),
+    forbiddenStatusJson: text('forbidden_status_json'),
     responseKeyword: text('response_keyword'),
     responseKeywordMode: text('response_keyword_mode').$type<HttpResponseMatchMode>(),
     responseForbiddenKeyword: text('response_forbidden_keyword'),
-    responseForbiddenKeywordMode: text('response_forbidden_keyword_mode').$type<HttpResponseMatchMode>(),
+    responseForbiddenKeywordMode: text(
+      'response_forbidden_keyword_mode',
+    ).$type<HttpResponseMatchMode>(),
 
     groupName: text('group_name'),
     groupSortOrder: integer('group_sort_order').notNull().default(0),

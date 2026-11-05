@@ -6,6 +6,7 @@ import {
   eq,
   type CustomWebhookChannelConfig,
   expectedStatusJsonSchema,
+  forbiddenStatusJsonSchema,
   getDb,
   httpHeadersJsonSchema,
   monitors,
@@ -21,7 +22,7 @@ import {
 
 import type { Env } from '../env';
 import { requireAdmin } from '../middleware/auth';
-import { AppError } from '../middleware/errors';
+import { AppError, handleError, handleNotFound } from '../middleware/errors';
 import { requireAdminRateLimit } from '../middleware/rate-limit';
 import { computePublicHomepagePayload } from '../public/homepage';
 import {
@@ -77,6 +78,13 @@ import {
 } from '../schemas/notification-channels';
 
 export const adminRoutes = new Hono<{ Bindings: Env }>();
+
+// Mounted via `adminRoutes.fetch()` (see src/hono-app.ts), not `app.route()`, so this
+// router must own the shared JSON error/not-found handlers; Hono's defaults would
+// otherwise return text/plain 500s for AppError/ZodErrors and text/plain 404s for
+// unknown routes.
+adminRoutes.onError(handleError);
+adminRoutes.notFound(handleNotFound);
 
 adminRoutes.use('*', requireAdminRateLimit);
 
@@ -287,6 +295,9 @@ function monitorRowToApi(
     expected_status_json: parseDbJsonNullable(expectedStatusJsonSchema, row.expectedStatusJson, {
       field: 'expected_status_json',
     }),
+    forbidden_status_json: parseDbJsonNullable(forbiddenStatusJsonSchema, row.forbiddenStatusJson, {
+      field: 'forbidden_status_json',
+    }),
     response_keyword: row.responseKeyword,
     response_keyword_mode: row.responseKeywordMode,
     response_forbidden_keyword: row.responseForbiddenKeyword,
@@ -466,6 +477,16 @@ adminRoutes.post('/monitors', async (c) => {
               field: 'expected_status_json',
             })
           : null,
+      forbiddenStatusJson:
+        input.type === 'http'
+          ? serializeDbJsonNullable(
+              forbiddenStatusJsonSchema,
+              input.forbidden_status_json ?? null,
+              {
+                field: 'forbidden_status_json',
+              },
+            )
+          : null,
       responseKeyword: input.type === 'http' ? (input.response_keyword ?? null) : null,
       responseKeywordMode:
         input.type === 'http'
@@ -537,6 +558,7 @@ adminRoutes.patch('/monitors/:id', async (c) => {
       'http_body',
       'follow_redirects',
       'expected_status_json',
+      'forbidden_status_json',
       'response_keyword',
       'response_keyword_mode',
       'response_forbidden_keyword',
@@ -612,6 +634,12 @@ adminRoutes.patch('/monitors/:id', async (c) => {
               field: 'expected_status_json',
             })
           : existing.expectedStatusJson,
+      forbiddenStatusJson:
+        input.forbidden_status_json !== undefined
+          ? serializeDbJsonNullable(forbiddenStatusJsonSchema, input.forbidden_status_json, {
+              field: 'forbidden_status_json',
+            })
+          : existing.forbiddenStatusJson,
       responseKeyword: nextResponseKeyword,
       responseKeywordMode: nextResponseKeywordMode,
       responseForbiddenKeyword: nextResponseForbiddenKeyword,
@@ -696,6 +724,9 @@ adminRoutes.post('/monitors/:id/test', async (c) => {
       followRedirects: monitor.followRedirects,
       expectedStatus: parseDbJsonNullable(expectedStatusJsonSchema, monitor.expectedStatusJson, {
         field: 'expected_status_json',
+      }),
+      forbiddenStatus: parseDbJsonNullable(forbiddenStatusJsonSchema, monitor.forbiddenStatusJson, {
+        field: 'forbidden_status_json',
       }),
       responseKeyword: monitor.responseKeyword,
       responseKeywordMode: monitor.responseKeywordMode,
