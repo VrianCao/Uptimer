@@ -29,6 +29,8 @@ The workflow also supports manual retry on `master` after a transient publishing
 
 No GitHub permissions or secrets are created by this change. A newly created trusted publisher must complete its first successful publish within two days or it expires and must be recreated. A first publish performed outside this workflow (for example from a maintainer machine with a bypass-2FA token) does not weaken the trusted publisher; subsequent releases still authenticate through OIDC.
 
+`0.2.0` was published from a maintainer machine, so it carries no provenance and its `v0.2.0` tag and GitHub Release were created by hand. Releases published by this workflow attach provenance automatically (`NPM_CONFIG_PROVENANCE`) and create the tag and GitHub Release themselves; verify a new version with `npm view uptimer-cli@<version> dist.attestations`.
+
 ## Local verification
 
 ```sh

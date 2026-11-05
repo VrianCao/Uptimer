@@ -50,7 +50,8 @@ jobs:
           pnpm changeset status
 
       # No npm token: the npm Trusted Publisher for this workflow authenticates
-      # the publish with a short-lived OIDC token, and provenance is automatic.
+      # the publish with a short-lived OIDC token. Provenance is requested
+      # explicitly; 0.2.0 shipped without it because it was published by hand.
       - name: Create release PR or publish
         uses: changesets/action@v2.1.2
         with:
@@ -60,3 +61,5 @@ jobs:
           pr-title: 'chore: release uptimer-cli'
           commit-message: 'chore: release uptimer-cli'
           create-github-releases: true
+        env:
+          NPM_CONFIG_PROVENANCE: 'true'
