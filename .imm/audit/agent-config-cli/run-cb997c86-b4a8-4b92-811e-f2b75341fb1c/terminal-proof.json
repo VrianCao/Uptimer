@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "agent-config-cli",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:agent-config-cli:2026-11-05T07:08:27.095Z",
+  "final_record_hash": "sha256:59a56640410c5eb4d1601861d747a700244212e351637ea91517d921ecf5c573",
+  "terminalized_at": "2026-11-05T07:08:27.095Z"
+}

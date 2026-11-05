@@ -210,6 +210,74 @@ pnpm dev
 | [通知系统](docs/notifications.zh-CN.md)           | Webhook 配置、模板、签名、故障排除 |
 | [本地开发](Develop/LOCAL-TESTING.md)              | 本地环境搭建、种子数据、测试流程   |
 
+## Agent 配置 CLI
+
+`uptimer-cli` 让编码 Agent 与终端用户通过 Admin API 管理已有的 Uptimer 实例：监控项、通知渠道、状态页和全局设置。需要 Node.js >=22.14.0。
+
+```bash
+npm install --global uptimer-cli
+uptimer --help
+```
+
+发布由 Changesets 驱动，见 [CLI 发布指南](docs/cli-releases.md)。若 npm 上还没有 `uptimer-cli`，可在本仓库中先执行 `pnpm install --frozen-lockfile`，再用 `pnpm --silent --filter uptimer-cli start --help` 运行。
+
+### 连接实例
+
+通过进程环境提供实例地址与 Admin Token。CLI 不读取 `.env`，也不保存登录配置。
+
+```bash
+export UPTIMER_URL="https://your-uptimer-worker.workers.dev" # 本地开发可用 http://localhost:8787
+export UPTIMER_ADMIN_TOKEN="your-admin-token"
+```
+
+`UPTIMER_URL` 只填 HTTPS 源站，不带 `/api/v1`；明文 HTTP 仅允许环回开发地址。
+
+### 常用命令
+
+```bash
+uptimer settings get
+uptimer monitors list --limit 20
+uptimer monitors create --file http-monitor.json
+uptimer monitors pause 42
+uptimer notification-channels list
+uptimer status-pages list
+uptimer status-pages update 1 --file status-page-patch.json
+```
+
+写操作通过 `--file path.json` 或从 stdin 的 `--file -` 接收单个 JSON 对象，字段名沿用 Admin API：
+
+```bash
+echo '{"name":"API Health","type":"http","target":"https://api.example.com/health","interval_sec":60}' \
+  | uptimer monitors create --file -
+```
+
+成功时 stdout 输出 JSON（帮助是唯一的人类可读输出）。失败时 stderr 输出 JSON 错误：请求失败退出 `1`，本地输入或配置问题退出 `2`。监控项与通知渠道列表默认最多返回 50 条（`--limit` 可调至 1–200），不是完整导出。
+
+自动化前需要注意：
+
+- Admin Token 具备完整管理权限；CLI 输出已脱敏，但仍属管理数据，不要进入共享日志。
+- 写操作失败或超时后，服务端可能已执行成功；重试前先查询该资源。
+
+### Agent Skill
+
+仓库根目录的 `skills/uptimer-cli/` 为编码 Agent 打包了这些规则：安装校验、连接配置、字段参考，以及安全的写入与核对步骤。
+
+CLI 自带本地安装命令，无需 Skills 安装器：
+
+```bash
+uptimer skill install                 # 写入 ./skills/uptimer-cli/
+uptimer skill install --dir ~/.claude # 写入 ~/.claude/uptimer-cli/
+uptimer skill install --force         # 覆盖已有副本
+```
+
+命令以 JSON 输出安装路径与文件清单。也可以改用会自动识别 Agent 的 Skills CLI：
+
+```bash
+npx skills add nexttylabs/Uptimer --skill uptimer-cli
+```
+
+加 `-g` 安装到全局，加 `-a <agent>` 只装给某个 Agent；本地仓库目录可用 `npx skills add ./skills`。Skills 安装器需要 Node 22.20 或更高版本，而 `uptimer skill install` 只需 CLI 要求的 Node 22.14。
+
 ## 质量检查
 
 ```bash

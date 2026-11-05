@@ -16,8 +16,14 @@ build
 .env.*
 !.env.example
 
+# Generated CLI skill bundle (apps/cli prepack copies repo skills/)
+/apps/cli/skill/
+
 # Local-only agent / ops notes
 Develop/Local-Development-Experience.md
+
+# Immune-Brain worktree-local authority state
+/.imm/state/
 
 # Local temp / perf evidence
 /tmp/

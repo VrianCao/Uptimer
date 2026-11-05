@@ -1,0 +1,62 @@
+name: Release CLI
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-cli-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.repository == 'nexttylabs/Uptimer' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Trusted publishing needs a pnpm with OIDC support; 10.8.1 has none.
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '10.34.9'
+
+      # Use the current LTS toolchain for publishing and provenance.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify CLI
+        run: |
+          pnpm --filter uptimer-cli lint
+          pnpm --filter uptimer-cli typecheck
+          pnpm --filter uptimer-cli test
+          pnpm --filter uptimer-cli test:package
+          pnpm changeset status
+
+      # No npm token: the npm Trusted Publisher for this workflow authenticates
+      # the publish with a short-lived OIDC token, and provenance is automatic.
+      - name: Create release PR or publish
+        uses: changesets/action@v2.1.2
+        with:
+          github-token: ${{ secrets.RELEASE_GITHUB_TOKEN || github.token }}
+          version-script: pnpm version-packages
+          publish-script: pnpm release
+          pr-title: 'chore: release uptimer-cli'
+          commit-message: 'chore: release uptimer-cli'
+          create-github-releases: true

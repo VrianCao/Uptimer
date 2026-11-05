@@ -38,6 +38,41 @@ jobs:
       - name: Typecheck
         run: pnpm -r typecheck
 
+  cli-package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        node: ['22.14.0', '24']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '10.8.1'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Test CLI
+        run: pnpm --filter uptimer-cli test
+
+      - name: Test installed npm package
+        run: pnpm --filter uptimer-cli test:package
+
+      - name: Validate changesets
+        run: |
+          if [ -n "$(find .changeset -maxdepth 1 -name '*.md' ! -name 'README.md')" ]; then
+            pnpm changeset status
+          else
+            echo 'No pending changesets'
+          fi
+
   worker-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 10

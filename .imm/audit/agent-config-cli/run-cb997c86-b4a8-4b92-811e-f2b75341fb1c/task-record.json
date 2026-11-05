@@ -1,0 +1,180 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "agent-config-cli",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "agent-config-cli",
+    "goal": "Deliver a repository-local CLI for shell-capable agents to manage monitors, notification channels, status pages and global settings through existing Admin APIs, with discoverable commands, JSON results and explicit safe failure behavior, as specified in docs/specs/agent-config-cli.spec.md.",
+    "acceptance": [
+      {
+        "id": "A1",
+        "assertion": "Source: BR-DEC-02. Per Spec A1, the actual CLI entry exposes credential-free help and structured failures; unknown commands/options, extra positionals, missing bodies, invalid IDs and out-of-range limits reject before requests. Positive and boundary controls exercise the actual process entry and command runner. Agreed test seam: apps/cli/test/entry.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"node\",\n    \"argv\": [\n      \"--experimental-strip-types\",\n      \"--test\",\n      \"apps/cli/test/entry.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 30000,\n    \"max_output_bytes\": 32768\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "A2",
+        "assertion": "Source: BR-REQ-02. Per Spec A2 and its complete operation matrix, all four configuration families and both settings routes support their applicable operations, preserve PATCH values, and return structured readback. Stateful round trips and malformed body/file rejection exercise the command runner and captured requests. Agreed test seam: apps/cli/test/resources.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"node\",\n    \"argv\": [\n      \"--experimental-strip-types\",\n      \"--test\",\n      \"apps/cli/test/resources.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 30000,\n    \"max_output_bytes\": 32768\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "A3",
+        "assertion": "Source: delegated technical choice. Per Spec A3, environment/URL validation, Bearer transport, redirect rejection, whole-response deadlines, single mutation attempts, response validation and credential redaction hold for the enumerated positive, negative and boundary controls at the injected fetch/output seam. Agreed test seam: apps/cli/test/transport.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"node\",\n    \"argv\": [\n      \"--experimental-strip-types\",\n      \"--test\",\n      \"apps/cli/test/transport.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 30000,\n    \"max_output_bytes\": 32768\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "Develop/Structure.md",
+      "README.md",
+      "apps/cli",
+      "docs/plans/agent-config-cli.intent.json",
+      "docs/specs/agent-config-cli.spec.md",
+      "eslint.config.mjs",
+      "pnpm-lock.yaml"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/agent-config-cli.intent.json",
+    "content_hash": "sha256:951d4632e7d6ace81ed6917b5fa1cfceccf2e21310237d84a2194d5a9c77072b"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:951d4632e7d6ace81ed6917b5fa1cfceccf2e21310237d84a2194d5a9c77072b",
+  "git_base_head": "dbd0a5b07ccbfd4bb5d43447a03adbb4ebcef5c9",
+  "attestations": [
+    {
+      "id": "approval-qa-fc8899ab",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:951d4632e7d6ace81ed6917b5fa1cfceccf2e21310237d84a2194d5a9c77072b",
+      "diff_hash": "sha256:469822c99e442893b9d59ef8ed025fdff01fbdd0df6d76ca3b2da13b74272242",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:1dd7a4a453949e8c32346e9fbce706000abea7cdf7b0ab1756181dc4fd008f77",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:1dd7a4a453949e8c32346e9fbce706000abea7cdf7b0ab1756181dc4fd008f77"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:1dd7a4a453949e8c32346e9fbce706000abea7cdf7b0ab1756181dc4fd008f77"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:1dd7a4a453949e8c32346e9fbce706000abea7cdf7b0ab1756181dc4fd008f77"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-eed4a883",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:951d4632e7d6ace81ed6917b5fa1cfceccf2e21310237d84a2194d5a9c77072b",
+      "diff_hash": "sha256:469822c99e442893b9d59ef8ed025fdff01fbdd0df6d76ca3b2da13b74272242",
+      "actor_id": "parent-mediated-review",
+      "summary": "Tier low blast radius: new isolated apps/cli package (commands/transport/redact are load-bearing) with no worker/web/migration changes; all three acceptances verified on the immutable revision with controls matching their seams.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "dbd0a5b07ccbfd4bb5d43447a03adbb4ebcef5c9",
+        "review_commit": "e821ee79faa21c70baf3eebe67c75f1134335f44",
+        "review_tree": "f93f6298efbd6a1868840debd83c5aa7aebb0448",
+        "manifest_digest": "sha256:c66da81167f5e41b6b0458b1c9d937847cb70699027540a58e45b504a4de3895"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-0facc489c0d4-1-review-1",
+          "acceptance_id": "A2",
+          "summary": "resources.test.ts populates capturedRequests but never asserts it, so A2's 'captured requests' evidence rests only on mock routing and store effects",
+          "anchor": "sha256:9313e1edc1ffaa17b9507907e3253452362cd2100810f50010d994bd34b72a7b",
+          "evidence": {
+            "trigger": "Running apps/cli/test/resources.test.ts: the monitors mockFetch pushes every request into capturedRequests, but no assertion reads the array; a request-shape regression in headers or URL construction that the mock routing tolerates would pass unnoticed",
+            "caller_chain": [
+              "apps/cli/test/resources.test.ts",
+              "apps/cli/src/commands.ts",
+              "apps/cli/src/transport.ts"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "A2"
+            }
+          }
+        },
+        {
+          "id": "review-0facc489c0d4-2-review-2",
+          "acceptance_id": null,
+          "summary": "package.json bin points at a .ts source that requires --experimental-strip-types, so a direct node_modules/.bin invocation on Node without default type stripping crashes with an unstructured SyntaxError",
+          "anchor": "sha256:3106e9432d13aa8bb8d41f8c9364d9ab0de97371bcbdf62b00ecdaa26d0008c6",
+          "evidence": {
+            "trigger": "On Node < 23.6, running the linked node_modules/.bin/uptimer binary executes src/index.ts as plain JavaScript and fails with a SyntaxError stack trace instead of the goal's explicit safe failure behavior",
+            "caller_chain": [
+              "apps/cli/package.json",
+              "apps/cli/src/index.ts"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "goal:agent-config-cli"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:8ec9826c81c07a0efac0ff5a402f0c08dc897fc17f4c4d384495f7e420d41359"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:agent-config-cli:2026-11-05T07:04:09.679Z",
+      "at": "2026-11-05T07:04:09.679Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/agent-config-cli.intent.json"
+    },
+    {
+      "id": "record_approval:agent-config-cli:2026-11-05T07:04:15.355Z",
+      "at": "2026-11-05T07:04:15.355Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-fc8899ab\naction_v2_sha256:e933142ca41b929d04b2b87062c49a985eed1a28b624b26a12d8b559c065c81e",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-0f87967526f5b21a",
+        "issued_at": "2026-11-05T07:04:15.356Z"
+      }
+    },
+    {
+      "id": "record_approval:agent-config-cli:2026-11-05T07:08:25.727Z",
+      "at": "2026-11-05T07:08:25.727Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-eed4a883\naction_v2_sha256:4a613a6a32992a6ef8bfebf449411e35a067474a79370b84f765244fbd8c342b",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-c1b5552f2de10e82",
+        "issued_at": "2026-11-05T07:08:25.727Z"
+      },
+      "review_started_at": "2026-11-05T07:04:17.745Z",
+      "review_submitted_at": "2026-11-05T07:08:25.229Z"
+    },
+    {
+      "id": "complete:agent-config-cli:2026-11-05T07:08:27.095Z",
+      "at": "2026-11-05T07:08:27.095Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:950ea475fb585a98026f7364df118e4a4525f9ab81430f9e354634efe2cc9d74"
+    }
+  ]
+}

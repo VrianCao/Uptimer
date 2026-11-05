@@ -210,6 +210,74 @@ Default addresses:
 | [Notification System](docs/notifications.md) ([中文](docs/notifications.zh-CN.md))                         | Webhook setup, templates, signatures, troubleshooting      |
 | [Local Development](Develop/LOCAL-TESTING.md)                                                              | Local setup, seed data, testing procedures                 |
 
+## Agent Configuration CLI
+
+`uptimer-cli` lets coding agents and terminal users manage an existing Uptimer instance — monitors, notification channels, status pages, and global settings — through the Admin API. Requires Node.js >=22.14.0.
+
+```bash
+npm install --global uptimer-cli
+uptimer --help
+```
+
+Packages publish through Changesets; see the [CLI release guide](docs/cli-releases.md). If `uptimer-cli` is not yet on npm, run it from a checkout of this repository: `pnpm install --frozen-lockfile`, then `pnpm --silent --filter uptimer-cli start --help`.
+
+### Connect an instance
+
+Set the instance origin and the Admin Token in the process environment. The CLI does not read `.env` files or store a login profile.
+
+```bash
+export UPTIMER_URL="https://your-uptimer-worker.workers.dev" # or http://localhost:8787 for local dev
+export UPTIMER_ADMIN_TOKEN="your-admin-token"
+```
+
+`UPTIMER_URL` is an HTTPS origin without `/api/v1`; plain HTTP is accepted only for loopback development origins.
+
+### Common commands
+
+```bash
+uptimer settings get
+uptimer monitors list --limit 20
+uptimer monitors create --file http-monitor.json
+uptimer monitors pause 42
+uptimer notification-channels list
+uptimer status-pages list
+uptimer status-pages update 1 --file status-page-patch.json
+```
+
+Write commands take one JSON object via `--file path.json` or `--file -` for stdin. Payload field names follow the Admin API:
+
+```bash
+echo '{"name":"API Health","type":"http","target":"https://api.example.com/health","interval_sec":60}' \
+  | uptimer monitors create --file -
+```
+
+Success writes JSON to stdout (help is the only human-readable output). Failures write a JSON error to stderr and exit `1` for request failures or `2` for local input and configuration problems. Monitor and notification-channel lists are bounded to 50 entries by default (1–200 with `--limit`), not complete exports.
+
+Handling rules worth knowing before automating:
+
+- The Admin Token grants full management access; CLI output is redacted but still administrative data.
+- A failed or timed-out write may already have reached the server; query the resource before retrying.
+
+### Agent skill
+
+Repository-root `skills/uptimer-cli/` packages these rules for coding agents: install checks, connection setup, payload field references, and safe write/verify steps.
+
+The CLI can install the same skill files locally, without the Skills installer:
+
+```bash
+uptimer skill install                 # writes ./skills/uptimer-cli/
+uptimer skill install --dir ~/.claude # writes ~/.claude/uptimer-cli/
+uptimer skill install --force         # replace an existing copy
+```
+
+It prints the installed path and file list as JSON. Alternatively use the Skills CLI, which discovers agents automatically:
+
+```bash
+npx skills add nexttylabs/Uptimer --skill uptimer-cli
+```
+
+Add `-g` to install globally, or `-a <agent>` to target one agent. From a local checkout, use `npx skills add ./skills`. The Skills installer requires Node 22.20 or newer; `uptimer skill install` needs only the CLI's Node 22.14.
+
 ## Quality Checks
 
 ```bash

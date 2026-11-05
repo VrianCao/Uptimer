@@ -1,0 +1,44 @@
+{
+  "name": "uptimer-cli",
+  "version": "0.2.0",
+  "description": "Manage Uptimer configuration from coding agents and the terminal",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22.14.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nexttylabs/Uptimer.git",
+    "directory": "apps/cli"
+  },
+  "bin": {
+    "uptimer": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "skill",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "start": "node --experimental-strip-types src/index.ts",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "prepack": "pnpm build && node scripts/prepare-skill.mjs",
+    "test:package": "pnpm prepack && node --experimental-strip-types --test test/package.test.ts",
+    "test": "node --experimental-strip-types --test test/entry.test.ts test/resources.test.ts test/transport.test.ts test/skill.test.ts",
+    "lint": "pnpm -w exec eslint --config eslint.config.mjs apps/cli",
+    "typecheck": "pnpm -w exec tsc -p apps/cli/tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "zod": "^3.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.0.0"
+  }
+}

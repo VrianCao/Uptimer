@@ -1,0 +1,34 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "agent-config-cli",
+  "owner": "user",
+  "goal": "Deliver a repository-local CLI for shell-capable agents to manage monitors, notification channels, status pages and global settings through existing Admin APIs, with discoverable commands, JSON results and explicit safe failure behavior, as specified in docs/specs/agent-config-cli.spec.md.",
+  "acceptance": [
+    {
+      "id": "A1",
+      "assertion": "Source: BR-DEC-02. Per Spec A1, the actual CLI entry exposes credential-free help and structured failures; unknown commands/options, extra positionals, missing bodies, invalid IDs and out-of-range limits reject before requests. Positive and boundary controls exercise the actual process entry and command runner. Agreed test seam: apps/cli/test/entry.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"node\",\n    \"argv\": [\n      \"--experimental-strip-types\",\n      \"--test\",\n      \"apps/cli/test/entry.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 30000,\n    \"max_output_bytes\": 32768\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "A2",
+      "assertion": "Source: BR-REQ-02. Per Spec A2 and its complete operation matrix, all four configuration families and both settings routes support their applicable operations, preserve PATCH values, and return structured readback. Stateful round trips and malformed body/file rejection exercise the command runner and captured requests. Agreed test seam: apps/cli/test/resources.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"node\",\n    \"argv\": [\n      \"--experimental-strip-types\",\n      \"--test\",\n      \"apps/cli/test/resources.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 30000,\n    \"max_output_bytes\": 32768\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "A3",
+      "assertion": "Source: delegated technical choice. Per Spec A3, environment/URL validation, Bearer transport, redirect rejection, whole-response deadlines, single mutation attempts, response validation and credential redaction hold for the enumerated positive, negative and boundary controls at the injected fetch/output seam. Agreed test seam: apps/cli/test/transport.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"node\",\n    \"argv\": [\n      \"--experimental-strip-types\",\n      \"--test\",\n      \"apps/cli/test/transport.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 30000,\n    \"max_output_bytes\": 32768\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "Develop/Structure.md",
+    "README.md",
+    "apps/cli",
+    "docs/plans/agent-config-cli.intent.json",
+    "docs/specs/agent-config-cli.spec.md",
+    "eslint.config.mjs",
+    "pnpm-lock.yaml"
+  ],
+  "risk": "material",
+  "revision": 1
+}

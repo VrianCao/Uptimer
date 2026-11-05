@@ -15,10 +15,14 @@
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r --if-present test",
     "test:coverage": "pnpm --filter @uptimer/worker test",
+    "changeset": "changeset",
+    "version-packages": "changeset version && pnpm install --lockfile-only",
+    "release": "pnpm --filter uptimer-cli build && changeset publish",
     "format": "prettier -w .",
     "format:check": "prettier -c ."
   },
   "devDependencies": {
+    "@changesets/cli": "^3.0.3",
     "@eslint/js": "^9.0.0",
     "@types/node": "^22.0.0",
     "eslint": "^9.0.0",

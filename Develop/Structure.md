@@ -9,6 +9,7 @@
 ```
 .
 ├─ apps/
+│  ├─ cli/                      # Agent CLI: TypeScript 命令行管理工具（uptimer-cli）
 │  ├─ web/                      # Cloudflare Pages: React + Vite 前端（管理后台 + 公共状态页）
 │  └─ worker/                   # Cloudflare Workers: Hono API + scheduled 监控引擎
 ├─ packages/
