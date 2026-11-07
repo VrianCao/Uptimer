@@ -6,6 +6,7 @@ import type {
   NotificationChannelPreset,
   TelegramChannelConfig,
   TelegramParseMode,
+  WpushChannelConfig,
   WebhookChannelConfig,
 } from '../api/types';
 import { useI18n } from '../app/I18nContext';
@@ -37,6 +38,7 @@ type WebhookMethod = NonNullable<CustomWebhookChannelConfig['method']>;
 type WebhookPayloadType = NonNullable<CustomWebhookChannelConfig['payload_type']>;
 type TelegramParseModeInput = '' | TelegramParseMode;
 type TelegramTokenMode = 'token' | 'secret_ref';
+type WpushTokenMode = 'token' | 'secret_ref';
 
 function safeJsonStringify(value: unknown): string {
   try {
@@ -51,6 +53,12 @@ function isTelegramConfig(
 ): config is TelegramChannelConfig {
   return config?.preset === 'telegram';
 }
+function isWpushConfig(
+  config: WebhookChannelConfig | undefined,
+): config is WpushChannelConfig {
+  return config?.preset === 'wpush';
+}
+
 
 function hasAdvancedTelegramConfig(config: TelegramChannelConfig | undefined): boolean {
   if (!config) return false;
@@ -69,7 +77,9 @@ function hasAdvancedTelegramConfig(config: TelegramChannelConfig | undefined): b
 }
 
 function toPreset(value: string): NotificationChannelPreset {
-  return value === 'telegram' ? 'telegram' : 'custom';
+  if (value === 'telegram') return 'telegram';
+  if (value === 'wpush') return 'wpush';
+  return 'custom';
 }
 
 function toMethod(value: string): WebhookMethod {
@@ -118,16 +128,21 @@ export function NotificationChannelForm({
   const { t } = useI18n();
   const initialConfig = channel?.config_json;
   const initialIsTelegram = isTelegramConfig(initialConfig);
-  const customConfig = initialIsTelegram
-    ? undefined
-    : (initialConfig as CustomWebhookChannelConfig | undefined);
+  const initialIsWpush = isWpushConfig(initialConfig);
+  const customConfig =
+    initialIsTelegram || initialIsWpush
+      ? undefined
+      : (initialConfig as CustomWebhookChannelConfig | undefined);
   const telegramConfig = initialIsTelegram
     ? (initialConfig as TelegramChannelConfig | undefined)
+    : undefined;
+  const wpushConfig = initialIsWpush
+    ? (initialConfig as WpushChannelConfig | undefined)
     : undefined;
 
   const [name, setName] = useState(channel?.name ?? '');
   const [preset, setPreset] = useState<NotificationChannelPreset>(
-    initialIsTelegram ? 'telegram' : 'custom',
+    initialIsTelegram ? 'telegram' : initialIsWpush ? 'wpush' : 'custom',
   );
   const [url, setUrl] = useState(customConfig?.url ?? '');
   const [method, setMethod] = useState<WebhookMethod>(customConfig?.method ?? 'POST');
@@ -149,7 +164,6 @@ export function NotificationChannelForm({
   const [enabledEvents, setEnabledEvents] = useState<NotificationEventType[]>(
     initialConfig?.enabled_events ?? [],
   );
-
   const [signingEnabled, setSigningEnabled] = useState<boolean>(
     customConfig?.signing?.enabled ?? false,
   );
@@ -182,9 +196,36 @@ export function NotificationChannelForm({
   const [telegramProtectContent, setTelegramProtectContent] = useState<boolean>(
     telegramConfig?.protect_content ?? false,
   );
+  const [showAdvancedWpush, setShowAdvancedWpush] = useState<boolean>(() =>
+    Boolean(
+      wpushConfig?.api_key_source === 'secret_ref' ||
+        wpushConfig?.api_key_secret_ref ||
+        wpushConfig?.option ||
+        wpushConfig?.url ||
+        wpushConfig?.timeout_ms !== undefined ||
+        wpushConfig?.title_template ||
+        wpushConfig?.message_template ||
+        (wpushConfig?.enabled_events && wpushConfig.enabled_events.length > 0),
+    ),
+  );
+  const [wpushTokenMode, setWpushTokenMode] = useState<WpushTokenMode>(
+    wpushConfig?.api_key_source === 'secret_ref' || wpushConfig?.api_key_secret_ref
+      ? 'secret_ref'
+      : 'token',
+  );
+  const [wpushApiKey, setWpushApiKey] = useState('');
+  const [wpushApiKeySecretRef, setWpushApiKeySecretRef] = useState(
+    wpushConfig?.api_key_secret_ref ?? 'UPTIMER_WPUSH_API_KEY',
+  );
+  const [wpushChannel, setWpushChannel] = useState(wpushConfig?.channel ?? 'wechat');
+  const [wpushOption, setWpushOption] = useState(wpushConfig?.option ?? '');
+  const [wpushUrl, setWpushUrl] = useState(wpushConfig?.url ?? '');
+  const [wpushTitleTemplate, setWpushTitleTemplate] = useState(
+    wpushConfig?.title_template ?? '',
+  );
 
   const headersParse = useMemo(() => {
-    if (preset === 'telegram') return { ok: true as const, value: {} as Record<string, string> };
+    if (preset !== 'custom') return { ok: true as const, value: {} as Record<string, string> };
 
     const trimmed = headersJson.trim();
     if (!trimmed) return { ok: true as const, value: {} as Record<string, string> };
@@ -216,7 +257,7 @@ export function NotificationChannelForm({
   }, [headersJson, preset, t]);
 
   const payloadTemplateParse = useMemo(() => {
-    if (preset === 'telegram') {
+    if (preset !== 'custom') {
       return { ok: true as const, value: undefined as unknown };
     }
 
@@ -245,10 +286,20 @@ export function NotificationChannelForm({
   const telegramHasUsableToken = telegramUsesSecretRef
     ? telegramBotTokenSecretRef.trim().length > 0
     : telegramBotToken.trim().length > 0 || Boolean(channel && telegramHasStoredToken);
+  const wpushHasStoredKey = Boolean(
+    wpushConfig?.api_key_configured ||
+      wpushConfig?.api_key_secret_ref ||
+      wpushConfig?.api_key_source,
+  );
+  const wpushUsesSecretRef = showAdvancedWpush && wpushTokenMode === 'secret_ref';
+  const wpushHasUsableKey = wpushUsesSecretRef
+    ? wpushApiKeySecretRef.trim().length > 0
+    : wpushApiKey.trim().length > 0 || Boolean(channel && wpushHasStoredKey);
   const canSubmit =
     headersParse.ok &&
     payloadTemplateParse.ok &&
-    (preset !== 'telegram' || (telegramChatId.trim().length > 0 && telegramHasUsableToken));
+    (preset !== 'telegram' || (telegramChatId.trim().length > 0 && telegramHasUsableToken)) &&
+    (preset !== 'wpush' || (wpushChannel.trim().length > 0 && wpushHasUsableKey));
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -291,7 +342,30 @@ export function NotificationChannelForm({
           config.protect_content = true;
         }
       }
+      onSubmit({ name, type: 'webhook', config_json: config });
+      return;
+    }
 
+    if (preset === 'wpush') {
+      const config: WpushChannelConfig = {
+        preset: 'wpush',
+        channel: wpushChannel.trim() || 'wechat',
+      };
+
+      if (wpushUsesSecretRef) {
+        config.api_key_secret_ref = wpushApiKeySecretRef.trim();
+      } else if (wpushApiKey.trim()) {
+        config.api_key = wpushApiKey.trim();
+      }
+
+      if (showAdvancedWpush) {
+        if (wpushOption.trim()) config.option = wpushOption.trim();
+        if (wpushUrl.trim()) config.url = wpushUrl.trim();
+        if (timeoutMs) config.timeout_ms = timeoutMs;
+        if (wpushTitleTemplate.trim()) config.title_template = wpushTitleTemplate.trim();
+        if (messageTemplate.trim()) config.message_template = messageTemplate;
+        if (enabledEvents.length > 0) config.enabled_events = enabledEvents;
+      }
       onSubmit({ name, type: 'webhook', config_json: config });
       return;
     }
@@ -323,7 +397,6 @@ export function NotificationChannelForm({
     if (signingEnabled) {
       config.signing = { enabled: true, secret_ref: signingSecretRef };
     }
-
     onSubmit({ name, type: 'webhook', config_json: config });
   };
 
@@ -334,7 +407,7 @@ export function NotificationChannelForm({
   const handlePresetChange = (next: NotificationChannelPreset) => {
     setPreset(next);
     if (!channel && !name.trim()) {
-      setName(next === 'telegram' ? 'Telegram' : 'Webhook');
+      setName(next === 'telegram' ? 'Telegram' : next === 'wpush' ? 'WPush' : 'Webhook');
     }
   };
 
@@ -368,8 +441,8 @@ export function NotificationChannelForm({
 
       <div>
         <label className={labelClass}>{t('notification_form.preset')}</label>
-        <div className="grid grid-cols-2 gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1 dark:border-slate-700 dark:bg-slate-800/60">
-          {(['custom', 'telegram'] as const).map((item) => {
+        <div className="grid grid-cols-3 gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1 dark:border-slate-700 dark:bg-slate-800/60">
+          {(['custom', 'telegram', 'wpush'] as const).map((item) => {
             const active = preset === item;
             return (
               <button
@@ -385,7 +458,9 @@ export function NotificationChannelForm({
               >
                 {item === 'telegram'
                   ? t('notification_form.preset_telegram')
-                  : t('notification_form.preset_custom')}
+                  : item === 'wpush'
+                    ? t('notification_form.preset_wpush')
+                    : t('notification_form.preset_custom')}
               </button>
             );
           })}
@@ -393,7 +468,9 @@ export function NotificationChannelForm({
         <div className={FIELD_HELP_CLASS}>
           {preset === 'telegram'
             ? t('notification_form.preset_telegram_help')
-            : t('notification_form.preset_custom_help')}
+            : preset === 'wpush'
+              ? t('notification_form.preset_wpush_help')
+              : t('notification_form.preset_custom_help')}
         </div>
       </div>
 
@@ -460,7 +537,7 @@ export function NotificationChannelForm({
             <div className={FIELD_HELP_CLASS}>{t('notification_form.headers_help')}</div>
           </div>
         </>
-      ) : (
+      ) : preset === 'telegram' ? (
         <>
           {!telegramUsesSecretRef && (
             <div>
@@ -638,6 +715,155 @@ export function NotificationChannelForm({
                   />
                   <span>{t('notification_form.telegram_protect_content')}</span>
                 </label>
+              </div>
+            </div>
+          )}
+        </>
+      ) : (
+        <>
+          {!wpushUsesSecretRef && (
+            <div>
+              <label className={labelClass}>{t('notification_form.wpush_api_key')}</label>
+              <input
+                type="password"
+                value={wpushApiKey}
+                onChange={(e) => setWpushApiKey(e.target.value)}
+                className={inputClass}
+                placeholder="WPUSH_..."
+                required={!channel || !wpushHasStoredKey}
+              />
+              <div className={FIELD_HELP_CLASS}>
+                {channel && wpushHasStoredKey
+                  ? t('notification_form.wpush_api_key_keep_help')
+                  : t('notification_form.wpush_api_key_help')}
+              </div>
+            </div>
+          )}
+
+          <div>
+            <label className={labelClass}>{t('notification_form.wpush_channel')}</label>
+            <input
+              type="text"
+              value={wpushChannel}
+              onChange={(e) => setWpushChannel(e.target.value)}
+              className={inputClass}
+              placeholder="wechat"
+              required
+            />
+            <div className={FIELD_HELP_CLASS}>{t('notification_form.wpush_channel_help')}</div>
+          </div>
+
+          <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+            <input
+              type="checkbox"
+              checked={showAdvancedWpush}
+              onChange={(e) => setShowAdvancedWpush(e.target.checked)}
+            />
+            <span>{t('notification_form.advanced_options')}</span>
+          </label>
+
+          {showAdvancedWpush && (
+            <div className="space-y-4 border-t border-slate-200 dark:border-slate-700 pt-4">
+              <div>
+                <label className={labelClass}>{t('notification_form.wpush_key_source')}</label>
+                <select
+                  value={wpushTokenMode}
+                  onChange={(e) => setWpushTokenMode(e.target.value as WpushTokenMode)}
+                  className={selectClass}
+                >
+                  <option value="token">{t('notification_form.wpush_key_source_encrypted')}</option>
+                  <option value="secret_ref">{t('notification_form.wpush_key_source_secret')}</option>
+                </select>
+              </div>
+
+              {wpushUsesSecretRef && (
+                <div>
+                  <label className={labelClass}>{t('notification_form.wpush_api_key_secret_ref')}</label>
+                  <input
+                    type="text"
+                    value={wpushApiKeySecretRef}
+                    onChange={(e) => setWpushApiKeySecretRef(e.target.value)}
+                    className={inputClass}
+                    placeholder="UPTIMER_WPUSH_API_KEY"
+                    required
+                  />
+                </div>
+              )}
+
+              <div>
+                <label className={labelClass}>{t('notification_form.wpush_option_optional')}</label>
+                <input
+                  type="text"
+                  value={wpushOption}
+                  onChange={(e) => setWpushOption(e.target.value)}
+                  className={inputClass}
+                  placeholder="default"
+                />
+                <div className={FIELD_HELP_CLASS}>{t('notification_form.wpush_option_help')}</div>
+              </div>
+
+              <div>
+                <label className={labelClass}>{t('notification_form.wpush_url_optional')}</label>
+                <input
+                  type="url"
+                  value={wpushUrl}
+                  onChange={(e) => setWpushUrl(e.target.value)}
+                  className={inputClass}
+                  placeholder="https://status.example.com"
+                />
+              </div>
+
+              <div>
+                <label className={labelClass}>{t('notification_form.timeout_ms')}</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={60000}
+                  value={timeoutMs}
+                  onChange={(e) => setTimeoutMs(Number(e.target.value))}
+                  className={inputClass}
+                />
+              </div>
+
+              <div>
+                <label className={labelClass}>{t('notification_form.wpush_title_template_optional')}</label>
+                <input
+                  type="text"
+                  value={wpushTitleTemplate}
+                  onChange={(e) => setWpushTitleTemplate(e.target.value)}
+                  className={inputClass}
+                  placeholder="Uptimer · {{event}}"
+                />
+              </div>
+
+              <div>
+                <label className={labelClass}>{t('notification_form.message_template_optional')}</label>
+                <textarea
+                  value={messageTemplate}
+                  onChange={(e) => setMessageTemplate(e.target.value)}
+                  className={textareaClass}
+                  rows={3}
+                  placeholder={t('notification_form.message_template_placeholder')}
+                />
+              </div>
+
+              <div>
+                <label className={labelClass}>{t('notification_form.enabled_events_optional')}</label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {allEvents.map((ev) => (
+                    <label
+                      key={ev}
+                      className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={enabledEvents.includes(ev)}
+                        onChange={() => toggleEnabledEvent(ev)}
+                      />
+                      <span>{ev}</span>
+                    </label>
+                  ))}
+                </div>
               </div>
             </div>
           )}

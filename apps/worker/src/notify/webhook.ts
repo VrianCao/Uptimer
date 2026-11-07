@@ -3,11 +3,13 @@ import pLimit from 'p-limit';
 import type {
   CustomWebhookChannelConfig,
   TelegramChannelConfig,
+  WpushChannelConfig,
   WebhookChannelConfig,
 } from '@uptimer/db';
 
 import { claimNotificationDelivery, finalizeNotificationDelivery } from './dedupe';
 import { decryptTelegramBotToken } from './telegram-token';
+import { decryptWpushApiKey } from './wpush-token';
 import { defaultMessageForEvent, renderJsonTemplate, renderStringTemplate } from './template';
 
 export type WebhookChannel = {
@@ -67,6 +69,10 @@ function readAdminToken(env: Record<string, unknown>): string | null {
 
 function isTelegramChannelConfig(config: WebhookChannelConfig): config is TelegramChannelConfig {
   return config.preset === 'telegram';
+}
+
+function isWpushChannelConfig(config: WebhookChannelConfig): config is WpushChannelConfig {
+  return config.preset === 'wpush';
 }
 
 function shouldSendEvent(config: WebhookChannelConfig, eventType: string): boolean {
@@ -441,6 +447,137 @@ async function dispatchTelegramPresetRequest(args: {
   }
 }
 
+function defaultWpushTitle(eventType: string): string {
+  switch (eventType) {
+    case 'monitor.down':
+      return 'Uptimer · 服务异常';
+    case 'monitor.up':
+      return 'Uptimer · 服务恢复';
+    case 'incident.created':
+    case 'incident.updated':
+      return 'Uptimer · Incident 更新';
+    case 'incident.resolved':
+      return 'Uptimer · Incident 已解决';
+    case 'maintenance.started':
+      return 'Uptimer · 维护开始';
+    case 'maintenance.ended':
+      return 'Uptimer · 维护结束';
+    case 'test.ping':
+      return 'Uptimer · 测试通知';
+    default:
+      return 'Uptimer 通知';
+  }
+}
+
+async function dispatchWpushPresetRequest(args: {
+  env: Record<string, unknown>;
+  channel: WebhookChannel & { config: WpushChannelConfig };
+  eventType: string;
+  eventKey: string;
+  payload: unknown;
+  now: number;
+}): Promise<WebhookDispatchResult> {
+  const config = args.channel.config;
+  let apiKey: string | null = null;
+
+  if (config.api_key_encrypted) {
+    const adminToken = readAdminToken(args.env);
+    if (!adminToken) {
+      return {
+        status: 'failed',
+        httpStatus: null,
+        error: 'WPush API key is encrypted but ADMIN_TOKEN is not configured',
+      };
+    }
+    try {
+      apiKey = await decryptWpushApiKey(adminToken, config.api_key_encrypted);
+    } catch {
+      return {
+        status: 'failed',
+        httpStatus: null,
+        error: 'WPush API key could not be decrypted',
+      };
+    }
+  } else if (config.api_key_secret_ref) {
+    apiKey = readEnvSecret(args.env, config.api_key_secret_ref);
+  }
+
+  if (!apiKey) {
+    const ref = config.api_key_secret_ref ?? 'api_key_encrypted';
+    return {
+      status: 'failed',
+      httpStatus: null,
+      error: `WPush API key not configured: ${ref}`,
+    };
+  }
+
+  const { vars, message, defaultMessage } = buildTemplateContext({
+    channel: args.channel,
+    eventType: args.eventType,
+    eventKey: args.eventKey,
+    payload: args.payload,
+    now: args.now,
+  });
+
+  const title = (
+    config.title_template
+      ? renderStringTemplate(config.title_template, vars)
+      : defaultWpushTitle(args.eventType)
+  )
+    .trim()
+    .slice(0, 255);
+  const content = (message.trim().length > 0 ? message : defaultMessage).slice(0, 10_000);
+
+  const form = new URLSearchParams({
+    apikey: apiKey,
+    title: title || 'Uptimer 通知',
+    content,
+    channel: config.channel || 'wechat',
+  });
+  if (config.option) form.set('option', config.option);
+  if (config.url) form.set('url', config.url);
+
+  const timeoutMs = config.timeout_ms ?? DEFAULT_TIMEOUT_MS;
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const res = await fetch('https://api.wpush.cn/api/v1/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+      body: form.toString(),
+      signal: controller.signal,
+      cache: 'no-store',
+    });
+    const responseText = await res.text().catch(() => '');
+    const parsed = parseJsonObject(responseText);
+    const code = typeof parsed?.code === 'number' ? parsed.code : null;
+    const success = parsed?.success === true || code === 0;
+    if (res.ok && success) {
+      return { status: 'success', httpStatus: res.status, error: null };
+    }
+
+    const messageText =
+      typeof parsed?.message === 'string' && parsed.message.trim()
+        ? parsed.message.trim()
+        : `HTTP ${res.status}`;
+    return {
+      status: 'failed',
+      httpStatus: res.status,
+      error: code === null ? `WPush: ${messageText}` : `WPush ${code}: ${messageText}`,
+    };
+  } catch (err) {
+    const error = isAbortError(err) ? `Timeout after ${timeoutMs}ms` : toErrorMessage(err);
+    return {
+      status: 'failed',
+      httpStatus: null,
+      error: redactSecret(error, apiKey),
+    };
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 export async function dispatchWebhookToChannel(args: {
   db: D1Database;
   env: Record<string, unknown>;
@@ -472,7 +609,16 @@ export async function dispatchWebhookToChannel(args: {
           payload: args.payload,
           now,
         })
-      : await dispatchCustomWebhookRequest({
+      : isWpushChannelConfig(config)
+        ? await dispatchWpushPresetRequest({
+            env: args.env,
+            channel: { ...args.channel, config },
+            eventType: args.eventType,
+            eventKey: args.eventKey,
+            payload: args.payload,
+            now,
+          })
+        : await dispatchCustomWebhookRequest({
           env: args.env,
           channel: { ...args.channel, config },
           eventType: args.eventType,
