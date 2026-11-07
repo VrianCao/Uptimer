@@ -2531,6 +2531,10 @@ export function AdminDashboard() {
                     ? formatError(updateChannelMut.error)
                     : formatError(createChannelMut.error)
                 }
+                monitors={(monitorsQuery.data?.monitors ?? []).map((monitor) => ({
+                  id: monitor.id,
+                  name: formatMonitorDisplayName(monitor),
+                }))}
               />
             )}
             {modal.type === 'create-incident' && (

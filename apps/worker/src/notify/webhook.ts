@@ -78,6 +78,46 @@ function shouldSendEvent(config: WebhookChannelConfig, eventType: string): boole
   return enabled.includes(eventType as never);
 }
 
+function eventMonitorIds(payload: unknown): number[] {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return [];
+  const record = payload as Record<string, unknown>;
+
+  const monitor = record.monitor;
+  if (monitor && typeof monitor === 'object' && !Array.isArray(monitor)) {
+    const id = (monitor as Record<string, unknown>).id;
+    if (typeof id === 'number' && Number.isInteger(id) && id > 0) return [id];
+  }
+
+  for (const key of ['incident', 'maintenance']) {
+    const scoped = record[key];
+    if (!scoped || typeof scoped !== 'object' || Array.isArray(scoped)) continue;
+    const ids = (scoped as Record<string, unknown>).monitor_ids;
+    if (!Array.isArray(ids)) continue;
+    return ids.filter(
+      (id): id is number => typeof id === 'number' && Number.isInteger(id) && id > 0,
+    );
+  }
+
+  return [];
+}
+
+function shouldSendMonitorScope(
+  config: WebhookChannelConfig,
+  eventType: string,
+  payload: unknown,
+): boolean {
+  if (eventType === 'test.ping') return true;
+
+  const scope = config.monitor_ids;
+  if (!scope || scope.length === 0) return true;
+
+  const ids = eventMonitorIds(payload);
+  if (ids.length === 0) return false;
+
+  const allowed = new Set(scope);
+  return ids.some((id) => allowed.has(id));
+}
+
 function coerceFlatParams(value: unknown): Record<string, string> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
 
@@ -449,7 +489,10 @@ export async function dispatchWebhookToChannel(args: {
   eventKey: string;
   payload: unknown;
 }): Promise<'sent' | 'skipped'> {
-  if (!shouldSendEvent(args.channel.config, args.eventType)) {
+  if (
+    !shouldSendEvent(args.channel.config, args.eventType) ||
+    !shouldSendMonitorScope(args.channel.config, args.eventType, args.payload)
+  ) {
     return 'skipped';
   }
 
@@ -519,7 +562,11 @@ export async function dispatchWebhookToChannels(args: {
   eventKey: string;
   payload: unknown;
 }): Promise<void> {
-  const channels = args.channels.filter((c) => shouldSendEvent(c.config, args.eventType));
+  const channels = args.channels.filter(
+    (c) =>
+      shouldSendEvent(c.config, args.eventType) &&
+      shouldSendMonitorScope(c.config, args.eventType, args.payload),
+  );
   if (channels.length === 0) return;
 
   const limit = pLimit(WEBHOOK_CONCURRENCY);
