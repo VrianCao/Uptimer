@@ -1,6 +1,35 @@
 import { z } from 'zod';
+import { getSiteCoordinator } from './coordinator-binding';
+import { runtimeProfile } from './runtime-profile';
+import paidCrons from './scheduler/paid-crons.json';
+
+// Initialize reusable schemas/modules during isolate startup (1s budget), not
+// during a Free Plan request's 10ms CPU window. No I/O runs in module scope.
+import './hono-app';
+import './routes/public-ui';
+import './routes/public';
+import './routes/admin';
+import './public/homepage';
+import './public/status';
+import './snapshots/public-homepage';
+import './snapshots/public-homepage-read';
+import './snapshots/public-status-read';
+import './internal/sharded-public-snapshot-continuation';
+import './scheduler/daily-rollup';
+import './scheduler/daily-rollup-sql';
+import './scheduler/retention';
+import './monitor/http';
+import './monitor/tcp';
+import './scheduler/notifications';
+import { handleFetch } from './fetch-handler';
+import {
+  runScheduledTick,
+  runScheduledBatchCohort,
+  batchResultToWire,
+} from './scheduler/scheduled';
 
 import type { Env } from './env';
+import { usesBoundedPublicSeeds, usesAtomicPublicPublication } from './public/refresh-profile';
 import type { Trace } from './observability/trace';
 import {
   normalizeInternalTruthy,
@@ -31,7 +60,11 @@ function hasValidInternalAuth(request: Request, env: Env): boolean {
   if (!env.ADMIN_TOKEN) {
     return false;
   }
-  return readBearerToken(request.headers.get('Authorization')) === env.ADMIN_TOKEN;
+  const authorization = request.headers.get('Authorization');
+  return (
+    authorization === `Bearer ${env.ADMIN_TOKEN}` ||
+    readBearerToken(authorization) === env.ADMIN_TOKEN
+  );
 }
 
 function isInternalServiceRequest(request: Request): boolean {
@@ -220,11 +253,13 @@ const internalShardedPublicSnapshotSeedBodySchema = z.object({
 
 const internalShardedPublicSnapshotContinuationBodySchema = z.discriminatedUnion('step', [
   z.object({
+    generation_at: z.number().int().min(0).optional(),
     step: z.literal('runtime'),
     update_offset: z.number().int().min(0).optional(),
     update_limit: z.number().int().min(1).max(10).optional(),
   }),
   z.object({
+    generation_at: z.number().int().min(0).optional(),
     step: z.literal('seed'),
     kind: z.enum(['homepage', 'status']),
     part: z.enum(['envelope', 'monitors']),
@@ -232,10 +267,12 @@ const internalShardedPublicSnapshotContinuationBodySchema = z.discriminatedUnion
     monitor_limit: z.number().int().min(1).max(10).optional().default(5),
   }),
   z.object({
+    generation_at: z.number().int().min(0).optional(),
     step: z.literal('assemble'),
     kind: z.enum(['homepage', 'status']),
   }),
   z.object({
+    generation_at: z.number().int().min(0).optional(),
     step: z.literal('artifact'),
     kind: z.literal('homepage'),
     generated_at: z.number().int().min(0).optional(),
@@ -632,7 +669,7 @@ async function handleInternalShardedPublicSnapshotContinuation(
   const result = await runShardedPublicSnapshotContinuation({
     env,
     ctx,
-    now: Math.floor(Date.now() / 1000),
+    now: parsed.data.generation_at ?? Math.floor(Date.now() / 1000),
     step:
       parsed.data.step === 'runtime'
         ? {
@@ -880,9 +917,9 @@ async function handleInternalScheduledCheckBatch(
 
   const ids = [...new Set(parsedBody.ids)];
   const suppressedMonitorIds = new Set(parsedBody.suppressed_monitor_ids ?? []);
-  const trustSchedulerLease = normalizeTruthyHeader(
-    env.UPTIMER_INTERNAL_CHECK_BATCH_TRUST_SCHEDULER_LEASE ?? null,
-  );
+  const trustSchedulerLease =
+    normalizeTruthyHeader(env.UPTIMER_INTERNAL_CHECK_BATCH_TRUST_SCHEDULER_LEASE ?? null) &&
+    runtimeProfile(env.UPTIMER_RUNTIME_PROFILE) !== 'paid';
   const [{ runExclusivePersistedMonitorBatch }, notificationsModule] =
     await timeInternalCheckBatchDiagnostic(
       diagnosticsEnabled,
@@ -929,9 +966,11 @@ async function handleInternalScheduledCheckBatch(
         db: env.DB,
         ids,
         checkedAt: parsedBody.checked_at,
+        bufferSamples: usesBoundedPublicSeeds(env),
         abortSignal: request.signal,
         suppressedMonitorIds,
         trustSchedulerLease,
+        sharedMonitorLeases: runtimeProfile(env.UPTIMER_RUNTIME_PROFILE) === 'paid',
         stateMachineConfig: {
           failuresToDownFromUp: parsedBody.state_failures_to_down_from_up,
           successesToUpFromDown: parsedBody.state_successes_to_up_from_down,
@@ -981,9 +1020,9 @@ async function handleInternalScheduledCheckBatch(
     );
   }
 
-  const monitorUpdateFragmentWritesEnabled = normalizeTruthyHeader(
-    env.UPTIMER_PUBLIC_MONITOR_UPDATE_FRAGMENT_WRITES ?? null,
-  );
+  const monitorUpdateFragmentWritesEnabled =
+    !usesBoundedPublicSeeds(env) &&
+    normalizeTruthyHeader(env.UPTIMER_PUBLIC_MONITOR_UPDATE_FRAGMENT_WRITES ?? null);
   const runtimeFragmentsOnly =
     monitorUpdateFragmentWritesEnabled && wantsRuntimeUpdateFragmentsOnly(request);
   let fragmentWriteCount = 0;
@@ -1028,7 +1067,8 @@ async function handleInternalScheduledCheckBatch(
     }
   }
 
-  const responseRuntimeUpdates = runtimeFragmentsOnly ? [] : result.runtimeUpdates;
+  const responseRuntimeUpdates =
+    runtimeFragmentsOnly || usesBoundedPublicSeeds(env) ? [] : result.runtimeUpdates;
   const responsePayload = {
     ok: true,
     runtime_updates: wantsCompactInternalFormat(request)
@@ -1085,11 +1125,130 @@ async function handleInternalScheduledCheckBatch(
   );
 }
 
+const scheduledCohortBodySchema = z.object({
+  batches: z
+    .array(z.array(z.number().int().positive()).min(1).max(2))
+    .min(1)
+    .max(5)
+    .refine((batches) => new Set(batches.flat()).size === batches.flat().length),
+  checked_at: z.number().int().nonnegative(),
+  suppressed_monitor_ids: z.array(z.number().int().positive()).optional().default([]),
+  state_failures_to_down_from_up: z.number().int().min(1).max(10),
+  state_successes_to_up_from_down: z.number().int().min(1).max(10),
+  allow_notifications: z.boolean().optional().default(false),
+});
+async function handleInternalScheduledCohort(
+  request: Request,
+  env: Env,
+  ctx: ExecutionContext,
+): Promise<Response> {
+  if (!isInternalServiceRequest(request) || !usesAtomicPublicPublication(env))
+    return buildNotFoundJsonResponse(request.headers.get('Origin'));
+  if (request.method !== 'POST') return new Response('Method Not Allowed', { status: 405 });
+  if (!hasValidInternalAuth(request, env)) return new Response('Forbidden', { status: 403 });
+  if (isRequestBodyTooLarge(request)) return new Response('Payload Too Large', { status: 413 });
+  const parsed = scheduledCohortBodySchema.safeParse(await request.json().catch(() => null));
+  if (!parsed.success) return new Response('Bad Request', { status: 400 });
+  const now = Math.floor(Date.now() / 60000) * 60;
+  if (parsed.data.checked_at > now || parsed.data.checked_at < now - 300)
+    return new Response('Forbidden', { status: 403 });
+  try {
+    const result = await runScheduledBatchCohort(
+      env,
+      ctx,
+      {
+        batches: parsed.data.batches,
+        checkedAt: parsed.data.checked_at,
+        suppressedMonitorIds: parsed.data.suppressed_monitor_ids,
+        allowNotifications: parsed.data.allow_notifications,
+        stateMachineConfig: {
+          failuresToDownFromUp: parsed.data.state_failures_to_down_from_up,
+          successesToUpFromDown: parsed.data.state_successes_to_up_from_down,
+        },
+      },
+      request.signal,
+    );
+    return buildInternalJsonResponse(batchResultToWire(result), true);
+  } catch (error) {
+    console.warn('scheduled cohort failed', error);
+    return buildInternalJsonResponse({ ok: false }, false);
+  }
+}
+
+const maintenanceBodySchema = z.object({
+  job: z.enum(['daily-rollup', 'retention']),
+  scheduled_time: z.number().int().nonnegative(),
+});
+
+async function runMaintenance(
+  env: Env,
+  ctx: ExecutionContext,
+  job: 'daily-rollup' | 'retention',
+  controller: ScheduledController,
+): Promise<void> {
+  if (job === 'daily-rollup') {
+    const { runDailyRollup } = await import('./scheduler/daily-rollup');
+    await runDailyRollup(env, controller, ctx);
+  } else {
+    const { runRetention } = await import('./scheduler/retention');
+    await runRetention(env, controller);
+  }
+}
+
+async function handleInternalMaintenance(
+  request: Request,
+  env: Env,
+  ctx: ExecutionContext,
+): Promise<Response> {
+  if (!isInternalServiceRequest(request))
+    return buildNotFoundJsonResponse(request.headers.get('Origin'));
+  if (request.method !== 'POST') return new Response('Method Not Allowed', { status: 405 });
+  if (!hasValidInternalAuth(request, env)) return new Response('Forbidden', { status: 403 });
+  if (isRequestBodyTooLarge(request)) return new Response('Payload Too Large', { status: 413 });
+  const parsed = maintenanceBodySchema.safeParse(await request.json().catch(() => null));
+  if (!parsed.success) return new Response('Bad Request', { status: 400 });
+  await runMaintenance(env, ctx, parsed.data.job, {
+    scheduledTime: parsed.data.scheduled_time,
+  } as ScheduledController);
+  return buildInternalJsonResponse({ ok: true }, true);
+}
+
+function queueMaintenance(
+  env: Env,
+  ctx: ExecutionContext,
+  job: 'daily-rollup' | 'retention',
+  controller: ScheduledController,
+): void {
+  const work =
+    usesBoundedPublicSeeds(env) && env.SELF && env.ADMIN_TOKEN
+      ? env.SELF.fetch(
+          new Request('http://internal/api/v1/internal/maintenance', {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${env.ADMIN_TOKEN}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ job, scheduled_time: controller.scheduledTime ?? Date.now() }),
+          }),
+        ).then(async (response) => {
+          await response.body?.cancel();
+          if (!response.ok) throw new Error(`Maintenance failed (HTTP ${response.status})`);
+        })
+      : runMaintenance(env, ctx, job, controller);
+  ctx.waitUntil(work.catch((error) => console.error(`scheduled: ${job} failed`, error)));
+}
+
 export default {
   fetch: async (request: Request, env: Env, ctx: ExecutionContext): Promise<Response> => {
     const url = new URL(request.url);
+    if (url.pathname === '/api/v1/internal/maintenance') {
+      return handleInternalMaintenance(request, env, ctx);
+    }
     if (url.pathname === '/api/v1/internal/refresh/homepage') {
       return handleInternalHomepageRefresh(request, env);
+    }
+    if (url.pathname === '/api/v1/internal/scheduled/check-batches') {
+      return handleInternalScheduledCohort(request, env, ctx);
     }
     if (url.pathname === '/api/v1/internal/scheduled/check-batch') {
       return handleInternalScheduledCheckBatch(request, env, ctx);
@@ -1110,10 +1269,21 @@ export default {
       return handleInternalShardedPublicSnapshotContinuation(request, env, ctx);
     }
 
-    const mod = await import('./fetch-handler');
-    return mod.handleFetch(request, env, ctx);
+    return handleFetch(request, env, ctx, url);
   },
   scheduled: async (controller: ScheduledController, env: Env, ctx: ExecutionContext) => {
+    const paidLaneIndex = paidCrons.indexOf(controller.cron);
+    // Old Paid triggers can arrive during the switch back to Free. Do not
+    // multiply coordinator calls or maintenance work during propagation.
+    if (paidLaneIndex >= 0 && runtimeProfile(env.UPTIMER_RUNTIME_PROFILE) !== 'paid') return;
+    const coordinator = getSiteCoordinator(env);
+    if (coordinator) {
+      await coordinator.scheduled({
+        cron: controller.cron,
+        scheduledTime: controller.scheduledTime ?? Date.now(),
+      });
+      return;
+    }
     const scheduledAt = controller.scheduledTime ?? Date.now();
     const scheduledDate = new Date(scheduledAt);
     const isConsolidatedMinuteCron = controller.cron === '* * * * *';
@@ -1132,32 +1302,17 @@ export default {
 
     // Keep legacy cron branches during Cloudflare's trigger propagation window,
     // but only the consolidated minute cron runs the monitor tick.
-    if (shouldRunDailyRollup) {
-      ctx.waitUntil(
-        (async () => {
-          const { runDailyRollup } = await import('./scheduler/daily-rollup');
-          await runDailyRollup(env, controller, ctx);
-        })().catch((err) => {
-          console.error('scheduled: daily rollup failed', err);
-        }),
-      );
-    }
-    if (shouldRunRetention) {
-      ctx.waitUntil(
-        (async () => {
-          const { runRetention } = await import('./scheduler/retention');
-          await runRetention(env, controller);
-        })().catch((err) => {
-          console.error('scheduled: retention failed', err);
-        }),
-      );
-    }
+    if (shouldRunDailyRollup) queueMaintenance(env, ctx, 'daily-rollup', controller);
+    if (shouldRunRetention) queueMaintenance(env, ctx, 'retention', controller);
 
     if (isLegacyDailyRollupCron || isLegacyRetentionCron) {
       return;
     }
 
-    const { runScheduledTick } = await import('./scheduler/scheduled');
-    await runScheduledTick(env, ctx);
+    if (paidLaneIndex >= 0) {
+      await runScheduledTick(env, ctx, `scheduler:paid-lane:${paidLaneIndex + 1}`);
+    } else {
+      await runScheduledTick(env, ctx);
+    }
   },
 } satisfies ExportedHandler<Env>;

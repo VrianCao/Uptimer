@@ -118,4 +118,6 @@ app.all('/api/v1/admin/*', async (c) => {
   return applyCorsHeaders(res, c.req.header('Origin') ?? null);
 });
 
+// All routes are registered. Compile the lazy matcher inside the startup budget.
+app.router.match('GET', '/');
 export const fetch = app.fetch;

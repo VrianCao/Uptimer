@@ -1,9 +1,14 @@
-export interface Env {
-  DB: D1Database;
+export interface Env extends Pick<WorkerBindings, 'DB'> {
   ADMIN_TOKEN: string;
+
+  // free: site coordinator; paid: execute all work directly in Worker + D1.
+  UPTIMER_RUNTIME_PROFILE?: string;
 
   // Optional internal service binding to self (configured by CI deploy).
   SELF?: Fetcher;
+
+  // Optional site scheduling/publication unit; unbound local and legacy profiles still work.
+  COORDINATOR?: WorkerBindings['COORDINATOR'];
 
   // Optional dev-only trace secret. If set, trace headers are honored only when
   // callers present `X-Uptimer-Trace-Token`.
@@ -23,6 +28,7 @@ export interface Env {
   UPTIMER_SCHEDULED_RUNTIME_FRAGMENT_REFRESH?: string;
   UPTIMER_PUBLIC_SHARDED_ASSEMBLER?: string;
   UPTIMER_PUBLIC_SHARDED_FRAGMENT_SEED?: string;
+  UPTIMER_PUBLIC_COMBINED_SEED?: string;
   UPTIMER_PUBLIC_SHARDED_SNAPSHOT_PUBLISH?: string;
   UPTIMER_SCHEDULED_SHARDED_ASSEMBLER?: string;
   UPTIMER_SCHEDULED_SHARDED_FRAGMENT_SEED?: string;

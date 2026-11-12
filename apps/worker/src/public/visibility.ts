@@ -35,11 +35,11 @@ function statusPageScopedItemVisibilityPredicate(
 
   return `
     (
-      NOT EXISTS (
+      (${itemAlias}.scope = 'global' AND NOT EXISTS (
         SELECT 1
         FROM ${linkTable} scoped_links
         WHERE scoped_links.${linkItemColumn} = ${itemAlias}.id
-      )
+      ))
       OR EXISTS (
         SELECT 1
         FROM ${linkTable} scoped_links
