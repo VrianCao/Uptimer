@@ -215,6 +215,11 @@ describe('pages homepage worker', () => {
     expect(html).toContain('__UPTIMER_INITIAL_HOMEPAGE__');
     expect(html).not.toContain('__UPTIMER_INITIAL_STATUS__');
     expect(html).toContain('artifact preload');
+    const head = html.slice(0, html.indexOf('</head>'));
+    expect(head).toContain('<title>Status Hub</title>');
+    expect(head).toContain('name="description" content="Production"');
+    expect(head).toContain('property="og:url" content="https://status.example.com/"');
+
     expect(put).toHaveBeenCalledTimes(1);
   });
 

@@ -609,8 +609,22 @@ describe('internal sharded public snapshot continuation route', () => {
     expect(waitUntil).toHaveBeenCalledTimes(2);
     await Promise.all(waitUntil.mock.calls.map((call) => call[0] as Promise<unknown>));
     await expect(Promise.all(selfRequests.map((request) => request.json()))).resolves.toEqual([
-      { step: 'seed', kind: 'homepage', part: 'envelope', monitor_offset: 0, monitor_limit: 2 },
-      { step: 'seed', kind: 'status', part: 'envelope', monitor_offset: 0, monitor_limit: 2 },
+      {
+        step: 'seed',
+        kind: 'homepage',
+        part: 'envelope',
+        monitor_offset: 0,
+        monitor_limit: 2,
+        generation_at: expect.any(Number),
+      },
+      {
+        step: 'seed',
+        kind: 'status',
+        part: 'envelope',
+        monitor_offset: 0,
+        monitor_limit: 2,
+        generation_at: expect.any(Number),
+      },
     ]);
   });
 
@@ -683,6 +697,7 @@ describe('internal sharded public snapshot continuation route', () => {
     expect(waitUntil).toHaveBeenCalledTimes(1);
     await Promise.all(waitUntil.mock.calls.map((call) => call[0] as Promise<unknown>));
     await expect(selfRequests[0]!.json()).resolves.toEqual({
+      generation_at: expect.any(Number),
       step: 'runtime',
       update_offset: 1,
       update_limit: 1,
@@ -822,6 +837,7 @@ describe('internal sharded public snapshot continuation route', () => {
       '/api/v1/internal/continue/sharded-public-snapshot',
     );
     await expect(selfRequests[0]!.json()).resolves.toEqual({
+      generation_at: expect.any(Number),
       step: 'assemble',
       kind: 'status',
     });
@@ -886,6 +902,7 @@ describe('internal sharded public snapshot continuation route', () => {
     await Promise.all(waitUntil.mock.calls.map((call) => call[0] as Promise<unknown>));
     expect(continuationBodyRead).toHaveBeenCalledTimes(1);
     await expect(selfRequests[0]!.json()).resolves.toEqual({
+      generation_at: expect.any(Number),
       step: 'artifact',
       kind: 'homepage',
       generated_at: 1_700_000_000,
@@ -1024,12 +1041,11 @@ describe('internal sharded public snapshot continuation route', () => {
       generated_at: payload.generated_at,
       published: false,
       artifact_published: false,
-      write_count: 1,
+      write_count: 0,
       skipped: 'current_artifact',
       continued: false,
     });
-    expect(touches).toHaveLength(1);
-    expect(touches[0]?.slice(0, 2)).toEqual(['homepage:artifact', payload.generated_at]);
+    expect(touches).toHaveLength(0);
     expect(inserts).toHaveLength(0);
   });
 });

@@ -550,7 +550,7 @@ describe('public homepage route', () => {
     expect(bodyReads).toEqual(['homepage', 'homepage']);
   });
 
-  it('stores hot-cache fresh entries longer while restoring client cache headers', async () => {
+  it('bounds edge cache lifetime without extending client freshness', async () => {
     const store = new Map<string, Response>();
     installCacheMock(store);
     const payload = samplePayload(190);
@@ -579,17 +579,15 @@ describe('public homepage route', () => {
     );
     const originalCacheControl = first.headers.get('Cache-Control');
     expect(first.status).toBe(200);
-    expect(originalCacheControl).toContain('max-age=30');
+    expect(originalCacheControl).toContain('s-maxage=15');
 
     await Promise.resolve();
     const freshEntry = [...store.entries()].find(
       ([key]) => !key.includes('__uptimer_stale_cache_key'),
     );
     expect(freshEntry).toBeTruthy();
-    expect(freshEntry?.[1].headers.get('Cache-Control')).toBe('public, max-age=60');
-    expect(freshEntry?.[1].headers.get('X-Uptimer-Hot-Original-Cache-Control')).toBe(
-      originalCacheControl,
-    );
+    expect(freshEntry?.[1].headers.get('Cache-Control')).toBe('public, max-age=15');
+    expect(store.size).toBe(1);
 
     const second = await requestHomepageViaApp(
       '/api/v1/public/homepage',
@@ -603,7 +601,7 @@ describe('public homepage route', () => {
     expect(bodyReads).toEqual(['homepage']);
   });
 
-  it('serves a bounded stale hot-cache copy when the fresh worker cache entry misses', async () => {
+  it('reads the source again when an edge entry expires, without serving a stale edge copy', async () => {
     const store = new Map<string, Response>();
     installCacheMock(store);
     const payload = samplePayload(190);
@@ -637,8 +635,8 @@ describe('public homepage route', () => {
     const freshKey = [...store.keys()].find((key) => !key.includes('__uptimer_stale_cache_key'));
     const staleKey = [...store.keys()].find((key) => key.includes('__uptimer_stale_cache_key'));
     expect(freshKey).toBeTruthy();
-    expect(staleKey).toBeTruthy();
-    store.delete(freshKey!);
+    expect(staleKey).toBeUndefined();
+    vi.spyOn(Date, 'now').mockReturnValue(216 * 1000);
 
     const second = await requestHomepageViaApp(
       '/api/v1/public/homepage',
@@ -650,7 +648,7 @@ describe('public homepage route', () => {
     expect(second.headers.get('X-Uptimer-Hot-Cached-At')).toBeNull();
     expect(second.headers.get('Cache-Control')).toContain('max-age=0');
     expect(await second.json()).toEqual(payload);
-    expect(bodyReads).toEqual(['homepage']);
+    expect(bodyReads).toEqual(['homepage', 'homepage']);
   });
 
   it('serves a fresh homepage snapshot at the max-age boundary via the worker hot path', async () => {
@@ -690,7 +688,7 @@ describe('public homepage route', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual(payload);
     expect(metadataReads).toBe(0);
-    expect(bodyReads).toEqual(['homepage', 'homepage']);
+    expect(bodyReads).toEqual(['homepage']);
     expect(res.headers.get('Cache-Control')).toContain('max-age=0');
   });
 

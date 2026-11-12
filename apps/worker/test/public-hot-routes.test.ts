@@ -89,8 +89,38 @@ async function requestStatusViaWorker(opts: {
 describe('public hot routes', () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
     computePublicStatusPayload.mockReset();
   });
+
+  it.each(['no-cache', 'max-age=0', 'no-store'])(
+    'revalidates an explicit %s request against the source',
+    async (policy) => {
+      vi.spyOn(Date, 'now').mockReturnValue(200_000);
+      const stale = sampleStatusPayload(190);
+      const fresh = sampleStatusPayload(200);
+      const match = vi.fn(
+        async () =>
+          new Response(JSON.stringify(stale), {
+            headers: { 'X-Uptimer-Hot-Cached-At': '200', 'Cache-Control': 'public, max-age=15' },
+          }),
+      );
+      const put = vi.fn();
+      vi.stubGlobal('caches', { open: async () => ({ match, put }) });
+      const { res } = await requestStatusViaWorker({
+        extraHeaders: { 'Cache-Control': policy },
+        handlers: [
+          {
+            match: 'from public_snapshots',
+            first: () => ({ generated_at: 200, body_json: JSON.stringify(fresh) }),
+          },
+        ],
+      });
+      expect(await res.json()).toEqual(fresh);
+      expect(match).not.toHaveBeenCalled();
+      if (policy === 'no-store') expect(put).not.toHaveBeenCalled();
+    },
+  );
 
   it('serves the fresh public status snapshot via the hot router', async () => {
     vi.spyOn(Date, 'now').mockReturnValue(200_000);
@@ -467,6 +497,13 @@ describe('public hot routes', () => {
     vi.spyOn(Date, 'now').mockReturnValue(200_000);
     const payload = sampleStatusPayload(200);
     computePublicStatusPayload.mockResolvedValue(payload);
+    const match = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ cached: true }), {
+          headers: { 'X-Uptimer-Hot-Cached-At': '200', 'Cache-Control': 'public, max-age=15' },
+        }),
+    );
+    vi.stubGlobal('caches', { open: async () => ({ match, put: vi.fn() }) });
 
     const { res } = await requestStatusViaWorker({
       authorization: 'Bearer test-admin-token',
@@ -478,6 +515,7 @@ describe('public hot routes', () => {
       includeHiddenMonitors: true,
     });
     expect(res.headers.get('Cache-Control')).toBe('private, no-store');
+    expect(match).not.toHaveBeenCalled();
   });
 
   it('treats trace-tokenized hot-route reads as private no-store', async () => {

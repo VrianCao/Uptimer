@@ -28,6 +28,7 @@ function makeContext(options: {
   url: string;
   response: Response;
   authorization?: string;
+  cacheControl?: string;
   waitUntil?: ReturnType<typeof vi.fn>;
 }): {
   c: {
@@ -42,6 +43,7 @@ function makeContext(options: {
   if (options.authorization) {
     headers.set('Authorization', options.authorization);
   }
+  if (options.cacheControl) headers.set('Cache-Control', options.cacheControl);
 
   return {
     c: {
@@ -122,6 +124,37 @@ describe('middleware/cache-public', () => {
     expect(await stored?.text()).toBe('live');
     expect(open).toHaveBeenCalledTimes(1);
   });
+
+  it.each(['no-cache', 'public, max-age = 0', 'no-store'])(
+    'honors the request %s directive even with a warm shared cache',
+    async (cacheControl) => {
+      const store = new Map<string, Response>();
+      const url = 'https://status.example.com/api/v1/public/monitors/1/latency';
+      store.set(url, new Response('old'));
+      const open = installCacheMock(store);
+      const middleware = cachePublic({ cacheName: 'uptimer-public', maxAgeSeconds: 30 });
+      const { c, waitUntil } = makeContext({
+        method: 'GET',
+        url,
+        cacheControl,
+        response: new Response('seed'),
+      });
+      const next = vi.fn(async () => {
+        c.res = new Response('latest');
+      });
+      await middleware(c as never, next);
+      expect(next).toHaveBeenCalledOnce();
+      expect(await c.res.clone().text()).toBe('latest');
+      if (cacheControl === 'no-store') {
+        expect(open).not.toHaveBeenCalled();
+        expect(waitUntil).not.toHaveBeenCalled();
+        expect(await store.get(url)!.text()).toBe('old');
+      } else {
+        await (waitUntil.mock.calls[0]![0] as Promise<unknown>);
+        expect(await store.get(url)!.text()).toBe('latest');
+      }
+    },
+  );
 
   it('respects explicit no-store/private cache-control directives', async () => {
     const store = new Map<string, Response>();
