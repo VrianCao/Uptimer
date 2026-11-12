@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import type { ResolveIncidentInput } from '../api/types';
 import { useI18n } from '../app/I18nContext';
 import { Markdown } from './Markdown';
@@ -17,6 +17,7 @@ export function ResolveIncidentForm({
   isLoading?: boolean;
 }) {
   const { t } = useI18n();
+  const fieldId = useId();
   const [message, setMessage] = useState('');
   const normalized = useMemo(() => message.trim(), [message]);
 
@@ -29,8 +30,11 @@ export function ResolveIncidentForm({
       }}
     >
       <div>
-        <label className={labelClass}>{t('resolve_incident.message')}</label>
+        <label htmlFor={fieldId + '-0'} className={labelClass}>
+          {t('resolve_incident.message')}
+        </label>
         <textarea
+          id={fieldId + '-0'}
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           rows={4}

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import type {
   CreateMaintenanceWindowInput,
   MaintenanceWindow,
@@ -47,6 +47,7 @@ export function MaintenanceWindowForm(props: CreateProps | EditProps) {
   const { window, onCancel, isLoading, monitors } = props;
   const { t } = useI18n();
 
+  const fieldId = useId();
   const [title, setTitle] = useState(window?.title ?? '');
   const [message, setMessage] = useState(window?.message ?? '');
   const [startsAt, setStartsAt] = useState(window ? toDatetimeLocal(window.starts_at) : '');
@@ -130,8 +131,11 @@ export function MaintenanceWindowForm(props: CreateProps | EditProps) {
       </div>
 
       <div>
-        <label className={labelClass}>{t('maintenance_form.title')}</label>
+        <label htmlFor={fieldId + '-0'} className={labelClass}>
+          {t('maintenance_form.title')}
+        </label>
         <input
+          id={fieldId + '-0'}
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           className={inputClass}
@@ -142,8 +146,11 @@ export function MaintenanceWindowForm(props: CreateProps | EditProps) {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
-          <label className={labelClass}>{t('maintenance_form.starts_at')}</label>
+          <label htmlFor={fieldId + '-1'} className={labelClass}>
+            {t('maintenance_form.starts_at')}
+          </label>
           <input
+            id={fieldId + '-1'}
             type="datetime-local"
             value={startsAt}
             onChange={(e) => setStartsAt(e.target.value)}
@@ -152,8 +159,11 @@ export function MaintenanceWindowForm(props: CreateProps | EditProps) {
           />
         </div>
         <div>
-          <label className={labelClass}>{t('maintenance_form.ends_at')}</label>
+          <label htmlFor={fieldId + '-2'} className={labelClass}>
+            {t('maintenance_form.ends_at')}
+          </label>
           <input
+            id={fieldId + '-2'}
             type="datetime-local"
             value={endsAt}
             onChange={(e) => setEndsAt(e.target.value)}
@@ -165,8 +175,11 @@ export function MaintenanceWindowForm(props: CreateProps | EditProps) {
       {timeError && <div className="text-sm text-red-500 dark:text-red-400">{timeError}</div>}
 
       <div>
-        <label className={labelClass}>{t('maintenance_form.message')}</label>
+        <label htmlFor={fieldId + '-3'} className={labelClass}>
+          {t('maintenance_form.message')}
+        </label>
         <textarea
+          id={fieldId + '-3'}
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           rows={4}

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import type { CreateIncidentUpdateInput, IncidentStatus } from '../api/types';
 import { useI18n } from '../app/I18nContext';
 import { incidentStatusLabel } from '../i18n/labels';
@@ -24,6 +24,7 @@ export function IncidentUpdateForm({
   isLoading?: boolean;
 }) {
   const { t } = useI18n();
+  const fieldId = useId();
   const [message, setMessage] = useState('');
   const [status, setStatus] = useState<Exclude<IncidentStatus, 'resolved'> | ''>('');
   const normalized = useMemo(() => message.trim(), [message]);
@@ -37,8 +38,11 @@ export function IncidentUpdateForm({
       }}
     >
       <div>
-        <label className={labelClass}>{t('incident_update.status')}</label>
+        <label htmlFor={fieldId + '-0'} className={labelClass}>
+          {t('incident_update.status')}
+        </label>
         <select
+          id={fieldId + '-0'}
           value={status}
           onChange={(e) => setStatus(e.target.value as Exclude<IncidentStatus, 'resolved'> | '')}
           className={selectClass}
@@ -53,8 +57,11 @@ export function IncidentUpdateForm({
       </div>
 
       <div>
-        <label className={labelClass}>{t('incident_update.message')}</label>
+        <label htmlFor={fieldId + '-1'} className={labelClass}>
+          {t('incident_update.message')}
+        </label>
         <textarea
+          id={fieldId + '-1'}
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           rows={5}

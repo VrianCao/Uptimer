@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react';
+import { memo, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { tooltipPlacement, type TooltipAnchor } from '../utils/tooltip';
 
 import type { CheckStatus, Heartbeat, HomepageHeartbeatStrip } from '../api/types';
 import { useI18n } from '../app/I18nContext';
@@ -244,20 +245,17 @@ function Tooltip({
   position,
 }: {
   heartbeat: DisplayHeartbeat;
-  position: { x: number; y: number };
+  position: TooltipAnchor;
 }) {
   const { locale, t } = useI18n();
+  const placement = tooltipPlacement(position);
   const hasWindow =
     heartbeat.sample_count > 1 && heartbeat.from_checked_at !== heartbeat.to_checked_at;
 
   return (
     <div
       className="fixed z-50 px-3 py-2 text-xs bg-slate-900 dark:bg-slate-700 text-white rounded-lg shadow-lg pointer-events-none animate-fade-in"
-      style={{
-        left: position.x,
-        top: position.y,
-        transform: 'translate(-50%, -100%) translateY(-8px)',
-      }}
+      style={placement.panel}
     >
       <div className="font-medium mb-1">
         {hasWindow
@@ -276,12 +274,15 @@ function Tooltip({
           {t('heartbeat.sample_checks', { count: heartbeat.sample_count })}
         </div>
       )}
-      <div className="absolute left-1/2 -bottom-1 -translate-x-1/2 w-2 h-2 bg-slate-900 dark:bg-slate-700 rotate-45" />
+      <div
+        className="absolute -translate-x-1/2 w-2 h-2 bg-slate-900 dark:bg-slate-700 rotate-45"
+        style={placement.arrow}
+      />
     </div>
   );
 }
 
-export function HeartbeatBar({
+export const HeartbeatBar = memo(function HeartbeatBar({
   heartbeats,
   strip,
   maxBars = 60,
@@ -292,7 +293,7 @@ export function HeartbeatBar({
   const [tooltip, setTooltip] = useState<{
     heartbeat: DisplayHeartbeat;
     index: number;
-    position: { x: number; y: number };
+    position: TooltipAnchor;
   } | null>(null);
   const compact = density === 'compact';
 
@@ -341,6 +342,7 @@ export function HeartbeatBar({
       position: {
         x: rect.left + ((index + 0.5) / slotCount) * rect.width,
         y: rect.top,
+        bottom: rect.bottom,
       },
     });
   };
@@ -386,4 +388,4 @@ export function HeartbeatBar({
         )}
     </>
   );
-}
+});

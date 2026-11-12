@@ -1102,14 +1102,17 @@ export default {
           }
         }
 
-        const base = trace
-          ? await trace.timeAsync('index_fetch', () => fetchIndexHtml(env, url))
-          : await fetchIndexHtml(env, url);
+        // Neither fetch depends on the other. Avoid an entire origin RTT on cold HTML.
+        const [base, artifact] = await Promise.all([
+          trace
+            ? trace.timeAsync('index_fetch', () => fetchIndexHtml(env, url))
+            : fetchIndexHtml(env, url),
+          fetchPublicHomepageArtifact(env, trace, now),
+        ]);
         const html = trace
           ? await trace.timeAsync('index_text', () => base.text())
           : await base.text();
 
-        const artifact = await fetchPublicHomepageArtifact(env, trace, now);
         if (!artifact) {
           if (cached) {
             const cachedGeneratedAt = readGeneratedAtHeader(cached);
@@ -1155,18 +1158,23 @@ export default {
 
         const snapshotInlineJson = artifact.snapshot_inline_json;
 
+        // Update the small static head before adding the full monitor markup.
+        // Missing metadata must not scan/copy every preloaded card repeatedly.
         let injected = trace
+          ? trace.time('inject_meta', () => injectStatusMetaTags(html, artifact, url))
+          : injectStatusMetaTags(html, artifact, url);
+
+        injected = trace
           ? trace.time('inject_root', () =>
-              html.replace(
+              injected.replace(
                 '<div id="root"></div>',
                 `${artifact.preload_html}<div id="root"></div>`,
               ),
             )
-          : html.replace('<div id="root"></div>', `${artifact.preload_html}<div id="root"></div>`);
-
-        injected = trace
-          ? trace.time('inject_meta', () => injectStatusMetaTags(injected, artifact, url))
-          : injectStatusMetaTags(injected, artifact, url);
+          : injected.replace(
+              '<div id="root"></div>',
+              `${artifact.preload_html}<div id="root"></div>`,
+            );
 
         injected = trace
           ? trace.time('inject_bootstrap', () =>

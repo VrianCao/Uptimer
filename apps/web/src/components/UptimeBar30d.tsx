@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react';
+import { memo, useId, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { tooltipPlacement, type TooltipAnchor } from '../utils/tooltip';
 
 import type { HomepageUptimeDayStrip, UptimeDayPreview, UptimeRatingLevel } from '../api/types';
 import { useI18n } from '../app/I18nContext';
@@ -143,20 +144,17 @@ function Tooltip({
   timeZone,
 }: {
   day: UptimeDayPreview;
-  position: { x: number; y: number };
+  position: TooltipAnchor;
   ratingLevel: UptimeRatingLevel;
   timeZone: string;
 }) {
   const { locale, t } = useI18n();
+  const placement = tooltipPlacement(position);
 
   return (
     <div
       className="fixed z-50 px-3 py-2 text-xs bg-slate-900 dark:bg-slate-700 text-white rounded-lg shadow-lg pointer-events-none animate-fade-in"
-      style={{
-        left: position.x,
-        top: position.y,
-        transform: 'translate(-50%, -100%) translateY(-8px)',
-      }}
+      style={placement.panel}
     >
       <div className="font-medium mb-1">{formatDay(day.day_start_at, timeZone, locale)}</div>
       <div className="flex items-center gap-2">
@@ -174,12 +172,15 @@ function Tooltip({
           {t('uptime.unknown')}: {formatSec(day.unknown_sec)}
         </div>
       )}
-      <div className="absolute left-1/2 -bottom-1 -translate-x-1/2 w-2 h-2 bg-slate-900 dark:bg-slate-700 rotate-45" />
+      <div
+        className="absolute -translate-x-1/2 w-2 h-2 bg-slate-900 dark:bg-slate-700 rotate-45"
+        style={placement.arrow}
+      />
     </div>
   );
 }
 
-export function UptimeBar30d({
+export const UptimeBar30d = memo(function UptimeBar30d({
   days,
   strip,
   ratingLevel = 3,
@@ -190,10 +191,12 @@ export function UptimeBar30d({
   fillMode = 'pad',
 }: UptimeBar30dProps) {
   const { locale, t } = useI18n();
+  const keyboardHintId = useId();
+  const [tabDay, setTabDay] = useState<number | null>(null);
   const [tooltip, setTooltip] = useState<{
     day: UptimeDayPreview;
     index: number;
-    position: { x: number; y: number };
+    position: TooltipAnchor;
   } | null>(null);
   const compact = density === 'compact';
 
@@ -241,19 +244,29 @@ export function UptimeBar30d({
       day,
       index,
       position: {
-        x: rect.left + rect.width / 2,
+        x: rect.left + ((index + 0.5) / slotCount) * rect.width,
         y: rect.top,
+        bottom: rect.bottom,
       },
     });
   };
 
+  const dayIndexes = useMemo(
+    () => slots.flatMap((slot, index) => (slot.day ? [index] : [])),
+    [slots],
+  );
+  const focusedIndex = tabDay !== null && slots[tabDay]?.day ? tabDay : (dayIndexes.at(-1) ?? 0);
+  const focusedDay = slots[focusedIndex]?.day;
+  const pointerIndex = (x: number, element: HTMLElement) => {
+    const rect = element.getBoundingClientRect();
+    return Math.max(
+      0,
+      Math.min(slotCount - 1, Math.floor(((x - rect.left) / rect.width) * slotCount)),
+    );
+  };
   return (
     <>
-      <div
-        className={
-          compact ? 'relative h-5 overflow-hidden sm:h-6' : 'relative h-6 overflow-hidden sm:h-8'
-        }
-      >
+      <div className={compact ? 'relative h-5 sm:h-6' : 'relative h-6 sm:h-8'}>
         <div
           data-bar-chart
           className="relative h-full w-full rounded-md bg-slate-200 dark:bg-slate-700"
@@ -264,39 +277,60 @@ export function UptimeBar30d({
             backgroundSize: '100% 100%',
           }}
         />
-        {slotCount > 0 && (
-          <div
-            className="absolute inset-0 grid"
-            style={{ gridTemplateColumns: `repeat(${slotCount}, minmax(0, 1fr))` }}
-          >
-            {slots.map((slot, index) => {
-              const day = slot.day;
-              return day ? (
-                <button
-                  key={`day-${day.day_start_at}-${index}`}
-                  type="button"
-                  aria-label={`${t('uptime.aria_prefix')}: ${formatDay(day.day_start_at, timeZone, locale)}`}
-                  className="h-full w-full bg-transparent focus:outline-none"
-                  onMouseEnter={(event) => showTooltip(day, index, event.currentTarget)}
-                  onFocus={(event) => showTooltip(day, index, event.currentTarget)}
-                  onBlur={() =>
-                    setTooltip((current) => (current?.index === index ? null : current))
-                  }
-                  onMouseLeave={() =>
-                    setTooltip((current) => (current?.index === index ? null : current))
-                  }
-                  onClick={(event) => {
-                    if (!onDayClick) return;
-                    event.stopPropagation();
-                    onDayClick(day.day_start_at);
-                  }}
-                />
-              ) : (
-                <span key={`empty-${index}`} aria-hidden="true" />
-              );
-            })}
-          </div>
+        {onDayClick && focusedDay && (
+          <button
+            type="button"
+            data-day-index={focusedIndex}
+            className="absolute left-0 top-1/2 h-11 w-full -translate-y-1/2 rounded-md"
+            aria-label={`${t('uptime.select_day')}: ${formatDay(focusedDay.day_start_at, timeZone, locale)}`}
+            aria-describedby={keyboardHintId}
+            onMouseMove={(event) => {
+              const index = pointerIndex(event.clientX, event.currentTarget);
+              const day = slots[index]?.day;
+              if (day) showTooltip(day, index, event.currentTarget);
+            }}
+            onMouseLeave={() => setTooltip(null)}
+            onFocus={(event) => showTooltip(focusedDay, focusedIndex, event.currentTarget)}
+            onBlur={() => setTooltip(null)}
+            onKeyDown={(event) => {
+              if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+              event.preventDefault();
+              event.stopPropagation();
+              const at = dayIndexes.indexOf(focusedIndex);
+              const next =
+                event.key === 'Home'
+                  ? 0
+                  : event.key === 'End'
+                    ? dayIndexes.length - 1
+                    : Math.max(
+                        0,
+                        Math.min(dayIndexes.length - 1, at + (event.key === 'ArrowLeft' ? -1 : 1)),
+                      );
+              const index = dayIndexes[next];
+              const day = index === undefined ? null : slots[index]?.day;
+              if (day && index !== undefined) {
+                setTabDay(index);
+                showTooltip(day, index, event.currentTarget);
+              }
+            }}
+            onClick={(event) => {
+              event.stopPropagation();
+              setTooltip(null);
+              const index =
+                event.detail === 0
+                  ? focusedIndex
+                  : pointerIndex(event.clientX, event.currentTarget);
+              const day = slots[index]?.day;
+              if (day) {
+                setTabDay(index);
+                onDayClick(day.day_start_at);
+              }
+            }}
+          />
         )}
+        <span id={keyboardHintId} className="sr-only">
+          {t('uptime.keyboard_hint')}
+        </span>
         {tooltip && (
           <div
             className="pointer-events-none absolute inset-y-0 rounded-sm ring-1 ring-white/70 shadow-[0_0_0_1px_rgba(15,23,42,0.08)]"
@@ -320,7 +354,7 @@ export function UptimeBar30d({
         )}
     </>
   );
-}
+});
 
 export function computeDayDowntimeIntervals(
   dayStartAt: number,

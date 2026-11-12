@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import type {
   CreateNotificationChannelInput,
   CustomWebhookChannelConfig,
@@ -125,6 +125,7 @@ export function NotificationChannelForm({
     ? (initialConfig as TelegramChannelConfig | undefined)
     : undefined;
 
+  const fieldId = useId();
   const [name, setName] = useState(channel?.name ?? '');
   const [preset, setPreset] = useState<NotificationChannelPreset>(
     initialIsTelegram ? 'telegram' : 'custom',
@@ -356,8 +357,11 @@ export function NotificationChannelForm({
         </div>
       )}
       <div>
-        <label className={labelClass}>{t('notification_form.name')}</label>
+        <label htmlFor={fieldId + '-0'} className={labelClass}>
+          {t('notification_form.name')}
+        </label>
         <input
+          id={fieldId + '-0'}
           type="text"
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -400,8 +404,11 @@ export function NotificationChannelForm({
       {preset === 'custom' ? (
         <>
           <div>
-            <label className={labelClass}>{t('notification_form.webhook_url')}</label>
+            <label htmlFor={fieldId + '-1'} className={labelClass}>
+              {t('notification_form.webhook_url')}
+            </label>
             <input
+              id={fieldId + '-1'}
               type="url"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
@@ -412,8 +419,11 @@ export function NotificationChannelForm({
           </div>
 
           <div>
-            <label className={labelClass}>{t('notification_form.method')}</label>
+            <label htmlFor={fieldId + '-2'} className={labelClass}>
+              {t('notification_form.method')}
+            </label>
             <select
+              id={fieldId + '-2'}
               value={method}
               onChange={(e) => setMethod(toMethod(e.target.value))}
               className={selectClass}
@@ -428,8 +438,11 @@ export function NotificationChannelForm({
           </div>
 
           <div>
-            <label className={labelClass}>{t('notification_form.payload_type')}</label>
+            <label htmlFor={fieldId + '-3'} className={labelClass}>
+              {t('notification_form.payload_type')}
+            </label>
             <select
+              id={fieldId + '-3'}
               value={payloadType}
               onChange={(e) => setPayloadType(toPayloadType(e.target.value))}
               className={selectClass}
@@ -444,8 +457,11 @@ export function NotificationChannelForm({
           </div>
 
           <div>
-            <label className={labelClass}>{t('notification_form.headers_json')}</label>
+            <label htmlFor={fieldId + '-4'} className={labelClass}>
+              {t('notification_form.headers_json')}
+            </label>
             <textarea
+              id={fieldId + '-4'}
               value={headersJson}
               onChange={(e) => setHeadersJson(e.target.value)}
               className={textareaClass}
@@ -464,8 +480,11 @@ export function NotificationChannelForm({
         <>
           {!telegramUsesSecretRef && (
             <div>
-              <label className={labelClass}>{t('notification_form.telegram_bot_token')}</label>
+              <label htmlFor={fieldId + '-5'} className={labelClass}>
+                {t('notification_form.telegram_bot_token')}
+              </label>
               <input
+                id={fieldId + '-5'}
                 type="password"
                 value={telegramBotToken}
                 onChange={(e) => setTelegramBotToken(e.target.value)}
@@ -482,8 +501,11 @@ export function NotificationChannelForm({
           )}
 
           <div>
-            <label className={labelClass}>{t('notification_form.telegram_chat_id')}</label>
+            <label htmlFor={fieldId + '-6'} className={labelClass}>
+              {t('notification_form.telegram_chat_id')}
+            </label>
             <input
+              id={fieldId + '-6'}
               type="text"
               value={telegramChatId}
               onChange={(e) => setTelegramChatId(e.target.value)}
@@ -505,8 +527,11 @@ export function NotificationChannelForm({
           {showAdvancedTelegram && (
             <div className="space-y-4 border-t border-slate-200 dark:border-slate-700 pt-4">
               <div>
-                <label className={labelClass}>{t('notification_form.telegram_token_source')}</label>
+                <label htmlFor={fieldId + '-7'} className={labelClass}>
+                  {t('notification_form.telegram_token_source')}
+                </label>
                 <select
+                  id={fieldId + '-7'}
                   value={telegramTokenMode}
                   onChange={(e) => setTelegramTokenMode(e.target.value as TelegramTokenMode)}
                   className={selectClass}
@@ -525,10 +550,11 @@ export function NotificationChannelForm({
 
               {telegramUsesSecretRef ? (
                 <div>
-                  <label className={labelClass}>
+                  <label htmlFor={fieldId + '-8'} className={labelClass}>
                     {t('notification_form.telegram_bot_token_secret_ref')}
                   </label>
                   <input
+                    id={fieldId + '-8'}
                     type="text"
                     value={telegramBotTokenSecretRef}
                     onChange={(e) => setTelegramBotTokenSecretRef(e.target.value)}
@@ -544,8 +570,11 @@ export function NotificationChannelForm({
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className={labelClass}>{t('notification_form.telegram_parse_mode')}</label>
+                  <label htmlFor={fieldId + '-9'} className={labelClass}>
+                    {t('notification_form.telegram_parse_mode')}
+                  </label>
                   <select
+                    id={fieldId + '-9'}
                     value={telegramParseMode}
                     onChange={(e) => setTelegramParseMode(toTelegramParseMode(e.target.value))}
                     className={selectClass}
@@ -557,10 +586,11 @@ export function NotificationChannelForm({
                   </select>
                 </div>
                 <div>
-                  <label className={labelClass}>
+                  <label htmlFor={fieldId + '-10'} className={labelClass}>
                     {t('notification_form.telegram_message_thread_id_optional')}
                   </label>
                   <input
+                    id={fieldId + '-10'}
                     type="number"
                     min={1}
                     value={telegramMessageThreadId}
@@ -572,8 +602,11 @@ export function NotificationChannelForm({
               </div>
 
               <div>
-                <label className={labelClass}>{t('notification_form.timeout_ms')}</label>
+                <label htmlFor={fieldId + '-11'} className={labelClass}>
+                  {t('notification_form.timeout_ms')}
+                </label>
                 <input
+                  id={fieldId + '-11'}
                   type="number"
                   min={1}
                   max={60000}
@@ -584,10 +617,11 @@ export function NotificationChannelForm({
               </div>
 
               <div>
-                <label className={labelClass}>
+                <label htmlFor={fieldId + '-12'} className={labelClass}>
                   {t('notification_form.message_template_optional')}
                 </label>
                 <textarea
+                  id={fieldId + '-12'}
                   value={messageTemplate}
                   onChange={(e) => setMessageTemplate(e.target.value)}
                   className={textareaClass}
@@ -647,8 +681,11 @@ export function NotificationChannelForm({
       {preset === 'custom' && (
         <>
           <div>
-            <label className={labelClass}>{t('notification_form.timeout_ms')}</label>
+            <label htmlFor={fieldId + '-13'} className={labelClass}>
+              {t('notification_form.timeout_ms')}
+            </label>
             <input
+              id={fieldId + '-13'}
               type="number"
               min={1}
               max={60000}
@@ -659,8 +696,11 @@ export function NotificationChannelForm({
           </div>
 
           <div>
-            <label className={labelClass}>{t('notification_form.message_template_optional')}</label>
+            <label htmlFor={fieldId + '-14'} className={labelClass}>
+              {t('notification_form.message_template_optional')}
+            </label>
             <textarea
+              id={fieldId + '-14'}
               value={messageTemplate}
               onChange={(e) => setMessageTemplate(e.target.value)}
               className={textareaClass}
@@ -671,8 +711,11 @@ export function NotificationChannelForm({
           </div>
 
           <div>
-            <label className={labelClass}>{t('notification_form.payload_template_optional')}</label>
+            <label htmlFor={fieldId + '-15'} className={labelClass}>
+              {t('notification_form.payload_template_optional')}
+            </label>
             <textarea
+              id={fieldId + '-15'}
               value={payloadTemplateJson}
               onChange={(e) => setPayloadTemplateJson(e.target.value)}
               className={textareaClass}
@@ -725,8 +768,11 @@ export function NotificationChannelForm({
           </label>
           {signingEnabled && (
             <div className="mt-3">
-              <label className={labelClass}>{t('notification_form.signing_secret_ref')}</label>
+              <label htmlFor={fieldId + '-16'} className={labelClass}>
+                {t('notification_form.signing_secret_ref')}
+              </label>
               <input
+                id={fieldId + '-16'}
                 type="text"
                 value={signingSecretRef}
                 onChange={(e) => setSigningSecretRef(e.target.value)}

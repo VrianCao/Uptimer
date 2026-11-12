@@ -9,20 +9,19 @@ import { queryClient } from './app/queryClient';
 import { router } from './app/router';
 import { ThemeProvider } from './app/ThemeContext';
 import type { PublicHomepageResponse, StatusResponse } from './api/types';
+import {
+  newestHomepageSnapshot,
+  readHomepageSnapshot,
+  readLegacyStatusSnapshot,
+  parseStatusSnapshot,
+  snapshotUpdatedAt,
+} from './api/public-snapshot';
 import './styles.css';
 
 declare global {
   var __UPTIMER_INITIAL_HOMEPAGE__: PublicHomepageResponse | undefined;
   var __UPTIMER_INITIAL_STATUS__: StatusResponse | undefined;
 }
-
-const LS_PUBLIC_HOMEPAGE_KEY = 'uptimer_public_homepage_snapshot_v2';
-const LS_PUBLIC_STATUS_KEY = 'uptimer_public_status_snapshot_v1';
-
-type PersistedHomepageCache = {
-  at: number;
-  value: PublicHomepageResponse;
-};
 
 function toHeartbeatStatusCode(
   status: StatusResponse['monitors'][number]['heartbeats'][number]['status'],
@@ -37,50 +36,6 @@ function toHeartbeatStatusCode(
     case 'unknown':
     default:
       return 'x';
-  }
-}
-
-function readPersistedHomepageCache(): PublicHomepageResponse | null {
-  try {
-    const raw = localStorage.getItem(LS_PUBLIC_HOMEPAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as unknown;
-    if (!parsed || typeof parsed !== 'object') return null;
-
-    const value = (parsed as { value?: unknown }).value;
-    if (!value || typeof value !== 'object') return null;
-    if (typeof (value as { generated_at?: unknown }).generated_at !== 'number') return null;
-    return value as PublicHomepageResponse;
-  } catch {
-    return null;
-  }
-}
-
-function readPersistedStatusCache(): StatusResponse | null {
-  try {
-    const raw = localStorage.getItem(LS_PUBLIC_STATUS_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as unknown;
-    if (!parsed || typeof parsed !== 'object') return null;
-
-    const value = (parsed as { value?: unknown }).value;
-    if (!value || typeof value !== 'object') return null;
-
-    // Minimal shape check.
-    if (typeof (value as { generated_at?: unknown }).generated_at !== 'number') return null;
-
-    return value as StatusResponse;
-  } catch {
-    return null;
-  }
-}
-
-function writePersistedHomepageCache(value: PublicHomepageResponse): void {
-  try {
-    const payload: PersistedHomepageCache = { at: Date.now(), value };
-    localStorage.setItem(LS_PUBLIC_HOMEPAGE_KEY, JSON.stringify(payload));
-  } catch {
-    // Best-effort only.
   }
 }
 
@@ -155,24 +110,18 @@ function homepageFromStatus(status: StatusResponse): PublicHomepageResponse {
   };
 }
 
-const initialHomepage =
-  globalThis.__UPTIMER_INITIAL_HOMEPAGE__ ??
-  (globalThis.__UPTIMER_INITIAL_STATUS__
-    ? homepageFromStatus(globalThis.__UPTIMER_INITIAL_STATUS__)
-    : undefined);
-const migratedPersistedStatus = initialHomepage ? null : readPersistedStatusCache();
-const persistedHomepage = initialHomepage
-  ? null
-  : (readPersistedHomepageCache() ??
-    (migratedPersistedStatus ? homepageFromStatus(migratedPersistedStatus) : null));
-const seedHomepage = initialHomepage ?? persistedHomepage;
+const migratedStatus =
+  parseStatusSnapshot(globalThis.__UPTIMER_INITIAL_STATUS__) ?? readLegacyStatusSnapshot();
+const seedHomepage = newestHomepageSnapshot(
+  globalThis.__UPTIMER_INITIAL_HOMEPAGE__,
+  readHomepageSnapshot(),
+  migratedStatus ? homepageFromStatus(migratedStatus) : null,
+);
 
-if (seedHomepage) {
-  const updatedAt =
-    typeof seedHomepage.generated_at === 'number' ? seedHomepage.generated_at * 1000 : Date.now();
-
-  queryClient.setQueryData<PublicHomepageResponse>(['homepage'], seedHomepage, { updatedAt });
-  writePersistedHomepageCache(seedHomepage);
+if (seedHomepage && Date.now() - snapshotUpdatedAt(seedHomepage) <= 10 * 60_000) {
+  queryClient.setQueryData<PublicHomepageResponse>(['homepage'], seedHomepage, {
+    updatedAt: snapshotUpdatedAt(seedHomepage),
+  });
 }
 
 function PreloadCleanup() {

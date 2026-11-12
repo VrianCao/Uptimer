@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 
 import type {
   AdminMonitor,
@@ -342,6 +342,7 @@ export function MonitorForm(props: CreateProps | EditProps) {
     [props.groupOptions],
   );
 
+  const fieldId = useId();
   const [name, setName] = useState(monitor?.name ?? '');
   const [groupName, setGroupName] = useState(monitor?.group_name ?? '');
   const [groupSortOrderInput, setGroupSortOrderInput] = useState(
@@ -569,14 +570,17 @@ export function MonitorForm(props: CreateProps | EditProps) {
       )}
       <div>
         <div className="mb-1 flex items-center justify-between gap-2">
-          <label className={labelClass}>{t('monitor_form.name')}</label>
-          <span className="text-[11px] text-slate-400 dark:text-slate-500">
+          <label htmlFor={fieldId + '-0'} className={labelClass}>
+            {t('monitor_form.name')}
+          </label>
+          <span className="text-[11px] text-slate-500 dark:text-slate-400">
             {monitor
               ? t('monitor_form.id_inline_edit', { id: `#${monitor.id}` })
               : t('monitor_form.id_inline_create')}
           </span>
         </div>
         <input
+          id={fieldId + '-0'}
           type="text"
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -587,8 +591,11 @@ export function MonitorForm(props: CreateProps | EditProps) {
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div>
-          <label className={labelClass}>{t('monitor_form.group_optional')}</label>
+          <label htmlFor={fieldId + '-1'} className={labelClass}>
+            {t('monitor_form.group_optional')}
+          </label>
           <input
+            id={fieldId + '-1'}
             type="text"
             value={groupName}
             onChange={(e) => setGroupName(e.target.value)}
@@ -605,8 +612,11 @@ export function MonitorForm(props: CreateProps | EditProps) {
           )}
         </div>
         <div>
-          <label className={labelClass}>{t('monitor_form.group_order')}</label>
+          <label htmlFor={fieldId + '-2'} className={labelClass}>
+            {t('monitor_form.group_order')}
+          </label>
           <input
+            id={fieldId + '-2'}
             type="number"
             value={groupSortOrderInput}
             onChange={(e) => {
@@ -620,8 +630,11 @@ export function MonitorForm(props: CreateProps | EditProps) {
           <div className={FIELD_HELP_CLASS}>{t('monitor_form.group_order_help')}</div>
         </div>
         <div>
-          <label className={labelClass}>{t('monitor_form.sort_order')}</label>
+          <label htmlFor={fieldId + '-3'} className={labelClass}>
+            {t('monitor_form.sort_order')}
+          </label>
           <input
+            id={fieldId + '-3'}
             type="number"
             value={sortOrder}
             onChange={(e) => {
@@ -656,8 +669,11 @@ export function MonitorForm(props: CreateProps | EditProps) {
       </div>
 
       <div>
-        <label className={labelClass}>{t('monitor_form.type')}</label>
+        <label htmlFor={fieldId + '-4'} className={labelClass}>
+          {t('monitor_form.type')}
+        </label>
         <select
+          id={fieldId + '-4'}
           value={type}
           onChange={(e) => setType(e.target.value as MonitorType)}
           className={selectClass}
@@ -669,10 +685,11 @@ export function MonitorForm(props: CreateProps | EditProps) {
       </div>
 
       <div>
-        <label className={labelClass}>
+        <label htmlFor={fieldId + '-5'} className={labelClass}>
           {type === 'http' ? t('monitor_form.target_url') : t('monitor_form.target_host_port')}
         </label>
         <input
+          id={fieldId + '-5'}
           type="text"
           value={target}
           onChange={(e) => setTarget(e.target.value)}
@@ -687,8 +704,11 @@ export function MonitorForm(props: CreateProps | EditProps) {
       </div>
 
       <div>
-        <label className={labelClass}>{t('monitor_form.display_url_optional')}</label>
+        <label htmlFor={fieldId + '-6'} className={labelClass}>
+          {t('monitor_form.display_url_optional')}
+        </label>
         <input
+          id={fieldId + '-6'}
           type="url"
           value={displayUrl}
           onChange={(e) => setDisplayUrl(e.target.value)}
@@ -703,8 +723,11 @@ export function MonitorForm(props: CreateProps | EditProps) {
 
       {type === 'http' && (
         <div>
-          <label className={labelClass}>{t('monitor_form.method')}</label>
+          <label htmlFor={fieldId + '-7'} className={labelClass}>
+            {t('monitor_form.method')}
+          </label>
           <select
+            id={fieldId + '-7'}
             value={httpMethod}
             onChange={(e) => setHttpMethod(toHttpMethod(e.target.value))}
             className={selectClass}
@@ -721,8 +744,11 @@ export function MonitorForm(props: CreateProps | EditProps) {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
-          <label className={labelClass}>{t('monitor_form.interval_sec')}</label>
+          <label htmlFor={fieldId + '-8'} className={labelClass}>
+            {t('monitor_form.interval_sec')}
+          </label>
           <input
+            id={fieldId + '-8'}
             type="number"
             value={intervalSec}
             onChange={(e) => setIntervalSec(Number(e.target.value))}
@@ -731,8 +757,11 @@ export function MonitorForm(props: CreateProps | EditProps) {
           />
         </div>
         <div>
-          <label className={labelClass}>{t('monitor_form.timeout_ms')}</label>
+          <label htmlFor={fieldId + '-9'} className={labelClass}>
+            {t('monitor_form.timeout_ms')}
+          </label>
           <input
+            id={fieldId + '-9'}
             type="number"
             value={timeoutMs}
             onChange={(e) => setTimeoutMs(Number(e.target.value))}
@@ -773,8 +802,11 @@ export function MonitorForm(props: CreateProps | EditProps) {
               </label>
 
               <div>
-                <label className={labelClass}>{t('monitor_form.headers_optional')}</label>
+                <label htmlFor={fieldId + '-10'} className={labelClass}>
+                  {t('monitor_form.headers_optional')}
+                </label>
                 <textarea
+                  id={fieldId + '-10'}
                   value={httpHeadersJson}
                   onChange={(e) => setHttpHeadersJson(e.target.value)}
                   className={`${textareaClass} font-mono`}
@@ -790,8 +822,11 @@ export function MonitorForm(props: CreateProps | EditProps) {
               </div>
 
               <div>
-                <label className={labelClass}>{t('monitor_form.expected_status_optional')}</label>
+                <label htmlFor={fieldId + '-11'} className={labelClass}>
+                  {t('monitor_form.expected_status_optional')}
+                </label>
                 <input
+                  id={fieldId + '-11'}
                   type="text"
                   value={expectedStatusInput}
                   onChange={(e) => setExpectedStatusInput(e.target.value)}
@@ -807,8 +842,11 @@ export function MonitorForm(props: CreateProps | EditProps) {
               </div>
 
               <div>
-                <label className={labelClass}>{t('monitor_form.forbidden_status_optional')}</label>
+                <label htmlFor={fieldId + '-12'} className={labelClass}>
+                  {t('monitor_form.forbidden_status_optional')}
+                </label>
                 <input
+                  id={fieldId + '-12'}
                   type="text"
                   value={forbiddenStatusInput}
                   onChange={(e) => setForbiddenStatusInput(e.target.value)}
@@ -824,8 +862,11 @@ export function MonitorForm(props: CreateProps | EditProps) {
               </div>
 
               <div>
-                <label className={labelClass}>{t('monitor_form.body_optional')}</label>
+                <label htmlFor={fieldId + '-13'} className={labelClass}>
+                  {t('monitor_form.body_optional')}
+                </label>
                 <textarea
+                  id={fieldId + '-13'}
                   value={httpBody}
                   onChange={(e) => setHttpBody(e.target.value)}
                   className={`${textareaClass} font-mono`}
@@ -840,10 +881,11 @@ export function MonitorForm(props: CreateProps | EditProps) {
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="sm:col-span-2">
-                  <label className={labelClass}>
+                  <label htmlFor={fieldId + '-14'} className={labelClass}>
                     {t('monitor_form.response_must_contain_optional')}
                   </label>
                   <input
+                    id={fieldId + '-14'}
                     type="text"
                     value={responseKeyword}
                     onChange={(e) => setResponseKeyword(e.target.value)}
@@ -860,8 +902,11 @@ export function MonitorForm(props: CreateProps | EditProps) {
                   )}
                 </div>
                 <div>
-                  <label className={labelClass}>{t('monitor_form.match_mode')}</label>
+                  <label htmlFor={fieldId + '-15'} className={labelClass}>
+                    {t('monitor_form.match_mode')}
+                  </label>
                   <select
+                    id={fieldId + '-15'}
                     value={responseKeywordMode}
                     onChange={(e) =>
                       setResponseKeywordMode(e.target.value as HttpResponseMatchMode)
@@ -876,10 +921,11 @@ export function MonitorForm(props: CreateProps | EditProps) {
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="sm:col-span-2">
-                  <label className={labelClass}>
+                  <label htmlFor={fieldId + '-16'} className={labelClass}>
                     {t('monitor_form.response_must_not_contain_optional')}
                   </label>
                   <input
+                    id={fieldId + '-16'}
                     type="text"
                     value={responseForbiddenKeyword}
                     onChange={(e) => setResponseForbiddenKeyword(e.target.value)}
@@ -896,8 +942,11 @@ export function MonitorForm(props: CreateProps | EditProps) {
                   )}
                 </div>
                 <div>
-                  <label className={labelClass}>{t('monitor_form.match_mode')}</label>
+                  <label htmlFor={fieldId + '-17'} className={labelClass}>
+                    {t('monitor_form.match_mode')}
+                  </label>
                   <select
+                    id={fieldId + '-17'}
                     value={responseForbiddenKeywordMode}
                     onChange={(e) =>
                       setResponseForbiddenKeywordMode(e.target.value as HttpResponseMatchMode)
