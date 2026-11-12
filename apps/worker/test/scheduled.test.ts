@@ -139,9 +139,9 @@ function createEnv(options: CreateEnvOptions = {}): Env {
       all: () => windowMonitorLinks,
     },
     {
-      match: 'insert into check_results',
+      match: 'insert into check_result_buckets',
       run: (args, normalizedSql) => {
-        onRun?.(normalizedSql, args);
+        onRun?.(normalizedSql, (JSON.parse(args[0] as string) as unknown[][]).flat());
         return { meta: { changes: 1 } };
       },
     },
@@ -609,7 +609,7 @@ describe('scheduler/scheduled regression', () => {
     expect(waitUntil).toHaveBeenCalledTimes(1);
     await Promise.all(waitUntil.mock.calls.map((call) => call[0] as Promise<unknown>));
 
-    expect(selfFetch).toHaveBeenCalledTimes(1);
+    expect(selfFetch).toHaveBeenCalledTimes(2);
     expect(new URL((selfFetch.mock.calls[0]?.[0] as Request).url).pathname).toBe(
       '/api/v1/internal/continue/sharded-public-snapshot',
     );
@@ -619,6 +619,7 @@ describe('scheduler/scheduled regression', () => {
       part: 'envelope',
       monitor_offset: 0,
       monitor_limit: 2,
+      generation_at: expect.any(Number),
     });
     expect(logSpy).toHaveBeenCalledWith(
       'scheduled: homepage_refresh_skip reason=sharded_public_snapshots runtime_updates=0',
@@ -2164,7 +2165,9 @@ describe('scheduler/scheduled regression', () => {
       responseForbiddenKeywordMode: null,
     });
 
-    const checkInsertIndex = runSql.findIndex((sql) => sql.includes('insert into check_results'));
+    const checkInsertIndex = runSql.findIndex((sql) =>
+      sql.includes('insert into check_result_buckets'),
+    );
     expect(checkInsertIndex).toBeGreaterThan(-1);
     expect(runArgs[checkInsertIndex]).toEqual([
       101,
@@ -2573,7 +2576,9 @@ describe('scheduler/scheduled regression', () => {
       timeoutMs: 5000,
     });
 
-    const checkInsertIndex = runSql.findIndex((sql) => sql.includes('insert into check_results'));
+    const checkInsertIndex = runSql.findIndex((sql) =>
+      sql.includes('insert into check_result_buckets'),
+    );
     expect(checkInsertIndex).toBeGreaterThan(-1);
     expect(runArgs[checkInsertIndex]?.[2]).toBe('down');
     expect(runArgs[checkInsertIndex]?.[7]).toBe(2);

@@ -19,18 +19,19 @@ Uptimer 所有可配置参数，按部署时、运行时、本地开发分类。
 
 ### Variables
 
-| 名称                    | 默认值               | 说明                                                                                                        |
-| ----------------------- | -------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `UPTIMER_PREFIX`        | 仓库名 slug          | 统一资源名前缀                                                                                              |
-| `UPTIMER_WORKER_NAME`   | `${UPTIMER_PREFIX}`  | Worker 名称                                                                                                 |
-| `UPTIMER_PAGES_PROJECT` | `${UPTIMER_PREFIX}`  | Pages 项目名（仅 `pages` 模式）                                                                             |
-| `UPTIMER_D1_NAME`       | `${UPTIMER_PREFIX}`  | D1 数据库名                                                                                                 |
-| `UPTIMER_D1_BINDING`    | `DB`                 | Worker 中 D1 binding 名称                                                                                   |
-| `UPTIMER_DEPLOY_MODE`   | `pages`              | `pages`（Pages + Workers）或 `single_worker`（SPA 挂 Worker assets）；手动触发可用输入项 `deploy_mode` 覆盖 |
-| `UPTIMER_API_BASE`      | 自动推导或 `/api/v1` | 完整 API 地址（如 `https://my-worker.example.com/api/v1` 或 `/api/v1`）；仅 `pages` 模式                    |
-| `UPTIMER_API_ORIGIN`    | 自动推导             | API 域名来源（如 `https://my-worker.example.com`，自动追加 `/api/v1`）；仅 `pages` 模式                     |
-| `VITE_ADMIN_PATH`       | —                    | 管理后台路径（可被 Secret 覆盖）                                                                            |
-| `UPTIMER_ADMIN_PATH`    | —                    | 兼容变量名（`VITE_ADMIN_PATH` 的 fallback）                                                                 |
+| 名称                      | 默认值               | 说明                                                                                                                    |
+| ------------------------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `UPTIMER_PREFIX`          | 仓库名 slug          | 统一资源名前缀                                                                                                          |
+| `UPTIMER_WORKER_NAME`     | `${UPTIMER_PREFIX}`  | Worker 名称                                                                                                             |
+| `UPTIMER_PAGES_PROJECT`   | `${UPTIMER_PREFIX}`  | Pages 项目名（仅 `pages` 模式）                                                                                         |
+| `UPTIMER_D1_NAME`         | `${UPTIMER_PREFIX}`  | D1 数据库名                                                                                                             |
+| `UPTIMER_D1_BINDING`      | `DB`                 | Worker 中 D1 binding 名称                                                                                               |
+| `UPTIMER_DEPLOY_MODE`     | `pages`              | `pages`（Pages + Workers）或 `single_worker`（SPA 挂 Worker assets）；手动触发可用输入项 `deploy_mode` 覆盖             |
+| `UPTIMER_RUNTIME_PROFILE` | `free`               | `free`：站点 DO + D1；`paid`：直接 Worker + D1、30s CPU。独立于托管方式，见[运行配置](../Develop/Runtime-Profiles.md)。 |
+| `UPTIMER_API_BASE`        | 自动推导或 `/api/v1` | 完整 API 地址（如 `https://my-worker.example.com/api/v1` 或 `/api/v1`）；仅 `pages` 模式                                |
+| `UPTIMER_API_ORIGIN`      | 自动推导             | API 域名来源（如 `https://my-worker.example.com`，自动追加 `/api/v1`）；仅 `pages` 模式                                 |
+| `VITE_ADMIN_PATH`         | —                    | 管理后台路径（可被 Secret 覆盖）                                                                                        |
+| `UPTIMER_ADMIN_PATH`      | —                    | 兼容变量名（`VITE_ADMIN_PATH` 的 fallback）                                                                             |
 
 > **API 地址（`pages` 模式）**：通常无需配置——工作流会自动检测 Worker URL。仅当 API 使用自定义域名时才需设置 `UPTIMER_API_BASE` 或 `UPTIMER_API_ORIGIN`。两者接受不同格式的同类信息，设置任意一个即可。Pages 还会通过 `apps/web/public/_worker.js` 代理 `/api/*`。
 >

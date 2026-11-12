@@ -19,18 +19,19 @@ Source: `.github/workflows/deploy.yml`
 
 ### Variables
 
-| Name                    | Default                   | Description                                                                                                                            |
-| ----------------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `UPTIMER_PREFIX`        | Repository name slug      | Unified resource name prefix                                                                                                           |
-| `UPTIMER_WORKER_NAME`   | `${UPTIMER_PREFIX}`       | Worker name                                                                                                                            |
-| `UPTIMER_PAGES_PROJECT` | `${UPTIMER_PREFIX}`       | Pages project name (`pages` mode only)                                                                                                 |
-| `UPTIMER_D1_NAME`       | `${UPTIMER_PREFIX}`       | D1 database name                                                                                                                       |
-| `UPTIMER_D1_BINDING`    | `DB`                      | D1 binding name in Worker                                                                                                              |
-| `UPTIMER_DEPLOY_MODE`   | `pages`                   | `pages` (Pages + Workers) or `single_worker` (SPA on Worker assets); `workflow_dispatch` input `deploy_mode` overrides for manual runs |
-| `UPTIMER_API_BASE`      | Auto-derived or `/api/v1` | API address (e.g. `https://my-worker.example.com/api/v1` or `/api/v1`); `pages` mode only                                              |
-| `UPTIMER_API_ORIGIN`    | Auto-derived              | API origin (e.g. `https://my-worker.example.com`); `/api/v1` appended automatically; `pages` mode only                                 |
-| `VITE_ADMIN_PATH`       | —                         | Admin dashboard path (overridden by Secret if set)                                                                                     |
-| `UPTIMER_ADMIN_PATH`    | —                         | Fallback variable for `VITE_ADMIN_PATH`                                                                                                |
+| Name                      | Default                   | Description                                                                                                                            |
+| ------------------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `UPTIMER_PREFIX`          | Repository name slug      | Unified resource name prefix                                                                                                           |
+| `UPTIMER_WORKER_NAME`     | `${UPTIMER_PREFIX}`       | Worker name                                                                                                                            |
+| `UPTIMER_PAGES_PROJECT`   | `${UPTIMER_PREFIX}`       | Pages project name (`pages` mode only)                                                                                                 |
+| `UPTIMER_D1_NAME`         | `${UPTIMER_PREFIX}`       | D1 database name                                                                                                                       |
+| `UPTIMER_D1_BINDING`      | `DB`                      | D1 binding name in Worker                                                                                                              |
+| `UPTIMER_DEPLOY_MODE`     | `pages`                   | `pages` (Pages + Workers) or `single_worker` (SPA on Worker assets); `workflow_dispatch` input `deploy_mode` overrides for manual runs |
+| `UPTIMER_RUNTIME_PROFILE` | `free`                    | `free`: site DO + D1; `paid`: direct Worker + D1 with 30s CPU. See [profiles](../Develop/Runtime-Profiles.md); independent of hosting. |
+| `UPTIMER_API_BASE`        | Auto-derived or `/api/v1` | API address (e.g. `https://my-worker.example.com/api/v1` or `/api/v1`); `pages` mode only                                              |
+| `UPTIMER_API_ORIGIN`      | Auto-derived              | API origin (e.g. `https://my-worker.example.com`); `/api/v1` appended automatically; `pages` mode only                                 |
+| `VITE_ADMIN_PATH`         | —                         | Admin dashboard path (overridden by Secret if set)                                                                                     |
+| `UPTIMER_ADMIN_PATH`      | —                         | Fallback variable for `VITE_ADMIN_PATH`                                                                                                |
 
 > **API address (`pages` mode)**: Usually no configuration needed — the workflow detects the Worker URL automatically. Set `UPTIMER_API_BASE` or `UPTIMER_API_ORIGIN` only if the API is on a custom domain. Both accept the same information in different formats; setting one is enough. Pages also proxies `/api/*` via `apps/web/public/_worker.js`.
 >

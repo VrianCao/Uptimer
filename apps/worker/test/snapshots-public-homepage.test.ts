@@ -713,7 +713,8 @@ describe('snapshots/public-homepage', () => {
     const nextPayload = samplePayload(now);
     const db = createFakeD1Database([
       {
-        match: 'select key, generated_at, updated_at, body_json from public_snapshots',
+        match:
+          /select key, generated_at, updated_at(?:, body_revision)?, body_json from public_snapshots/,
         all: () => [
           {
             key: 'homepage',
@@ -868,7 +869,8 @@ describe('snapshots/public-homepage', () => {
     const artifactPayload = samplePayload(now - 60);
     const db = createFakeD1Database([
       {
-        match: 'select key, generated_at, updated_at, body_json from public_snapshots',
+        match:
+          /select key, generated_at, updated_at(?:, body_revision)?, body_json from public_snapshots/,
         all: () => [
           {
             key: 'homepage',
@@ -900,7 +902,8 @@ describe('snapshots/public-homepage', () => {
     let readCount = 0;
     const db = createFakeD1Database([
       {
-        match: 'select key, generated_at, updated_at, body_json from public_snapshots',
+        match:
+          /select key, generated_at, updated_at(?:, body_revision)?, body_json from public_snapshots/,
         all: () => {
           readCount += 1;
           return [
@@ -948,7 +951,8 @@ describe('snapshots/public-homepage', () => {
     let readCount = 0;
     const db = createFakeD1Database([
       {
-        match: 'select key, generated_at, updated_at, body_json from public_snapshots',
+        match:
+          /select key, generated_at, updated_at(?:, body_revision)?, body_json from public_snapshots/,
         all: () => {
           readCount += 1;
           return [
@@ -976,7 +980,8 @@ describe('snapshots/public-homepage', () => {
     const payload = samplePayload(now - 60);
     const db = createFakeD1Database([
       {
-        match: 'select key, generated_at, updated_at, body_json from public_snapshots',
+        match:
+          /select key, generated_at, updated_at(?:, body_revision)?, body_json from public_snapshots/,
         all: () => [
           {
             key: 'homepage',
@@ -1008,7 +1013,8 @@ describe('snapshots/public-homepage', () => {
     const futurePayload = samplePayload(now + 600);
     const db = createFakeD1Database([
       {
-        match: 'select key, generated_at, updated_at, body_json from public_snapshots',
+        match:
+          /select key, generated_at, updated_at(?:, body_revision)?, body_json from public_snapshots/,
         all: () => [
           {
             key: 'homepage',
@@ -1039,7 +1045,8 @@ describe('snapshots/public-homepage', () => {
     const mismatchedPayload = samplePayload(now - 120);
     const db = createFakeD1Database([
       {
-        match: 'select key, generated_at, updated_at, body_json from public_snapshots',
+        match:
+          /select key, generated_at, updated_at(?:, body_revision)?, body_json from public_snapshots/,
         all: () => [
           {
             key: 'homepage',
@@ -1098,7 +1105,7 @@ describe('snapshots/public-homepage', () => {
     const bodyReads: string[] = [];
     const db = createFakeD1Database([
       {
-        match: 'select key, generated_at, updated_at from public_snapshots',
+        match: /select key, generated_at, updated_at(?:, body_revision)? from public_snapshots/,
         all: () => {
           metadataReads += 1;
           return [
@@ -1116,7 +1123,8 @@ describe('snapshots/public-homepage', () => {
         },
       },
       {
-        match: 'select generated_at, updated_at, body_json from public_snapshots',
+        match:
+          /select generated_at, updated_at(?:, body_revision)?, body_json from public_snapshots/,
         first: (args) => {
           const key = String(args[0]);
           bodyReads.push(key);
@@ -1152,7 +1160,8 @@ describe('snapshots/public-homepage', () => {
     const futurePayload = samplePayload(now + 600);
     const db = createFakeD1Database([
       {
-        match: 'select key, generated_at, updated_at, body_json from public_snapshots',
+        match:
+          /select key, generated_at, updated_at(?:, body_revision)?, body_json from public_snapshots/,
         all: () => [
           {
             key: 'homepage:artifact',
