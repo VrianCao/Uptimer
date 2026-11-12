@@ -4,6 +4,7 @@ import {
   integer,
   primaryKey,
   sqliteTable,
+  sqliteView,
   text,
   uniqueIndex,
 } from 'drizzle-orm/sqlite-core';
@@ -71,12 +72,15 @@ export const monitorState = sqliteTable('monitor_state', {
   lastChangedAt: integer('last_changed_at'),
   lastLatencyMs: integer('last_latency_ms'),
   lastError: text('last_error'),
+  checkSummaryJson: text('check_summary_json'),
+  pendingHour: integer('pending_hour'),
+  pendingSamplesJson: text('pending_samples_json').notNull().default('[]'),
   consecutiveFailures: integer('consecutive_failures').notNull().default(0),
   consecutiveSuccesses: integer('consecutive_successes').notNull().default(0),
 });
 
-export const checkResults = sqliteTable(
-  'check_results',
+export const legacyCheckResults = sqliteTable(
+  'check_results_legacy',
   {
     id: integer('id').primaryKey({ autoIncrement: true }),
     monitorId: integer('monitor_id').notNull(),
@@ -90,6 +94,34 @@ export const checkResults = sqliteTable(
   },
   (t) => ({
     monitorTimeIdx: index('idx_check_results_monitor_time').on(t.monitorId, t.checkedAt),
+  }),
+);
+
+// Read-compatible union of legacy rows and lossless hourly sample buckets.
+export const checkResults = sqliteView('check_results', {
+  id: integer('id'),
+  monitorId: integer('monitor_id').notNull(),
+  checkedAt: integer('checked_at').notNull(),
+  status: text('status').$type<CheckStatus>().notNull(),
+  latencyMs: integer('latency_ms'),
+  httpStatus: integer('http_status'),
+  error: text('error'),
+  location: text('location'),
+  attempt: integer('attempt').notNull(),
+  bucketStartAt: integer('bucket_start_at').notNull(),
+  storageShard: integer('storage_shard').notNull(),
+}).existing();
+
+export const checkResultBuckets = sqliteTable(
+  'check_result_buckets',
+  {
+    shardId: integer('shard_id').notNull(),
+    bucketStartAt: integer('bucket_start_at').notNull(),
+    samplesJson: text('samples_json').notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.shardId, t.bucketStartAt] }),
+    timeIdx: index('idx_check_result_buckets_time').on(t.bucketStartAt, t.shardId),
   }),
 );
 
@@ -114,6 +146,7 @@ export const incidents = sqliteTable('incidents', {
   status: text('status').$type<IncidentStatus>().notNull(),
   impact: text('impact').$type<IncidentImpact>().notNull().default('minor'),
   message: text('message'),
+  scope: text('scope').$type<'global' | 'monitors'>().notNull().default('monitors'),
   startedAt: integer('started_at')
     .notNull()
     .default(sql`(CAST(strftime('%s','now') AS INTEGER))`),
@@ -156,6 +189,7 @@ export const maintenanceWindows = sqliteTable('maintenance_windows', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   title: text('title').notNull(),
   message: text('message'),
+  scope: text('scope').$type<'global' | 'monitors'>().notNull().default('monitors'),
   startsAt: integer('starts_at').notNull(),
   endsAt: integer('ends_at').notNull(),
   createdAt: integer('created_at')
@@ -217,6 +251,7 @@ export const publicSnapshots = sqliteTable('public_snapshots', {
   key: text('key').primaryKey(),
   generatedAt: integer('generated_at').notNull(),
   bodyJson: text('body_json').notNull(),
+  bodyRevision: text('body_revision').notNull().default(''),
   updatedAt: integer('updated_at')
     .notNull()
     .default(sql`(CAST(strftime('%s','now') AS INTEGER))`),

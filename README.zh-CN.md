@@ -22,7 +22,7 @@
 
 - **零运维** — 无需管理服务器、容器或数据库。完全运行在 Cloudflare 的免费/付费套餐上。
 - **边缘原生** — 监控探针从 Cloudflare Workers 发起，状态页由 CDN 边缘节点分发。
-- **一键部署** — 推送到 `main` 分支，GitHub Actions 自动完成：D1 迁移、Worker API 与 Pages 前端（可选 single Worker 模式）。
+- **审阅后部署** — GitHub Actions 先完成 CI 和构建，通过手动 plan/apply 将同一份已审阅包部署到 Workers + Pages 或 Workers Assets。
 - **功能完整** — HTTP/TCP 探测、事件管理、维护窗口、Webhook 通知、管理后台。
 
 ## 功能特性
@@ -130,41 +130,43 @@ Admin ─────────►│  Workers (Hono API)                     
 | ----------------------- | ------------------------------------------------------------------------------------------------------------- | :------: |
 | `CLOUDFLARE_API_TOKEN`  | 第 2 步获取的 Token                                                                                           |   必填   |
 | `UPTIMER_ADMIN_TOKEN`   | 任意强密码字符串（用于登录管理后台）                                                                          |   必填   |
-| `CLOUDFLARE_ACCOUNT_ID` | 你的 [Cloudflare Account ID](https://developers.cloudflare.com/fundamentals/setup/find-account-and-zone-ids/) |   推荐   |
+| `CLOUDFLARE_ACCOUNT_ID` | 你的 [Cloudflare Account ID](https://developers.cloudflare.com/fundamentals/setup/find-account-and-zone-ids/) |   必填   |
 
 可选仓库 **变量**（非 Secret）：`UPTIMER_DEPLOY_MODE` = `pages`（默认）或 `single_worker`。
 
+Workers Paid/Standard 账户可设置仓库变量 `UPTIMER_RUNTIME_PROFILE=paid`，直接使用 Worker + D1；默认 `free` 使用站点 DO 协调。该选项独立于托管方式，详见[运行配置与限制](Develop/Runtime-Profiles.md)。
+
 ### 第 4 步 — 运行 GitHub Actions
 
-进入 **Actions** → **Deploy to Cloudflare** → **Run workflow**（或直接向 `main`/`master` 推送一次提交）。
+先配置 `cloudflare-release` Environment 的审批与分支保护，再进入 **Actions → Deploy to Cloudflare**：
 
-工作流会自动完成：
+1. **空实例首装**选择 `release_action=plan`、`operation=install`；先完成 CI 和全部构建，不写入云端。
+2. 审阅 `uptimer-release-package` artifact 与 Summary，核对准确目标及 blockers。
+3. 在**同一源码提交**运行 `release_action=apply`，填写计划的 run ID 与完整 hash；直接部署已审阅包，不重新构建。
 
-- 创建 D1 数据库并执行迁移
-- 部署 Worker（API + 定时探测）
-- 默认模式：构建前端（Vite）并部署到 Cloudflare Pages
-- single_worker 模式：构建前端，并作为静态资源与 Worker 一起上传
-- 注入管理密钥为 Worker Secret
+普通 push/同步只跑 CI，不自动部署。已有实例选 `operation=upgrade` 并设置仓库变量 **`UPTIMER_D1_ID`**。已有 Worker 尚有待执行 migration 时会**阻断 apply**，须先演练[旧版维护/恢复流程](docs/upgrade-and-recovery.md)；profile/hosting 切换也需独立方案。升级保留已有 Secret。
 
 ### 第 5 步 — 访问你的状态页
 
-工作流运行成功后（首次部署通常约 2 分钟）：
+apply 与新鲜度验收成功后：
 
 **默认（`pages` 模式）：**
 
 - **状态页** → `https://<你的-pages-项目名>.pages.dev`
 - **管理后台** → `https://<你的-pages-项目名>.pages.dev/admin`
-- **API** → `https://<你的-worker-名>.workers.dev/api/v1/public/status`
+- **API** → `https://<你的-worker-名>.<账户子域>.workers.dev/api/v1/public/status`
 
 **可选（`single_worker` 模式）：**
 
-- **状态页** → `https://<你的-worker-名>.workers.dev`
-- **管理后台** → `https://<你的-worker-名>.workers.dev/admin`
-- **API** → `https://<你的-worker-名>.workers.dev/api/v1/public/status`
+- **状态页** → `https://<你的-worker-名>.<账户子域>.workers.dev`
+- **管理后台** → `https://<你的-worker-名>.<账户子域>.workers.dev/admin`
+- **API** → `https://<你的-worker-名>.<账户子域>.workers.dev/api/v1/public/status`
+
+首装完成后，从 receipt 保存分配的 D1 UUID 为 `UPTIMER_D1_ID`，用于后续 upgrade 计划。
 
 使用你设置的 `UPTIMER_ADMIN_TOKEN` 登录管理后台，即可开始添加监控项。
 
-> **保持更新** — 由于你从自己的 Fork 部署，随时可以[同步上游仓库](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/working-with-forks/syncing-a-fork)获取最新功能。每次同步后，部署工作流会自动运行。
+> **保持更新** — 由于你从自己的 Fork 部署，随时可以[同步上游仓库](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/working-with-forks/syncing-a-fork)获取最新功能。同步会触发 CI；更新实例前需重新审阅计划并明确执行 apply。
 
 > 高级选项（自定义域名、资源命名、管理路径等）请参阅[部署指南](docs/deploy-github-actions.zh-CN.md)。
 
