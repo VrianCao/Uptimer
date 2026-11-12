@@ -1,3 +1,4 @@
+import { Dialog } from '../components/Dialog';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -7,14 +8,7 @@ import { useApplyServerLocaleSetting } from '../app/useApplyServerLocaleSetting'
 import { ApiError, fetchPublicIncidents, fetchStatus } from '../api/client';
 import type { Incident } from '../api/types';
 import { Markdown } from '../components/Markdown';
-import {
-  Badge,
-  Button,
-  Card,
-  MODAL_OVERLAY_CLASS,
-  MODAL_PANEL_CLASS,
-  ThemeToggle,
-} from '../components/ui';
+import { Badge, Button, Card, ThemeToggle } from '../components/ui';
 import { incidentImpactLabel, incidentStatusLabel } from '../i18n/labels';
 import { formatDateTime, getBrowserTimeZone } from '../utils/datetime';
 
@@ -75,95 +69,91 @@ function IncidentDetail({
   const { locale, t } = useI18n();
 
   return (
-    <div className={MODAL_OVERLAY_CLASS} onClick={onClose}>
-      <div
-        className={`${MODAL_PANEL_CLASS} sm:max-w-2xl p-5 sm:p-6`}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex justify-between items-start mb-4 sm:mb-6">
-          <div>
-            <h2 className="text-lg sm:text-xl font-semibold text-slate-900 dark:text-slate-100 mb-2">
-              {incident.title}
-            </h2>
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge
-                variant={
-                  incident.impact === 'critical' || incident.impact === 'major' ? 'down' : 'paused'
-                }
-              >
-                {incidentImpactLabel(incident.impact, t)}
-              </Badge>
-              <Badge variant="info">{incidentStatusLabel(incident.status, t)}</Badge>
-            </div>
+    <Dialog label={incident.title} onClose={onClose} className="sm:max-w-2xl p-5 sm:p-6">
+      <div className="flex justify-between items-start mb-4 sm:mb-6">
+        <div>
+          <h2 className="text-lg sm:text-xl font-semibold text-slate-900 dark:text-slate-100 mb-2">
+            {incident.title}
+          </h2>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge
+              variant={
+                incident.impact === 'critical' || incident.impact === 'major' ? 'down' : 'paused'
+              }
+            >
+              {incidentImpactLabel(incident.impact, t)}
+            </Badge>
+            <Badge variant="info">{incidentStatusLabel(incident.status, t)}</Badge>
           </div>
-          <Button
-            onClick={onClose}
-            variant="ghost"
-            size="sm"
-            className="h-8 w-8 rounded-full !p-0 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M6 18L18 6M6 6l12 12"
-              />
-            </svg>
-          </Button>
         </div>
+        <Button
+          onClick={onClose}
+          aria-label={t('common.close')}
+          variant="ghost"
+          size="sm"
+          className="h-8 w-8 rounded-full !p-0 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+        >
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M6 18L18 6M6 6l12 12"
+            />
+          </svg>
+        </Button>
+      </div>
 
-        <div className="space-y-2 sm:space-y-3 text-sm text-slate-600 dark:text-slate-300 mb-4 sm:mb-6 pb-4 sm:pb-6 border-b border-slate-100 dark:border-slate-700">
+      <div className="space-y-2 sm:space-y-3 text-sm text-slate-600 dark:text-slate-300 mb-4 sm:mb-6 pb-4 sm:pb-6 border-b border-slate-100 dark:border-slate-700">
+        <div className="flex flex-col sm:flex-row sm:gap-2">
+          <span className="text-slate-500 dark:text-slate-400 sm:w-20 text-xs sm:text-sm">
+            {t('common.affected')}:
+          </span>
+          <span className="text-sm">
+            {incident.monitor_ids.map((id) => monitorNames.get(id) ?? `#${id}`).join(', ')}
+          </span>
+        </div>
+        <div className="flex flex-col sm:flex-row sm:gap-2">
+          <span className="text-slate-500 dark:text-slate-400 sm:w-20 text-xs sm:text-sm">
+            {t('common.started')}:
+          </span>
+          <span className="text-sm">{formatDateTime(incident.started_at, timeZone, locale)}</span>
+        </div>
+        {incident.resolved_at && (
           <div className="flex flex-col sm:flex-row sm:gap-2">
-            <span className="text-slate-400 dark:text-slate-500 sm:w-20 text-xs sm:text-sm">
-              {t('common.affected')}:
+            <span className="text-slate-500 dark:text-slate-400 sm:w-20 text-xs sm:text-sm">
+              {t('common.resolved')}:
             </span>
             <span className="text-sm">
-              {incident.monitor_ids.map((id) => monitorNames.get(id) ?? `#${id}`).join(', ')}
+              {formatDateTime(incident.resolved_at, timeZone, locale)}
             </span>
           </div>
-          <div className="flex flex-col sm:flex-row sm:gap-2">
-            <span className="text-slate-400 dark:text-slate-500 sm:w-20 text-xs sm:text-sm">
-              {t('common.started')}:
-            </span>
-            <span className="text-sm">{formatDateTime(incident.started_at, timeZone, locale)}</span>
-          </div>
-          {incident.resolved_at && (
-            <div className="flex flex-col sm:flex-row sm:gap-2">
-              <span className="text-slate-400 dark:text-slate-500 sm:w-20 text-xs sm:text-sm">
-                {t('common.resolved')}:
-              </span>
-              <span className="text-sm">
-                {formatDateTime(incident.resolved_at, timeZone, locale)}
-              </span>
-            </div>
-          )}
-        </div>
-
-        <div className="space-y-4">
-          {incident.message && (
-            <div className="bg-slate-50 dark:bg-slate-700/50 rounded-lg p-4">
-              <div className="text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500 mb-2">
-                {t('status_page.initial_report')}
-              </div>
-              <Markdown text={incident.message} />
-            </div>
-          )}
-
-          {incident.updates.map((u) => (
-            <div key={u.id} className="border-l-2 border-slate-200 dark:border-slate-600 pl-4">
-              <div className="flex items-center gap-3 mb-2">
-                {u.status && <Badge variant="info">{incidentStatusLabel(u.status, t)}</Badge>}
-                <span className="text-xs text-slate-400 dark:text-slate-500">
-                  {formatDateTime(u.created_at, timeZone, locale)}
-                </span>
-              </div>
-              <Markdown text={u.message} />
-            </div>
-          ))}
-        </div>
+        )}
       </div>
-    </div>
+
+      <div className="space-y-4">
+        {incident.message && (
+          <div className="bg-slate-50 dark:bg-slate-700/50 rounded-lg p-4">
+            <div className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-2">
+              {t('status_page.initial_report')}
+            </div>
+            <Markdown text={incident.message} />
+          </div>
+        )}
+
+        {incident.updates.map((u) => (
+          <div key={u.id} className="border-l-2 border-slate-200 dark:border-slate-600 pl-4">
+            <div className="flex items-center gap-3 mb-2">
+              {u.status && <Badge variant="info">{incidentStatusLabel(u.status, t)}</Badge>}
+              <span className="text-xs text-slate-500 dark:text-slate-400">
+                {formatDateTime(u.created_at, timeZone, locale)}
+              </span>
+            </div>
+            <Markdown text={u.message} />
+          </div>
+        ))}
+      </div>
+    </Dialog>
   );
 }
 

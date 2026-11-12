@@ -1,5 +1,6 @@
-import { useQuery } from '@tanstack/react-query';
-import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
+import { Dialog } from '../components/Dialog';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 
 import { useI18n } from '../app/I18nContext';
@@ -9,7 +10,7 @@ import {
   fetchHomepage,
   fetchPublicDayContext,
   fetchPublicIncidentDetail,
-  fetchPublicMonitorOutages,
+  fetchPublicDayOutages,
 } from '../api/client';
 import type { Incident, IncidentSummary, Outage, PublicHomepageResponse } from '../api/types';
 import { DayDowntimeModal } from '../components/DayDowntimeModal';
@@ -17,15 +18,13 @@ import { Markdown } from '../components/Markdown';
 import { MonitorCard } from '../components/MonitorCard';
 import { incidentImpactLabel, incidentStatusLabel } from '../i18n/labels';
 import { formatDateTime, getBrowserTimeZone } from '../utils/datetime';
-import { Badge, Card, MODAL_OVERLAY_CLASS, MODAL_PANEL_CLASS, ThemeToggle } from '../components/ui';
+import { Badge, Button, Card, ThemeToggle } from '../components/ui';
 
 type BannerStatus = PublicHomepageResponse['banner']['status'];
 type IncidentCardData = IncidentSummary | Incident;
 
-const LatencyChart = lazy(async () => {
-  const mod = await import('../components/LatencyChart');
-  return { default: mod.LatencyChart };
-});
+const loadLatencyChart = () => import('../components/LatencyChart');
+const LatencyChart = lazy(() => loadLatencyChart().then((mod) => ({ default: mod.LatencyChart })));
 
 function getBannerConfig(status: BannerStatus, t: ReturnType<typeof useI18n>['t']) {
   const configs = {
@@ -63,79 +62,100 @@ function monitorGroupLabel(groupName: string | null | undefined, ungroupedLabel:
   return trimmed.length > 0 ? trimmed : ungroupedLabel;
 }
 
-function MonitorDetail({ monitorId, onClose }: { monitorId: number; onClose: () => void }) {
+function MonitorDetail({
+  monitorId,
+  monitorName,
+  onClose,
+}: {
+  monitorId: number;
+  monitorName: string;
+  onClose: () => void;
+}) {
   const { t } = useI18n();
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isFetching, isRefetchError, fetchStatus, refetch } = useQuery({
     queryKey: ['latency', monitorId],
-    queryFn: () => fetchLatency(monitorId),
+    queryFn: ({ signal }) => fetchLatency(monitorId, '24h', signal),
+    // Show intent-prefetched data immediately, then verify the latest probe.
+    staleTime: 0,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
+    refetchInterval: 30_000,
   });
 
   return (
-    <div className={MODAL_OVERLAY_CLASS} onClick={onClose}>
-      <div
-        className={`${MODAL_PANEL_CLASS} sm:max-w-2xl p-5 sm:p-6`}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex justify-between items-center mb-6">
-          <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
-            {data?.monitor.name ?? t('common.loading')}
-          </h2>
-          <button
-            onClick={onClose}
-            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M6 18L18 6M6 6l12 12"
-              />
-            </svg>
-          </button>
-        </div>
+    <Dialog
+      label={data?.monitor.name ?? monitorName}
+      onClose={onClose}
+      className="sm:max-w-2xl p-5 sm:p-6"
+    >
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
+          {data?.monitor.name ?? monitorName}
+        </h2>
+        <button
+          onClick={onClose}
+          aria-label={t('common.close')}
+          className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+        >
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M6 18L18 6M6 6l12 12"
+            />
+          </svg>
+        </button>
+      </div>
 
-        {isLoading ? (
-          <div className="h-[200px] flex items-center justify-center text-slate-500 dark:text-slate-400">
-            {t('status_page.loading_chart')}
-          </div>
-        ) : data ? (
-          <>
-            <div className="grid grid-cols-2 gap-3 sm:gap-6 mb-6">
-              <div className="bg-slate-50 dark:bg-slate-700/50 rounded-lg px-3 sm:px-4 py-2.5 sm:py-3">
-                <div className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-1">
-                  {t('status_page.avg_latency')}
-                </div>
-                <div className="text-base sm:text-lg font-semibold text-slate-900 dark:text-slate-100">
-                  {data.avg_latency_ms ?? '-'}ms
-                </div>
+      {isLoading ? (
+        <div className="h-[200px] flex items-center justify-center text-slate-500 dark:text-slate-400">
+          {t('status_page.loading_chart')}
+        </div>
+      ) : data ? (
+        <>
+          {(isRefetchError || fetchStatus === 'paused') && (
+            <p role="status" className="mb-4 text-xs text-amber-700 dark:text-amber-400">
+              {t('status_page.cached_data')}
+            </p>
+          )}
+          <div className="grid grid-cols-2 gap-3 sm:gap-6 mb-6">
+            <div className="bg-slate-50 dark:bg-slate-700/50 rounded-lg px-3 sm:px-4 py-2.5 sm:py-3">
+              <div className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-1">
+                {t('status_page.avg_latency')}
               </div>
-              <div className="bg-slate-50 dark:bg-slate-700/50 rounded-lg px-3 sm:px-4 py-2.5 sm:py-3">
-                <div className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-1">
-                  {t('status_page.p95_latency')}
-                </div>
-                <div className="text-base sm:text-lg font-semibold text-slate-900 dark:text-slate-100">
-                  {data.p95_latency_ms ?? '-'}ms
-                </div>
+              <div className="text-base sm:text-lg font-semibold text-slate-900 dark:text-slate-100">
+                {data.avg_latency_ms ?? '-'}ms
               </div>
             </div>
-            <Suspense
-              fallback={
-                <div className="h-[200px] flex items-center justify-center text-slate-500 dark:text-slate-400">
-                  {t('status_page.loading_chart')}
-                </div>
-              }
-            >
-              <LatencyChart points={data.points} />
-            </Suspense>
-          </>
-        ) : (
-          <div className="h-[200px] flex items-center justify-center text-slate-500 dark:text-slate-400">
-            {t('status_page.failed_load_data')}
+            <div className="bg-slate-50 dark:bg-slate-700/50 rounded-lg px-3 sm:px-4 py-2.5 sm:py-3">
+              <div className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-1">
+                {t('status_page.p95_latency')}
+              </div>
+              <div className="text-base sm:text-lg font-semibold text-slate-900 dark:text-slate-100">
+                {data.p95_latency_ms ?? '-'}ms
+              </div>
+            </div>
           </div>
-        )}
-      </div>
-    </div>
+          <Suspense
+            fallback={
+              <div className="h-[200px] flex items-center justify-center text-slate-500 dark:text-slate-400">
+                {t('status_page.loading_chart')}
+              </div>
+            }
+          >
+            <LatencyChart points={data.points} />
+          </Suspense>
+        </>
+      ) : (
+        <div className="h-[200px] flex flex-col gap-3 items-center justify-center text-slate-500 dark:text-slate-400">
+          <p role="alert">{t('status_page.failed_load_data')}</p>
+          <Button onClick={() => void refetch()} disabled={isFetching}>
+            {t('common.retry')}
+          </Button>
+        </div>
+      )}
+    </Dialog>
   );
 }
 
@@ -200,109 +220,105 @@ function IncidentDetail({
   const { locale, t } = useI18n();
 
   return (
-    <div className={MODAL_OVERLAY_CLASS} onClick={onClose}>
-      <div
-        className={`${MODAL_PANEL_CLASS} sm:max-w-2xl p-5 sm:p-6`}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex justify-between items-start mb-4 sm:mb-6">
-          <div>
-            <h2 className="text-lg sm:text-xl font-semibold text-slate-900 dark:text-slate-100 mb-2">
-              {incident.title}
-            </h2>
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge
-                variant={
-                  incident.impact === 'critical' || incident.impact === 'major' ? 'down' : 'paused'
-                }
-              >
-                {incidentImpactLabel(incident.impact, t)}
-              </Badge>
-              <Badge variant="info">{incidentStatusLabel(incident.status, t)}</Badge>
-            </div>
+    <Dialog label={incident.title} onClose={onClose} className="sm:max-w-2xl p-5 sm:p-6">
+      <div className="flex justify-between items-start mb-4 sm:mb-6">
+        <div>
+          <h2 className="text-lg sm:text-xl font-semibold text-slate-900 dark:text-slate-100 mb-2">
+            {incident.title}
+          </h2>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge
+              variant={
+                incident.impact === 'critical' || incident.impact === 'major' ? 'down' : 'paused'
+              }
+            >
+              {incidentImpactLabel(incident.impact, t)}
+            </Badge>
+            <Badge variant="info">{incidentStatusLabel(incident.status, t)}</Badge>
           </div>
-          <button
-            onClick={onClose}
-            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M6 18L18 6M6 6l12 12"
-              />
-            </svg>
-          </button>
         </div>
+        <button
+          onClick={onClose}
+          aria-label={t('common.close')}
+          className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+        >
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M6 18L18 6M6 6l12 12"
+            />
+          </svg>
+        </button>
+      </div>
 
-        <div className="space-y-2 sm:space-y-3 text-sm text-slate-600 dark:text-slate-300 mb-4 sm:mb-6 pb-4 sm:pb-6 border-b border-slate-100 dark:border-slate-700">
+      <div className="space-y-2 sm:space-y-3 text-sm text-slate-600 dark:text-slate-300 mb-4 sm:mb-6 pb-4 sm:pb-6 border-b border-slate-100 dark:border-slate-700">
+        <div className="flex flex-col sm:flex-row sm:gap-2">
+          <span className="text-slate-500 dark:text-slate-400 sm:w-20 text-xs sm:text-sm">
+            {t('common.affected')}:
+          </span>
+          <span className="text-sm">
+            {incident.monitor_ids.length > 0
+              ? incident.monitor_ids.map((id) => monitorNames.get(id) ?? `#${id}`).join(', ')
+              : isLoadingDetails
+                ? t('common.loading')
+                : hasDetailsError
+                  ? t('status_page.failed_load_data')
+                  : '-'}
+          </span>
+        </div>
+        <div className="flex flex-col sm:flex-row sm:gap-2">
+          <span className="text-slate-500 dark:text-slate-400 sm:w-20 text-xs sm:text-sm">
+            {t('common.started')}:
+          </span>
+          <span className="text-sm">{formatDateTime(incident.started_at, timeZone, locale)}</span>
+        </div>
+        {incident.resolved_at && (
           <div className="flex flex-col sm:flex-row sm:gap-2">
-            <span className="text-slate-400 dark:text-slate-500 sm:w-20 text-xs sm:text-sm">
-              {t('common.affected')}:
+            <span className="text-slate-500 dark:text-slate-400 sm:w-20 text-xs sm:text-sm">
+              {t('common.resolved')}:
             </span>
             <span className="text-sm">
-              {incident.monitor_ids.length > 0
-                ? incident.monitor_ids.map((id) => monitorNames.get(id) ?? `#${id}`).join(', ')
-                : isLoadingDetails
-                  ? t('common.loading')
-                  : hasDetailsError
-                    ? t('status_page.failed_load_data')
-                    : '-'}
+              {formatDateTime(incident.resolved_at, timeZone, locale)}
             </span>
           </div>
-          <div className="flex flex-col sm:flex-row sm:gap-2">
-            <span className="text-slate-400 dark:text-slate-500 sm:w-20 text-xs sm:text-sm">
-              {t('common.started')}:
-            </span>
-            <span className="text-sm">{formatDateTime(incident.started_at, timeZone, locale)}</span>
-          </div>
-          {incident.resolved_at && (
-            <div className="flex flex-col sm:flex-row sm:gap-2">
-              <span className="text-slate-400 dark:text-slate-500 sm:w-20 text-xs sm:text-sm">
-                {t('common.resolved')}:
-              </span>
-              <span className="text-sm">
-                {formatDateTime(incident.resolved_at, timeZone, locale)}
-              </span>
-            </div>
-          )}
-        </div>
-
-        <div className="space-y-4">
-          {incident.message && (
-            <div className="bg-slate-50 dark:bg-slate-700/50 rounded-lg p-4">
-              <div className="text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500 mb-2">
-                {t('status_page.initial_report')}
-              </div>
-              <Markdown text={incident.message} />
-            </div>
-          )}
-
-          {incident.updates.map((u) => (
-            <div key={u.id} className="border-l-2 border-slate-200 dark:border-slate-600 pl-4">
-              <div className="flex items-center gap-3 mb-2">
-                {u.status && <Badge variant="info">{incidentStatusLabel(u.status, t)}</Badge>}
-                <span className="text-xs text-slate-400 dark:text-slate-500">
-                  {formatDateTime(u.created_at, timeZone, locale)}
-                </span>
-              </div>
-              <Markdown text={u.message} />
-            </div>
-          ))}
-
-          {incident.updates.length === 0 && isLoadingDetails && (
-            <div className="text-sm text-slate-500 dark:text-slate-400">{t('common.loading')}</div>
-          )}
-
-          {incident.updates.length === 0 && hasDetailsError && (
-            <div className="text-sm text-red-600 dark:text-red-400">
-              {t('status_page.failed_load_data')}
-            </div>
-          )}
-        </div>
+        )}
       </div>
-    </div>
+
+      <div className="space-y-4">
+        {incident.message && (
+          <div className="bg-slate-50 dark:bg-slate-700/50 rounded-lg p-4">
+            <div className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-2">
+              {t('status_page.initial_report')}
+            </div>
+            <Markdown text={incident.message} />
+          </div>
+        )}
+
+        {incident.updates.map((u) => (
+          <div key={u.id} className="border-l-2 border-slate-200 dark:border-slate-600 pl-4">
+            <div className="flex items-center gap-3 mb-2">
+              {u.status && <Badge variant="info">{incidentStatusLabel(u.status, t)}</Badge>}
+              <span className="text-xs text-slate-500 dark:text-slate-400">
+                {formatDateTime(u.created_at, timeZone, locale)}
+              </span>
+            </div>
+            <Markdown text={u.message} />
+          </div>
+        ))}
+
+        {incident.updates.length === 0 && isLoadingDetails && (
+          <div className="text-sm text-slate-500 dark:text-slate-400">{t('common.loading')}</div>
+        )}
+
+        {incident.updates.length === 0 && hasDetailsError && (
+          <div className="text-sm text-red-600 dark:text-red-400">
+            {t('status_page.failed_load_data')}
+          </div>
+        )}
+      </div>
+    </Dialog>
   );
 }
 
@@ -350,6 +366,12 @@ function StatusPageSkeleton() {
 
 export function StatusPage() {
   const { locale, t } = useI18n();
+  const queryClient = useQueryClient();
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(timer);
+  }, []);
   const [selectedMonitorId, setSelectedMonitorId] = useState<number | null>(null);
   const [selectedIncidentRequest, setSelectedIncidentRequest] = useState<{
     incident: IncidentCardData;
@@ -361,20 +383,25 @@ export function StatusPage() {
 
   const homepageQuery = useQuery({
     queryKey: ['homepage'],
-    queryFn: fetchHomepage,
-    staleTime: 30_000,
+    queryFn: ({ signal }) => fetchHomepage(signal),
+    staleTime: 0,
     refetchInterval: 30_000,
-    // Keep a recent injected homepage bootstrap stable through the current monitor window.
-    // Immediate mount refetch can temporarily downgrade recent artifact data to UNKNOWN
-    // before the next scheduled check has refreshed monitor_state/snapshots.
-    refetchOnMount: (query) => {
-      const data = query.state.data as PublicHomepageResponse | undefined;
-      if (!data || typeof data.generated_at !== 'number') {
-        return true;
-      }
-      return Date.now() - data.generated_at * 1000 > 60_000;
-    },
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
   });
+
+  const prepareMonitorDetail = useCallback(
+    (monitorId: number) => {
+      // Start the code and data together, before React renders the modal.
+      void loadLatencyChart().catch(() => undefined);
+      void queryClient.prefetchQuery({
+        queryKey: ['latency', monitorId],
+        queryFn: ({ signal }) => fetchLatency(monitorId, '24h', signal),
+        staleTime: 30_000,
+      });
+    },
+    [queryClient],
+  );
 
   const derivedTitle = homepageQuery.data?.site_title || 'Uptimer';
   const derivedTimeZone = getBrowserTimeZone() || homepageQuery.data?.site_timezone || 'UTC';
@@ -387,8 +414,12 @@ export function StatusPage() {
 
   const outagesQuery = useQuery({
     queryKey: ['public-monitor-outages', selectedDay?.monitorId, selectedDay?.dayStartAt],
-    queryFn: () =>
-      fetchPublicMonitorOutages(selectedDay?.monitorId as number, { range: '30d', limit: 200 }),
+    queryFn: ({ signal }) =>
+      fetchPublicDayOutages(
+        selectedDay?.monitorId as number,
+        selectedDay?.dayStartAt as number,
+        signal,
+      ),
     enabled: selectedDay !== null,
   });
 
@@ -452,6 +483,30 @@ export function StatusPage() {
     [homepageQuery.data?.monitors],
   );
 
+  // Probe updates replace monitor objects while IDs and their actions stay the same.
+  const monitorIdsKey = (homepageQuery.data?.monitors ?? []).map((monitor) => monitor.id).join(',');
+  const monitorActions = useMemo(
+    () =>
+      new Map(
+        monitorIdsKey
+          .split(',')
+          .filter(Boolean)
+          .map(Number)
+          .map((monitorId) => [
+            monitorId,
+            {
+              onPrepare: () => prepareMonitorDetail(monitorId),
+              onSelect: () => {
+                prepareMonitorDetail(monitorId);
+                setSelectedMonitorId(monitorId);
+              },
+              onDayClick: (dayStartAt: number) => setSelectedDay({ monitorId, dayStartAt }),
+            },
+          ]),
+      ),
+    [monitorIdsKey, prepareMonitorDetail],
+  );
+
   if (homepageQuery.isLoading && !homepageQuery.data) {
     return <StatusPageSkeleton />;
   }
@@ -464,6 +519,13 @@ export function StatusPage() {
             {t('status_page.unable_to_load_status')}
           </h2>
           <p className="text-slate-500 dark:text-slate-400">{t('status_page.check_connection')}</p>
+          <Button
+            className="mt-4"
+            onClick={() => void homepageQuery.refetch()}
+            disabled={homepageQuery.isFetching}
+          >
+            {t('common.retry')}
+          </Button>
         </div>
       </div>
     );
@@ -518,11 +580,18 @@ export function StatusPage() {
               {t('status_page.maintenance_prefix', { value: data.banner.maintenance_window.title })}
             </p>
           )}
-          <p className="text-slate-400 dark:text-slate-500 text-xs mt-2">
+          <p className="text-slate-500 dark:text-slate-400 text-xs mt-2">
             {t('common.last_updated', {
               value: formatDateTime(data.generated_at, timeZone, locale),
             })}
           </p>
+          {(homepageQuery.isRefetchError ||
+            homepageQuery.fetchStatus === 'paused' ||
+            now - data.generated_at * 1000 > 120_000) && (
+            <p role="status" className="text-amber-700 dark:text-amber-400 text-xs mt-2">
+              {t('status_page.cached_data')}
+            </p>
+          )}
         </div>
       </div>
 
@@ -556,7 +625,7 @@ export function StatusPage() {
 
             {data.maintenance_windows.active.length > 0 && (
               <div className="mb-4">
-                <div className="text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500 mb-2">
+                <div className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-2">
                   {t('common.active')}
                 </div>
                 <div className="space-y-3">
@@ -587,7 +656,7 @@ export function StatusPage() {
 
             {data.maintenance_windows.upcoming.length > 0 && (
               <div>
-                <div className="text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500 mb-2">
+                <div className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-2">
                   {t('common.upcoming')}
                 </div>
                 <div className="space-y-3">
@@ -666,21 +735,18 @@ export function StatusPage() {
                   <h4 className="text-sm font-semibold text-slate-600 dark:text-slate-300">
                     {group.name}
                   </h4>
-                  <span className="text-xs text-slate-400 dark:text-slate-500">
+                  <span className="text-xs text-slate-500 dark:text-slate-400">
                     {group.monitors.length}
                   </span>
                 </div>
-                <div className="grid gap-2.5 sm:gap-3 md:grid-cols-2">
+                <div className="grid min-w-0 grid-cols-1 gap-2.5 sm:gap-3 md:grid-cols-2">
                   {group.monitors.map((monitor) => (
                     <MonitorCard
                       key={monitor.id}
                       monitor={monitor}
                       ratingLevel={data.uptime_rating_level}
                       timeZone={timeZone}
-                      onSelect={() => setSelectedMonitorId(monitor.id)}
-                      onDayClick={(dayStartAt) =>
-                        setSelectedDay({ monitorId: monitor.id, dayStartAt })
-                      }
+                      {...monitorActions.get(monitor.id)!}
                     />
                   ))}
                 </div>
@@ -775,14 +841,18 @@ export function StatusPage() {
 
       {/* Footer */}
       <footer className="border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-800">
-        <div className="mx-auto max-w-5xl px-4 py-3 text-center text-sm text-slate-400 dark:text-slate-500 sm:px-6 sm:py-4 lg:px-8">
+        <div className="mx-auto max-w-5xl px-4 py-3 text-center text-sm text-slate-500 dark:text-slate-400 sm:px-6 sm:py-4 lg:px-8">
           {t('status_page.powered_by', { value: siteTitle })}
         </div>
       </footer>
 
       {/* Modals */}
       {selectedMonitorId !== null && (
-        <MonitorDetail monitorId={selectedMonitorId} onClose={() => setSelectedMonitorId(null)} />
+        <MonitorDetail
+          monitorId={selectedMonitorId}
+          monitorName={monitorNames.get(selectedMonitorId) ?? t('status_page.services')}
+          onClose={() => setSelectedMonitorId(null)}
+        />
       )}
 
       {selectedIncident && (
@@ -799,44 +869,25 @@ export function StatusPage() {
       {selectedDay && (
         <DayDowntimeModal
           dayStartAt={selectedDay.dayStartAt}
+          isLoading={outagesQuery.isPending || dayContextQuery.isPending}
+          hasError={outagesQuery.isError || dayContextQuery.isError}
+          onRetry={() => {
+            void outagesQuery.refetch();
+            void dayContextQuery.refetch();
+          }}
+          availableDays={
+            data.monitors.find((monitor) => monitor.id === selectedDay.monitorId)?.uptime_day_strip
+              .day_start_at ?? []
+          }
+          onDayChange={(dayStartAt) =>
+            setSelectedDay((current) => (current ? { ...current, dayStartAt } : current))
+          }
           outages={currentDayOutages}
           maintenanceWindows={dayContextQuery.data?.maintenance_windows ?? []}
           incidents={dayContextQuery.data?.incidents ?? []}
           timeZone={timeZone}
           onClose={() => setSelectedDay(null)}
         />
-      )}
-
-      {selectedDay && outagesQuery.isLoading && (
-        <div className="fixed inset-0 flex items-center justify-center pointer-events-none">
-          <div className="bg-slate-900/80 text-white text-sm px-3 py-2 rounded-lg">
-            {t('status_page.loading_outages')}
-          </div>
-        </div>
-      )}
-
-      {selectedDay && outagesQuery.isError && (
-        <div className="fixed inset-0 flex items-center justify-center pointer-events-none">
-          <div className="bg-red-600/90 text-white text-sm px-3 py-2 rounded-lg">
-            {t('status_page.failed_load_outages')}
-          </div>
-        </div>
-      )}
-
-      {selectedDay && dayContextQuery.isLoading && (
-        <div className="fixed inset-0 flex items-center justify-center pointer-events-none">
-          <div className="bg-slate-900/80 text-white text-sm px-3 py-2 rounded-lg">
-            {t('status_page.loading_context')}
-          </div>
-        </div>
-      )}
-
-      {selectedDay && dayContextQuery.isError && (
-        <div className="fixed inset-0 flex items-center justify-center pointer-events-none">
-          <div className="bg-red-600/90 text-white text-sm px-3 py-2 rounded-lg">
-            {t('status_page.failed_load_context')}
-          </div>
-        </div>
       )}
     </div>
   );

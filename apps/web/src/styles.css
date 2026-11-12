@@ -306,8 +306,12 @@ a {
 }
 
 .ui-modal-panel {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
   width: 100%;
   max-height: min(90vh, 860px);
+  max-height: min(90dvh, 860px);
   overflow-y: auto;
   border-top-left-radius: var(--radius-xl);
   border-top-right-radius: var(--radius-xl);
