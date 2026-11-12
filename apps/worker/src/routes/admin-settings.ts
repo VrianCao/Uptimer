@@ -1,28 +1,12 @@
+import { queuePublicHomepageSnapshotRefresh } from '../public/queue-refresh';
 import { Hono } from 'hono';
 
 import type { Env } from '../env';
 import { AppError } from '../middleware/errors';
-import { computePublicHomepagePayload } from '../public/homepage';
 import { bumpHomepageSettingsGuardVersion } from '../public/homepage-guard-state';
-import { refreshPublicHomepageSnapshotIfNeeded } from '../snapshots';
 import { parseSettingsPatch, patchSettings, readSettings } from '../settings';
 
 export const adminSettingsRoutes = new Hono<{ Bindings: Env }>();
-
-function queuePublicHomepageSnapshotRefresh(c: { env: Env; executionCtx: ExecutionContext }) {
-  const now = Math.floor(Date.now() / 1000);
-  c.executionCtx.waitUntil(
-    refreshPublicHomepageSnapshotIfNeeded({
-      db: c.env.DB,
-      now,
-      force: true,
-      seedDataSnapshot: true,
-      compute: () => computePublicHomepagePayload(c.env.DB, Math.floor(Date.now() / 1000)),
-    }).catch((err) => {
-      console.warn('homepage snapshot: refresh failed', err);
-    }),
-  );
-}
 
 adminSettingsRoutes.get('/', async (c) => {
   const settings = await readSettings(c.env.DB);

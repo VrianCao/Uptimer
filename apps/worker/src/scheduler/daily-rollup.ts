@@ -1,3 +1,4 @@
+import { invalidatePublicHistoryRows } from '../public/history-cache';
 import { avg, buildLatencyHistogram, percentileFromValues } from '../analytics/latency';
 import {
   buildUnknownIntervals,
@@ -8,6 +9,7 @@ import {
   type Interval,
 } from '../analytics/uptime';
 import type { Env } from '../env';
+import { usesBoundedPublicSeeds } from '../public/refresh-profile';
 import { refreshPublicAnalyticsOverviewSnapshotIfNeeded } from '../public/analytics-overview';
 import { acquireLease } from './lock';
 
@@ -136,6 +138,7 @@ async function listCheckRowsForMonitorBatch(
         SELECT monitor_id, checked_at, status, latency_ms
         FROM check_results
         WHERE monitor_id IN (${placeholders})
+          AND bucket_start_at >= (?${monitorIds.length + 1}) - 3599
           AND checked_at >= ?${monitorIds.length + 1}
           AND checked_at < ?${monitorIds.length + 2}
         ORDER BY monitor_id, checked_at
@@ -160,6 +163,21 @@ export async function runDailyRollup(
   const lockName = `${LOCK_PREFIX}${targetDayStart}`;
   const acquired = await acquireLease(env.DB, lockName, nowSec, LOCK_LEASE_SECONDS);
   if (!acquired) return;
+
+  if (usesBoundedPublicSeeds(env)) {
+    const { writeDailyRollupsSql } = await import('./daily-rollup-sql');
+    const now = Math.floor(Date.now() / 1000);
+    const processed = await writeDailyRollupsSql(env.DB, targetDayStart, targetDayEnd, now);
+    await invalidatePublicHistoryRows(env.DB);
+    await refreshPublicAnalyticsOverviewSnapshotIfNeeded({
+      db: env.DB,
+      now,
+      fullDayEndAt: targetDayEnd,
+      force: true,
+    });
+    console.log(`daily-rollup: processed ${processed} monitors for day_start_at=${targetDayStart}`);
+    return;
+  }
 
   const { results: monitorRows } = await env.DB.prepare(
     `

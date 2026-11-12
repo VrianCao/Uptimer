@@ -1,7 +1,9 @@
+import { publicOutageWindow } from '../public/outage-window';
 import { Hono } from 'hono';
 import { z } from 'zod';
 
 import type { Env } from '../env';
+import { readLatencyPoints, latencyStatistics } from '../public/latency-points';
 import { hasValidAdminTokenRequest } from '../middleware/auth';
 import { AppError, handleError, handleNotFound } from '../middleware/errors';
 import { cachePublic } from '../middleware/cache-public';
@@ -25,6 +27,7 @@ import {
   filterStatusPageScopedMonitorIds,
   incidentStatusPageVisibilityPredicate,
   listStatusPageVisibleMonitorIds,
+  maintenanceWindowStatusPageVisibilityPredicate,
   monitorVisibilityPredicate,
   shouldIncludeStatusPageScopedItem,
 } from '../public/visibility';
@@ -294,6 +297,9 @@ async function listPublicMaintenanceWindowsPage(opts: {
 }> {
   const limitPlusOne = opts.limit + 1;
   const batchLimit = Math.max(50, limitPlusOne);
+  const maintenanceVisibilitySql = maintenanceWindowStatusPageVisibilityPredicate(
+    opts.includeHiddenMonitors,
+  );
   let seekCursor = opts.cursor;
   const collected: Array<{ row: MaintenanceWindowRow; monitorIds: number[] }> = [];
 
@@ -305,6 +311,7 @@ async function listPublicMaintenanceWindowsPage(opts: {
               SELECT id, title, message, starts_at, ends_at, created_at
               FROM maintenance_windows
               WHERE ends_at <= ?1
+                AND ${maintenanceVisibilitySql}
                 AND id < ?3
               ORDER BY id DESC
               LIMIT ?2
@@ -318,6 +325,7 @@ async function listPublicMaintenanceWindowsPage(opts: {
               SELECT id, title, message, starts_at, ends_at, created_at
               FROM maintenance_windows
               WHERE ends_at <= ?1
+                AND ${maintenanceVisibilitySql}
               ORDER BY id DESC
               LIMIT ?2
             `,
@@ -369,16 +377,6 @@ async function listPublicMaintenanceWindowsPage(opts: {
       .map(({ row, monitorIds }) => maintenanceWindowRowToApi(row, monitorIds)),
     next_cursor: collected.length > opts.limit ? (collected[opts.limit - 1]?.row.id ?? null) : null,
   };
-}
-
-function jsonNumberLiteral(value: number | null | undefined): string {
-  return typeof value === 'number' && Number.isFinite(value) ? String(Math.round(value)) : 'null';
-}
-
-function jsonArrayLiteral(value: string | null | undefined): string {
-  if (typeof value !== 'string') return '[]';
-  const trimmed = value.trim();
-  return trimmed.startsWith('[') && trimmed.endsWith(']') ? trimmed : '[]';
 }
 
 function takeBatchRows<T>(result: { results?: unknown[] | undefined } | null | undefined): T[] {
@@ -517,6 +515,7 @@ async function computePartialUptimeTotalsSql(
           SELECT monitor_id, MIN(checked_at) AS first_check_at
           FROM check_results
           WHERE monitor_id IN (SELECT monitor_id FROM input)
+            AND bucket_start_at >= (?1) - 3599
             AND checked_at >= ?1
             AND checked_at < ?2
           GROUP BY monitor_id
@@ -570,6 +569,7 @@ async function computePartialUptimeTotalsSql(
           FROM check_results cr
           JOIN effective e ON e.monitor_id = cr.monitor_id
           WHERE e.start_at IS NOT NULL
+            AND cr.bucket_start_at >= (max(0, e.start_at - e.interval_sec * 2)) - 3599
             AND cr.checked_at >= max(0, e.start_at - e.interval_sec * 2)
             AND cr.checked_at < ?2
         ),
@@ -717,6 +717,8 @@ async function computePartialUptimeTotalsLegacy(
         SELECT checked_at, status
         FROM check_results
         WHERE monitor_id = ?1
+          AND storage_shard = CAST((?1 - 1) / 4 AS INTEGER)
+          AND bucket_start_at >= (?2) - 3599
           AND checked_at >= ?2
           AND checked_at < ?3
         ORDER BY checked_at
@@ -826,62 +828,30 @@ async function buildCompactLatencyResponseJson(opts: {
   rangeStart: number;
   rangeEnd: number;
 }): Promise<string> {
-  const row = await opts.db
-    .prepare(
-      `
-        WITH ordered_points AS (
-          SELECT
-            checked_at,
-            CASE status
-              WHEN 'up' THEN 'u'
-              WHEN 'down' THEN 'd'
-              WHEN 'maintenance' THEN 'm'
-              ELSE 'x'
-            END AS status_code,
-            latency_ms
-          FROM check_results
-          WHERE monitor_id = ?1
-            AND checked_at >= ?2
-            AND checked_at <= ?3
-          ORDER BY checked_at
-        ),
-        up_latencies AS (
-          SELECT
-            latency_ms,
-            row_number() OVER (ORDER BY latency_ms) AS rn,
-            count(*) OVER () AS cnt
-          FROM ordered_points
-          WHERE status_code = 'u'
-            AND latency_ms IS NOT NULL
+  const points = await readLatencyPoints(opts.db, opts.monitor.id, opts.rangeStart, opts.rangeEnd);
+  const stats = latencyStatistics(points);
+  return JSON.stringify({
+    monitor: opts.monitor,
+    range: opts.range,
+    range_start_at: opts.rangeStart,
+    range_end_at: opts.rangeEnd,
+    ...stats,
+    points: {
+      checked_at: points.map((p) => p.checked_at),
+      status_codes: points
+        .map((p) =>
+          p.status === 'up'
+            ? 'u'
+            : p.status === 'down'
+              ? 'd'
+              : p.status === 'maintenance'
+                ? 'm'
+                : 'x',
         )
-        SELECT
-          COALESCE((SELECT json_group_array(checked_at) FROM ordered_points), '[]') AS checked_at_json,
-          COALESCE((SELECT group_concat(status_code, '') FROM ordered_points), '') AS status_codes,
-          COALESCE((SELECT json_group_array(latency_ms) FROM ordered_points), '[]') AS latency_ms_json,
-          CAST(round((SELECT avg(latency_ms) FROM up_latencies)) AS INTEGER) AS avg_latency_ms,
-          (
-            SELECT latency_ms
-            FROM up_latencies
-            WHERE rn = ((95 * cnt + 99) / 100)
-            LIMIT 1
-          ) AS p95_latency_ms
-      `,
-    )
-    .bind(opts.monitor.id, opts.rangeStart, opts.rangeEnd)
-    .first<{
-      checked_at_json: string | null;
-      status_codes: string | null;
-      latency_ms_json: string | null;
-      avg_latency_ms: number | null;
-      p95_latency_ms: number | null;
-    }>();
-
-  const monitorJson = JSON.stringify({
-    id: opts.monitor.id,
-    name: opts.monitor.name,
+        .join(''),
+      latency_ms: points.map((p) => p.latency_ms),
+    },
   });
-
-  return `{"monitor":${monitorJson},"range":"${opts.range}","range_start_at":${opts.rangeStart},"range_end_at":${opts.rangeEnd},"avg_latency_ms":${jsonNumberLiteral(row?.avg_latency_ms)},"p95_latency_ms":${jsonNumberLiteral(row?.p95_latency_ms)},"points":{"checked_at":${jsonArrayLiteral(row?.checked_at_json)},"status_codes":${JSON.stringify(row?.status_codes ?? '')},"latency_ms":${jsonArrayLiteral(row?.latency_ms_json)}}}`;
 }
 
 export const publicUiRoutes = new Hono<{ Bindings: Env }>();
@@ -1287,8 +1257,11 @@ publicUiRoutes.get('/monitors/:id/outages', async (c) => {
   }
 
   const now = Math.floor(Date.now() / 1000);
-  const rangeEnd = Math.floor(now / 60) * 60;
-  const rangeStart = Math.max(rangeEnd - 30 * 86400, monitor.created_at);
+  const { rangeStart, rangeEnd } = publicOutageWindow(
+    now,
+    monitor.created_at,
+    c.req.query('day_start_at'),
+  );
   const take = limit + 1;
   const sqlBase = `
     SELECT id, started_at, ended_at, initial_error, last_error
@@ -1354,34 +1327,39 @@ publicUiRoutes.get('/monitors/:id/outages', async (c) => {
   );
 });
 
-publicUiRoutes.get('/monitors/:id/latency', async (c) => {
-  const includeHiddenMonitors = isAuthorizedStatusAdminRequest(c);
-  const id = z.coerce.number().int().positive().parse(c.req.param('id'));
-  const range = latencyRangeSchema.optional().default('24h').parse(c.req.query('range'));
-  const format = c.req.query('format');
-  if (format !== 'compact-v1') {
+export async function compactLatencyResponse(input: {
+  db: D1Database;
+  monitorId: unknown;
+  range: unknown;
+  format: unknown;
+  includeHiddenMonitors: boolean;
+  now?: number;
+}): Promise<Response> {
+  const includeHiddenMonitors = input.includeHiddenMonitors;
+  const id = z.coerce.number().int().positive().parse(input.monitorId);
+  const range = latencyRangeSchema.optional().default('24h').parse(input.range);
+  if (input.format !== 'compact-v1')
     throw new AppError(400, 'INVALID_ARGUMENT', 'Unsupported latency format');
-  }
-
-  const monitor = await c.env.DB.prepare(
-    `
+  const monitor = await input.db
+    .prepare(
+      `
         SELECT id, name
         FROM monitors
         WHERE id = ?1 AND is_active = 1
           AND ${monitorVisibilityPredicate(includeHiddenMonitors)}
       `,
-  )
+    )
     .bind(id)
     .first<{ id: number; name: string }>();
   if (!monitor) {
     throw new AppError(404, 'NOT_FOUND', 'Monitor not found');
   }
 
-  const now = Math.floor(Date.now() / 1000);
-  const rangeEnd = Math.floor(now / 60) * 60;
+  const now = input.now ?? Math.floor(Date.now() / 1000);
+  const rangeEnd = now;
   const rangeStart = rangeEnd - 24 * 60 * 60;
   const bodyJson = await buildCompactLatencyResponseJson({
-    db: c.env.DB,
+    db: input.db,
     monitor,
     range,
     rangeStart,
@@ -1394,7 +1372,17 @@ publicUiRoutes.get('/monitors/:id/latency', async (c) => {
     }),
     includeHiddenMonitors,
   );
-});
+}
+
+publicUiRoutes.get('/monitors/:id/latency', (c) =>
+  compactLatencyResponse({
+    db: c.env.DB,
+    monitorId: c.req.param('id'),
+    range: c.req.query('range'),
+    format: c.req.query('format'),
+    includeHiddenMonitors: isAuthorizedStatusAdminRequest(c),
+  }),
+);
 
 publicUiRoutes.get('/monitors/:id/uptime', async (c) => {
   const includeHiddenMonitors = isAuthorizedStatusAdminRequest(c);
@@ -1442,6 +1430,8 @@ publicUiRoutes.get('/monitors/:id/uptime', async (c) => {
         SELECT checked_at
         FROM check_results
         WHERE monitor_id = ?1
+          AND storage_shard = CAST((?1 - 1) / 4 AS INTEGER)
+          AND bucket_start_at >= (?2) - 3599
           AND checked_at >= ?2
           AND checked_at < ?3
         ORDER BY checked_at
@@ -1466,6 +1456,7 @@ publicUiRoutes.get('/monitors/:id/uptime', async (c) => {
             SELECT monitor_id, MIN(checked_at) AS first_check_at
             FROM check_results
             WHERE monitor_id IN (SELECT monitor_id FROM input)
+              AND bucket_start_at >= (?1) - 3599
               AND checked_at >= ?1
               AND checked_at < ?2
             GROUP BY monitor_id
@@ -1519,6 +1510,7 @@ publicUiRoutes.get('/monitors/:id/uptime', async (c) => {
             FROM check_results cr
             JOIN effective e ON e.monitor_id = cr.monitor_id
             WHERE e.start_at IS NOT NULL
+              AND cr.bucket_start_at >= (max(0, e.start_at - e.interval_sec * 2)) - 3599
               AND cr.checked_at >= max(0, e.start_at - e.interval_sec * 2)
               AND cr.checked_at < ?2
           ),
@@ -1636,6 +1628,7 @@ publicUiRoutes.get('/monitors/:id/uptime', async (c) => {
             SELECT monitor_id, MIN(checked_at) AS first_check_at
             FROM check_results
             WHERE monitor_id IN (SELECT monitor_id FROM input)
+              AND bucket_start_at >= (?1) - 3599
               AND checked_at >= ?1
               AND checked_at < ?2
             GROUP BY monitor_id
@@ -1689,6 +1682,7 @@ publicUiRoutes.get('/monitors/:id/uptime', async (c) => {
             FROM check_results cr
             JOIN effective e ON e.monitor_id = cr.monitor_id
             WHERE e.start_at IS NOT NULL
+              AND cr.bucket_start_at >= (max(0, e.start_at - e.interval_sec * 2)) - 3599
               AND cr.checked_at >= max(0, e.start_at - e.interval_sec * 2)
               AND cr.checked_at < ?2
           ),
@@ -2011,3 +2005,6 @@ publicUiRoutes.get('/monitors/:id/uptime', async (c) => {
   applyTraceToResponse({ res, trace, prefix: 'w' });
   return res;
 });
+
+// Build Hono's lazy matcher during isolate startup; this runs no handlers or I/O.
+publicUiRoutes.router.match('GET', '/homepage');

@@ -1,9 +1,11 @@
+import { publicOutageWindow } from '../public/outage-window';
 import { Hono } from 'hono';
 import { z } from 'zod';
 
 import { getDb, monitors } from '@uptimer/db';
 
 import type { Env } from '../env';
+import { readLatencyPoints, latencyStatistics } from '../public/latency-points';
 import { hasValidAdminTokenRequest } from '../middleware/auth';
 import { homepageFromStatusPayload, readHomepageHistoryPreviews } from '../public/homepage';
 import { computePublicStatusPayload } from '../public/status';
@@ -515,16 +517,6 @@ async function listMaintenanceWindowMonitorIdsByWindowId(
   return byWindow;
 }
 
-function jsonNumberLiteral(value: number | null | undefined): string {
-  return typeof value === 'number' && Number.isFinite(value) ? String(Math.round(value)) : 'null';
-}
-
-function jsonArrayLiteral(value: string | null | undefined): string {
-  if (typeof value !== 'string') return '[]';
-  const trimmed = value.trim();
-  return trimmed.startsWith('[') && trimmed.endsWith(']') ? trimmed : '[]';
-}
-
 async function buildLatencyResponseJson(opts: {
   db: D1Database;
   monitor: { id: number; name: string };
@@ -532,71 +524,21 @@ async function buildLatencyResponseJson(opts: {
   rangeStart: number;
   rangeEnd: number;
 }): Promise<string> {
-  const row = await opts.db
-    .prepare(
-      `
-        WITH ordered_points AS (
-          SELECT
-            checked_at,
-            CASE status
-              WHEN 'up' THEN 'up'
-              WHEN 'down' THEN 'down'
-              WHEN 'maintenance' THEN 'maintenance'
-              WHEN 'unknown' THEN 'unknown'
-              ELSE 'unknown'
-            END AS status,
-            latency_ms
-          FROM check_results
-          WHERE monitor_id = ?1
-            AND checked_at >= ?2
-            AND checked_at <= ?3
-          ORDER BY checked_at
-        ),
-        up_latencies AS (
-          SELECT
-            latency_ms,
-            row_number() OVER (ORDER BY latency_ms) AS rn,
-            count(*) OVER () AS cnt
-          FROM ordered_points
-          WHERE status = 'up'
-            AND latency_ms IS NOT NULL
-        )
-        SELECT
-          COALESCE(
-            (
-              SELECT json_group_array(
-                json_object(
-                  'checked_at', checked_at,
-                  'status', status,
-                  'latency_ms', latency_ms
-                )
-              )
-              FROM ordered_points
-            ),
-            '[]'
-          ) AS points_json,
-          CAST(round((SELECT avg(latency_ms) FROM up_latencies)) AS INTEGER) AS avg_latency_ms,
-          (
-            SELECT latency_ms
-            FROM up_latencies
-            WHERE rn = ((95 * cnt + 99) / 100)
-            LIMIT 1
-          ) AS p95_latency_ms
-      `,
-    )
-    .bind(opts.monitor.id, opts.rangeStart, opts.rangeEnd)
-    .first<{
-      points_json: string | null;
-      avg_latency_ms: number | null;
-      p95_latency_ms: number | null;
-    }>();
-
-  const monitorJson = JSON.stringify({
-    id: opts.monitor.id,
-    name: opts.monitor.name,
+  const points = await readLatencyPoints(opts.db, opts.monitor.id, opts.rangeStart, opts.rangeEnd);
+  return JSON.stringify({
+    monitor: opts.monitor,
+    range: opts.range,
+    range_start_at: opts.rangeStart,
+    range_end_at: opts.rangeEnd,
+    ...latencyStatistics(points),
+    points: points.map((point) => ({
+      ...point,
+      status:
+        point.status === 'up' || point.status === 'down' || point.status === 'maintenance'
+          ? point.status
+          : 'unknown',
+    })),
   });
-
-  return `{"monitor":${monitorJson},"range":"${opts.range}","range_start_at":${opts.rangeStart},"range_end_at":${opts.rangeEnd},"avg_latency_ms":${jsonNumberLiteral(row?.avg_latency_ms)},"p95_latency_ms":${jsonNumberLiteral(row?.p95_latency_ms)},"points":${jsonArrayLiteral(row?.points_json)}}`;
 }
 
 async function resolveUptimeRangeStartFromDb(opts: {
@@ -617,6 +559,8 @@ async function resolveUptimeRangeStartFromDb(opts: {
           SELECT checked_at
           FROM check_results
           WHERE monitor_id = ?1
+            AND storage_shard = CAST((?1 - 1) / 4 AS INTEGER)
+            AND bucket_start_at >= (?2) - 3599
             AND checked_at >= ?2
             AND checked_at < ?3
           ORDER BY checked_at
@@ -761,7 +705,7 @@ async function listPublicMaintenanceWindowsPage(opts: {
 }> {
   const limitPlusOne = opts.limit + 1;
   const batchLimit = Math.max(50, limitPlusOne);
-  const maintenanceCursorVisibilitySql = maintenanceWindowStatusPageVisibilityPredicate(
+  const maintenanceVisibilitySql = maintenanceWindowStatusPageVisibilityPredicate(
     opts.includeHiddenMonitors,
   );
   let seekCursor: MaintenanceHistoryCursorRow | null = null;
@@ -773,7 +717,7 @@ async function listPublicMaintenanceWindowsPage(opts: {
           FROM maintenance_windows
           WHERE id = ?1
             AND ends_at <= ?2
-            AND ${maintenanceCursorVisibilitySql}
+            AND ${maintenanceVisibilitySql}
         `,
       )
       .bind(opts.cursor, opts.now)
@@ -798,6 +742,7 @@ async function listPublicMaintenanceWindowsPage(opts: {
               SELECT id, title, message, starts_at, ends_at, created_at
               FROM maintenance_windows
               WHERE ends_at <= ?1
+                AND ${maintenanceVisibilitySql}
                 AND (ends_at < ?3 OR (ends_at = ?3 AND id < ?4))
               ORDER BY ends_at DESC, id DESC
               LIMIT ?2
@@ -811,6 +756,7 @@ async function listPublicMaintenanceWindowsPage(opts: {
               SELECT id, title, message, starts_at, ends_at, created_at
               FROM maintenance_windows
               WHERE ends_at <= ?1
+                AND ${maintenanceVisibilitySql}
               ORDER BY ends_at DESC, id DESC
               LIMIT ?2
             `,
@@ -1460,7 +1406,7 @@ publicRoutes.get('/monitors/:id/latency', async (c) => {
   }
 
   const now = Math.floor(Date.now() / 1000);
-  const rangeEnd = Math.floor(now / 60) * 60;
+  const rangeEnd = now;
   const rangeStart = rangeEnd - rangeToSeconds(range);
   const bodyJson = await buildLatencyResponseJson({
     db: c.env.DB,
@@ -1608,6 +1554,8 @@ async function computePartialUptimeTotals(
       SELECT checked_at, status
       FROM check_results
       WHERE monitor_id = ?1
+        AND storage_shard = CAST((?1 - 1) / 4 AS INTEGER)
+        AND bucket_start_at >= (?2) - 3599
         AND checked_at >= ?2
         AND checked_at < ?3
       ORDER BY checked_at
@@ -1850,8 +1798,11 @@ publicRoutes.get('/monitors/:id/outages', async (c) => {
 
   const now = Math.floor(Date.now() / 1000);
   // Include the current (partial) day so outages from today show up on the status page.
-  const rangeEnd = Math.floor(now / 60) * 60;
-  const rangeStart = Math.max(rangeEnd - 30 * 86400, monitor.created_at);
+  const { rangeStart, rangeEnd } = publicOutageWindow(
+    now,
+    monitor.created_at,
+    c.req.query('day_start_at'),
+  );
 
   const sqlBase = `
     SELECT id, started_at, ended_at, initial_error, last_error
@@ -1923,3 +1874,6 @@ publicRoutes.get('/health', async (c) => {
   await db.select({ id: monitors.id }).from(monitors).limit(1).all();
   return c.json({ ok: true });
 });
+
+// Build Hono's lazy matcher during isolate startup; this runs no handlers or I/O.
+publicRoutes.router.match('GET', '/health');

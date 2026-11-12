@@ -17,12 +17,16 @@ export async function acquireLease(
   return (r.meta.changes ?? 0) > 0;
 }
 
-export async function releaseLease(db: D1Database, name: string, expiresAt: number): Promise<void> {
-  const cached = releaseLeaseStatementByDb.get(db);
-  const statement = cached ?? db.prepare(RELEASE_LEASE_SQL);
-  if (!cached) {
-    releaseLeaseStatementByDb.set(db, statement);
-  }
+export async function releaseLease(
+  db: D1Database,
+  name: string,
+  expiresAt: number,
+  reusable = false,
+): Promise<void> {
+  const cache = reusable ? releaseReusableLeaseStatementByDb : releaseLeaseStatementByDb;
+  const cached = cache.get(db);
+  const statement = cached ?? db.prepare(reusable ? RELEASE_REUSABLE_LEASE_SQL : RELEASE_LEASE_SQL);
+  if (!cached) cache.set(db, statement);
 
   await statement.bind(name, expiresAt).run();
 }
@@ -53,6 +57,10 @@ const RELEASE_LEASE_SQL = `
   DELETE FROM locks
   WHERE name = ?1 AND expires_at = ?2
 `;
+// Only stable lock names opt in. Time-specific batch locks still get deleted.
+const RELEASE_REUSABLE_LEASE_SQL = `
+  UPDATE locks SET expires_at=0 WHERE name=?1 AND expires_at=?2
+`;
 const RENEW_LEASE_SQL = `
   UPDATE locks
   SET expires_at = ?2
@@ -62,3 +70,5 @@ const RENEW_LEASE_SQL = `
 const acquireLeaseStatementByDb = new WeakMap<D1Database, D1PreparedStatement>();
 const releaseLeaseStatementByDb = new WeakMap<D1Database, D1PreparedStatement>();
 const renewLeaseStatementByDb = new WeakMap<D1Database, D1PreparedStatement>();
+
+const releaseReusableLeaseStatementByDb = new WeakMap<D1Database, D1PreparedStatement>();

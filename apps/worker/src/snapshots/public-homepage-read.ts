@@ -15,32 +15,32 @@ const LEGACY_COMBINED_SNAPSHOT_VERSION = 2;
 type SnapshotKey = typeof SNAPSHOT_KEY | typeof SNAPSHOT_ARTIFACT_KEY;
 
 const READ_REFRESH_SNAPSHOT_METADATA_SQL = `
-  SELECT key, generated_at, updated_at
+  SELECT key, generated_at, updated_at, body_revision
   FROM public_snapshots
   WHERE key = ?1 OR key = ?2
 `;
 const READ_REFRESH_SNAPSHOT_ROWS_SQL = `
-  SELECT key, generated_at, updated_at, body_json
+  SELECT key, generated_at, updated_at, body_revision, body_json
   FROM public_snapshots
   WHERE key = ?1 OR key = ?2
 `;
 const READ_REFRESH_SNAPSHOT_ROW_BY_KEY_SQL = `
-  SELECT generated_at, updated_at, body_json
+  SELECT generated_at, updated_at, body_revision, body_json
   FROM public_snapshots
   WHERE key = ?1
 `;
-const READ_REFRESH_SNAPSHOT_METADATA_ROW_BY_KEY_SQL = `
-  SELECT generated_at, updated_at
-  FROM public_snapshots
-  WHERE key = ?1
+// A cache miss must not require a metadata round trip before fetching the body.
+// D1 omits the body only when this isolate already validated that exact version.
+const READ_PREFERRED_SNAPSHOT_SQL = `
+  SELECT generated_at, updated_at, body_revision,
+    CASE WHEN generated_at=?2 AND coalesce(updated_at,generated_at)=?3 AND body_revision=?4
+      THEN NULL ELSE body_json END AS body_json
+  FROM public_snapshots WHERE key=?1
 `;
+const readPreferredSnapshotStatementByDb = new WeakMap<D1Database, D1PreparedStatement>();
 const readRefreshSnapshotMetadataStatementByDb = new WeakMap<D1Database, D1PreparedStatement>();
 const readRefreshSnapshotRowsStatementByDb = new WeakMap<D1Database, D1PreparedStatement>();
 const readRefreshSnapshotRowByKeyStatementByDb = new WeakMap<D1Database, D1PreparedStatement>();
-const readRefreshSnapshotMetadataRowByKeyStatementByDb = new WeakMap<
-  D1Database,
-  D1PreparedStatement
->();
 const normalizedHomepagePayloadCacheByDb = new WeakMap<
   D1Database,
   Map<SnapshotKey, NormalizedSnapshotRow>
@@ -62,23 +62,27 @@ type SnapshotRefreshRow = {
   generated_at: number;
   body_json: string;
   updated_at?: number | null;
+  body_revision?: string | undefined;
 };
 
 type SnapshotRefreshMetadataRow = {
   key: SnapshotKey;
   generated_at: number;
   updated_at: number | null;
+  body_revision?: string | undefined;
 };
 
 type SnapshotCandidate = {
   key: SnapshotKey;
   generatedAt: number;
   updatedAt: number;
+  bodyRevision?: string | undefined;
 };
 
 type NormalizedSnapshotRow = {
   generatedAt: number;
   updatedAt: number;
+  bodyRevision?: string | undefined;
   rawBodyJson: string;
   bodyJson: string;
 };
@@ -90,6 +94,7 @@ type RawNormalizedSnapshotRow = NormalizedSnapshotRow & {
 type ParsedSnapshotRow = {
   generatedAt: number;
   updatedAt: number;
+  bodyRevision?: string | undefined;
   rawBodyJson: string;
   snapshot: PublicHomepageResponse;
 };
@@ -232,7 +237,9 @@ function normalizeHomepagePayloadBodyJsonForKey(
     const directPayload = parseDirectHomepagePayload(parsed.value);
     if (directPayload) {
       return matchesExpectedGeneratedAt(directPayload, expectedGeneratedAt)
-        ? JSON.stringify(directPayload)
+        ? directPayload === parsed.value
+          ? parsed.trimmed
+          : JSON.stringify(directPayload)
         : null;
     }
   }
@@ -387,7 +394,9 @@ function readCachedNormalizedSnapshotRowByVersion(
     return null;
   }
 
-  return row.generatedAt === candidate.generatedAt && row.updatedAt === candidate.updatedAt
+  return row.generatedAt === candidate.generatedAt &&
+    row.updatedAt === candidate.updatedAt &&
+    row.bodyRevision === candidate.bodyRevision
     ? row
     : null;
 }
@@ -402,6 +411,7 @@ function writeCachedNormalizedSnapshotRow(
   const row: NormalizedSnapshotRow = {
     generatedAt: candidate.generatedAt,
     updatedAt: candidate.updatedAt,
+    bodyRevision: candidate.bodyRevision,
     rawBodyJson,
     bodyJson,
   };
@@ -420,7 +430,9 @@ function readCachedParsedSnapshotRowByVersion(
     return null;
   }
 
-  return row.generatedAt === candidate.generatedAt && row.updatedAt === candidate.updatedAt
+  return row.generatedAt === candidate.generatedAt &&
+    row.updatedAt === candidate.updatedAt &&
+    row.bodyRevision === candidate.bodyRevision
     ? row
     : null;
 }
@@ -435,6 +447,7 @@ function writeCachedParsedSnapshotRow(
   const row: ParsedSnapshotRow = {
     generatedAt: candidate.generatedAt,
     updatedAt: candidate.updatedAt,
+    bodyRevision: candidate.bodyRevision,
     rawBodyJson,
     snapshot,
   };
@@ -460,7 +473,9 @@ function readCachedNormalizedSnapshotRowGlobalByVersion(
     return null;
   }
 
-  return row.generatedAt === candidate.generatedAt && row.updatedAt === candidate.updatedAt
+  return row.generatedAt === candidate.generatedAt &&
+    row.updatedAt === candidate.updatedAt &&
+    row.bodyRevision === candidate.bodyRevision
     ? row
     : null;
 }
@@ -474,6 +489,7 @@ function writeCachedNormalizedSnapshotRowGlobal(
   const row: RawNormalizedSnapshotRow = {
     generatedAt: candidate.generatedAt,
     updatedAt: candidate.updatedAt,
+    bodyRevision: candidate.bodyRevision,
     rawBodyJson,
     bodyJson,
   };
@@ -490,7 +506,9 @@ function readCachedParsedSnapshotRowGlobalByVersion(
     return null;
   }
 
-  return row.generatedAt === candidate.generatedAt && row.updatedAt === candidate.updatedAt
+  return row.generatedAt === candidate.generatedAt &&
+    row.updatedAt === candidate.updatedAt &&
+    row.bodyRevision === candidate.bodyRevision
     ? row
     : null;
 }
@@ -504,6 +522,7 @@ function writeCachedParsedSnapshotRowGlobal(
   const row: RawParsedSnapshotRow = {
     generatedAt: candidate.generatedAt,
     updatedAt: candidate.updatedAt,
+    bodyRevision: candidate.bodyRevision,
     rawBodyJson,
     snapshot,
   };
@@ -521,10 +540,6 @@ function isFutureSnapshotCandidate(candidate: SnapshotCandidate, now: number): b
 
 function snapshotCandidateAgeSeconds(candidate: SnapshotCandidate, now: number): number {
   return Math.max(0, now - candidate.generatedAt);
-}
-
-function snapshotCandidateUpdatedAgeSeconds(candidate: SnapshotCandidate, now: number): number {
-  return Math.max(0, now - candidate.updatedAt);
 }
 
 async function readRefreshSnapshotRows(db: D1Database): Promise<SnapshotRefreshRow[]> {
@@ -568,28 +583,6 @@ async function readRefreshSnapshotMetadataRows(
   }
 }
 
-async function readRefreshSnapshotMetadataRowByKey(
-  db: D1Database,
-  key: SnapshotKey,
-): Promise<SnapshotRefreshMetadataRow | null> {
-  try {
-    const cached = readRefreshSnapshotMetadataRowByKeyStatementByDb.get(db);
-    const statement = cached ?? db.prepare(READ_REFRESH_SNAPSHOT_METADATA_ROW_BY_KEY_SQL);
-    if (!cached) {
-      readRefreshSnapshotMetadataRowByKeyStatementByDb.set(db, statement);
-    }
-
-    const row = await statement.bind(key).first<Omit<SnapshotRefreshMetadataRow, 'key'>>();
-    return row ? { key, ...row } : null;
-  } catch (err) {
-    if (isNoFakeD1HandlerError(err)) {
-      return null;
-    }
-    console.warn('homepage snapshot: refresh metadata row read failed', err);
-    return null;
-  }
-}
-
 async function readRefreshSnapshotRowByKey(
   db: D1Database,
   key: SnapshotKey,
@@ -613,22 +606,27 @@ async function readRefreshSnapshotRowByKey(
 }
 
 function listSnapshotCandidatesFromRefreshRows(
-  rows: readonly Pick<SnapshotRefreshRow, 'key' | 'generated_at' | 'updated_at'>[],
+  rows: readonly Pick<
+    SnapshotRefreshRow,
+    'key' | 'generated_at' | 'updated_at' | 'body_revision'
+  >[],
 ): SnapshotCandidate[] {
   return rows.map((row) => ({
     key: row.key,
     generatedAt: row.generated_at,
     updatedAt: toSnapshotUpdatedAt(row),
+    bodyRevision: row.body_revision,
   }));
 }
 
 function toSnapshotRefreshMetadataRow(
-  row: Pick<SnapshotRefreshRow, 'key' | 'generated_at' | 'updated_at'>,
+  row: Pick<SnapshotRefreshRow, 'key' | 'generated_at' | 'updated_at' | 'body_revision'>,
 ): SnapshotRefreshMetadataRow {
   return {
     key: row.key,
     generated_at: row.generated_at,
     updated_at: row.updated_at ?? null,
+    body_revision: row.body_revision,
   };
 }
 
@@ -684,6 +682,7 @@ function compareArtifactCandidates(a: SnapshotCandidate, b: SnapshotCandidate): 
 
 async function readValidatedSnapshotCandidate(opts: {
   db: D1Database;
+  bodyJson?: string;
   candidate: SnapshotCandidate;
   readRowByKey: (key: SnapshotKey) => Promise<SnapshotRefreshRow | null>;
   normalize: (candidate: SnapshotCandidate, bodyJson: string) => string | null;
@@ -703,7 +702,11 @@ async function readValidatedSnapshotCandidate(opts: {
     opts.globalCache,
     opts.candidate,
   );
-  if (globalCachedByVersion) {
+  if (
+    globalCachedByVersion &&
+    ((opts.bodyJson === undefined && /^[a-f0-9]{32}$/.test(opts.candidate.bodyRevision ?? '')) ||
+      globalCachedByVersion.rawBodyJson === opts.bodyJson)
+  ) {
     return {
       row: writeCachedNormalizedSnapshotRow(
         opts.cacheByDb,
@@ -717,7 +720,11 @@ async function readValidatedSnapshotCandidate(opts: {
   }
 
   const row = await opts.readRowByKey(opts.candidate.key);
-  if (!row || row.generated_at !== opts.candidate.generatedAt) {
+  if (
+    !row ||
+    row.generated_at !== opts.candidate.generatedAt ||
+    (opts.candidate.bodyRevision !== undefined && row.body_revision !== opts.candidate.bodyRevision)
+  ) {
     return { row: null, invalid: false };
   }
 
@@ -748,7 +755,33 @@ async function readPreferredSnapshotCandidate(opts: {
   cacheByDb: WeakMap<D1Database, Map<SnapshotKey, NormalizedSnapshotRow>>;
   globalCache: Map<SnapshotKey, RawNormalizedSnapshotRow>;
 }): Promise<PreferredSnapshotReadResult> {
-  const metadata = await readRefreshSnapshotMetadataRowByKey(opts.db, opts.key);
+  const global = opts.globalCache.get(opts.key);
+  // SQLite owns a random body identity across inserts and corrections. A
+  // binding object can change between requests without changing its database.
+  // Only this opaque identity permits reuse without transferring the body.
+  const cached =
+    opts.cacheByDb.get(opts.db)?.get(opts.key) ??
+    (/^[a-f0-9]{32}$/.test(global?.bodyRevision ?? '') ? global : undefined);
+  let metadata:
+    | (Omit<SnapshotRefreshRow, 'key' | 'body_json'> & { body_json: string | null })
+    | null;
+  try {
+    let statement = readPreferredSnapshotStatementByDb.get(opts.db);
+    if (!statement) {
+      statement = opts.db.prepare(READ_PREFERRED_SNAPSHOT_SQL);
+      readPreferredSnapshotStatementByDb.set(opts.db, statement);
+    }
+    metadata = await statement
+      .bind(
+        opts.key,
+        cached?.generatedAt ?? -1,
+        cached?.updatedAt ?? -1,
+        cached?.bodyRevision ?? '',
+      )
+      .first();
+  } catch {
+    return { row: null, age: null, invalid: false };
+  }
   if (!metadata) {
     return { row: null, age: null, invalid: false };
   }
@@ -757,15 +790,13 @@ async function readPreferredSnapshotCandidate(opts: {
     key: opts.key,
     generatedAt: metadata.generated_at,
     updatedAt: toSnapshotUpdatedAt(metadata),
+    bodyRevision: metadata.body_revision,
   };
   if (isFutureSnapshotCandidate(candidate, opts.now)) {
     return { row: null, age: null, invalid: false };
   }
 
-  const age =
-    opts.key === SNAPSHOT_ARTIFACT_KEY
-      ? snapshotCandidateUpdatedAgeSeconds(candidate, opts.now)
-      : snapshotCandidateAgeSeconds(candidate, opts.now);
+  const age = snapshotCandidateAgeSeconds(candidate, opts.now);
   if (age > opts.maxAgeSeconds) {
     return { row: null, age, invalid: false };
   }
@@ -773,7 +804,11 @@ async function readPreferredSnapshotCandidate(opts: {
   const result = await readValidatedSnapshotCandidate({
     db: opts.db,
     candidate,
-    readRowByKey: async (key) => await readRefreshSnapshotRowByKey(opts.db, key),
+    ...(typeof metadata.body_json === 'string' ? { bodyJson: metadata.body_json } : {}),
+    readRowByKey: async (key) =>
+      typeof metadata.body_json === 'string'
+        ? { ...metadata, key, body_json: metadata.body_json }
+        : null,
     normalize: opts.normalize,
     cacheByDb: opts.cacheByDb,
     globalCache: opts.globalCache,
@@ -847,7 +882,7 @@ async function readHomepageArtifactJsonViaCandidates(
     .filter(
       (candidate) =>
         !isFutureSnapshotCandidate(candidate, now) &&
-        snapshotCandidateUpdatedAgeSeconds(candidate, now) <= maxAgeSeconds,
+        snapshotCandidateAgeSeconds(candidate, now) <= maxAgeSeconds,
     )
     .sort(compareArtifactCandidates);
 
@@ -874,7 +909,7 @@ async function readHomepageArtifactJsonViaCandidates(
 
     return {
       bodyJson: result.row.bodyJson,
-      age: snapshotCandidateUpdatedAgeSeconds(
+      age: snapshotCandidateAgeSeconds(
         {
           key: candidate.key,
           generatedAt: result.row.generatedAt,
@@ -908,6 +943,7 @@ export async function readHomepageSnapshotGeneratedAt(
       key: candidate.key,
       generatedAt: row.generated_at,
       updatedAt: toSnapshotUpdatedAt(row),
+      bodyRevision: row.body_revision,
     };
     if (isFutureSnapshotCandidate(liveCandidate, now)) {
       continue;
@@ -1014,6 +1050,7 @@ export function readCachedHomepageRefreshBaseSnapshot(
       key,
       generatedAt: row.generatedAt,
       updatedAt: row.updatedAt,
+      bodyRevision: row.bodyRevision,
     };
     if (
       isFutureSnapshotCandidate(candidate, now) ||
@@ -1179,6 +1216,7 @@ export async function readHomepageRefreshBaseSnapshot(
         key: SNAPSHOT_KEY,
         generatedAt: homepageMetadata.generated_at,
         updatedAt: toSnapshotUpdatedAt(homepageMetadata),
+        bodyRevision: homepageMetadata.body_revision,
       }
     : null;
 
@@ -1190,6 +1228,7 @@ export async function readHomepageRefreshBaseSnapshot(
             key: SNAPSHOT_ARTIFACT_KEY,
             generatedAt: artifactMetadata.generated_at,
             updatedAt: toSnapshotUpdatedAt(artifactMetadata),
+            bodyRevision: artifactMetadata.body_revision,
           }
         : null;
 
@@ -1212,6 +1251,7 @@ export async function readHomepageRefreshBaseSnapshot(
         key: SNAPSHOT_ARTIFACT_KEY,
         generatedAt: artifactMetadata.generated_at,
         updatedAt: toSnapshotUpdatedAt(artifactMetadata),
+        bodyRevision: artifactMetadata.body_revision,
       }
     : null;
 
@@ -1258,6 +1298,7 @@ export function primeHomepageRefreshBaseSnapshotCache(opts: {
   db: D1Database;
   generatedAt: number;
   updatedAt: number;
+  bodyRevision?: string | undefined;
   snapshot: PublicHomepageResponse;
   renderBodyJson: string;
   payloadBodyJson?: string | null;
@@ -1266,6 +1307,7 @@ export function primeHomepageRefreshBaseSnapshotCache(opts: {
     key: SNAPSHOT_ARTIFACT_KEY,
     generatedAt: opts.generatedAt,
     updatedAt: opts.updatedAt,
+    bodyRevision: opts.bodyRevision,
   };
   writeCachedParsedSnapshotRowGlobal(
     parsedHomepagePayloadCacheGlobal,
@@ -1289,6 +1331,7 @@ export function primeHomepageRefreshBaseSnapshotCache(opts: {
     key: SNAPSHOT_KEY,
     generatedAt: opts.generatedAt,
     updatedAt: opts.updatedAt,
+    bodyRevision: opts.bodyRevision,
   };
   writeCachedParsedSnapshotRowGlobal(
     parsedHomepagePayloadCacheGlobal,
@@ -1307,13 +1350,8 @@ export function primeHomepageRefreshBaseSnapshotCache(opts: {
 
 export function applyHomepageCacheHeaders(res: Response, ageSeconds: number): void {
   const remaining = Math.max(0, MAX_AGE_SECONDS - ageSeconds);
-  const maxAge = Math.min(30, remaining);
-  const stale = Math.max(0, remaining - maxAge);
-
-  res.headers.set(
-    'Cache-Control',
-    `public, max-age=${maxAge}, stale-while-revalidate=${stale}, stale-if-error=${stale}`,
-  );
+  const maxAge = Math.min(15, remaining);
+  res.headers.set('Cache-Control', `public, max-age=0, s-maxage=${maxAge}, must-revalidate`);
 }
 
 export async function readHomepageSnapshotJsonAnyAge(

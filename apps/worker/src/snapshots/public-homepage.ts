@@ -378,7 +378,8 @@ function parseHomepageArtifactMonitorFragmentKey(fragmentKey: string): number | 
 
 export function parseHomepageArtifactMonitorFragmentRows(
   rows: readonly PublicSnapshotFragmentRow[],
-  snapshot: PublicHomepageResponse,
+  snapshot: Pick<PublicHomepageResponse, 'generated_at'> & { monitors: Array<{ id: number }> },
+  onMonitor?: (monitor: HomepageArtifactMonitorFragment) => void,
 ): HomepageArtifactMonitorFragmentParseResult {
   const cardHtmlByMonitorId = new Map<number, string>();
   const monitorNameById = new Map<number, string>();
@@ -409,6 +410,7 @@ export function parseHomepageArtifactMonitorFragmentRows(
       invalidCount += 1;
       continue;
     }
+    onMonitor?.(parsed.data);
     cardHtmlByMonitorId.set(monitorId, parsed.data.card_html);
     monitorNameById.set(monitorId, parsed.data.name);
   }
@@ -586,6 +588,47 @@ export function buildHomepageRenderArtifactFromMonitorFragments(
       monitorNameById: parsed.monitorNameById,
       monitorCardHtmlById: parsed.cardHtmlByMonitorId,
     }),
+  };
+}
+
+// Only presentation fields are returned. Complete cards are required, so the
+// presentation-only monitor stand-ins never take the full-card rendering path
+// and never enter the stored/public snapshot assembled inside D1.
+export function buildHomepageArtifactPresentation(
+  envelope: Omit<PublicHomepageResponse, 'monitors'>,
+  monitorIds: number[],
+  rows: readonly PublicSnapshotFragmentRow[],
+): Omit<StoredPublicHomepageRenderArtifact, 'snapshot'> | null {
+  const cards = new Map<number, HomepageArtifactMonitorFragment>();
+  const expected = new Set(monitorIds);
+  const parsed = parseHomepageArtifactMonitorFragmentRows(
+    rows.filter((row) => expected.has(Number(row.fragment_key.slice('monitor:'.length)))),
+    { generated_at: envelope.generated_at, monitors: monitorIds.map((id) => ({ id })) },
+    (card) => cards.set(card.id, card),
+  );
+  if (parsed.missingCount || parsed.invalidCount || parsed.staleCount) return null;
+  const monitors = monitorIds.map((id) => ({
+    id,
+    name: cards.get(id)!.name,
+    group_name: cards.get(id)!.group_name,
+    display_url: null,
+    type: 'http' as const,
+    status: 'unknown' as const,
+    is_stale: false,
+    last_checked_at: null,
+    heartbeat_strip: { checked_at: [], status_codes: '', latency_ms: [] },
+    uptime_30d: null,
+    uptime_day_strip: { day_start_at: [], downtime_sec: [], unknown_sec: [], uptime_pct_milli: [] },
+  }));
+  const artifact = buildHomepageRenderArtifactWithPreloadOptions(
+    { ...envelope, monitors },
+    { monitorNameById: parsed.monitorNameById, monitorCardHtmlById: parsed.cardHtmlByMonitorId },
+  );
+  return {
+    generated_at: artifact.generated_at,
+    preload_html: artifact.preload_html,
+    meta_title: artifact.meta_title,
+    meta_description: artifact.meta_description,
   };
 }
 

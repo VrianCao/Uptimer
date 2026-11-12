@@ -306,6 +306,8 @@ async function computePartialDayRow(
         SELECT checked_at, status, latency_ms
         FROM check_results
         WHERE monitor_id = ?1
+          AND storage_shard = CAST((?1 - 1) / 4 AS INTEGER)
+          AND bucket_start_at >= (?2) - 3599
           AND checked_at >= ?2
           AND checked_at < ?3
         ORDER BY checked_at
@@ -451,6 +453,8 @@ adminAnalyticsRoutes.get('/monitors/:id', async (c) => {
         SELECT checked_at, status, latency_ms
         FROM check_results
         WHERE monitor_id = ?1
+          AND storage_shard = CAST((?1 - 1) / 4 AS INTEGER)
+          AND bucket_start_at >= (?2) - 3599
           AND checked_at >= ?2
           AND checked_at < ?3
         ORDER BY checked_at

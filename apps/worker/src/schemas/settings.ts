@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isValidTimeZone } from '@uptimer/shared';
 
 export const settingsPatchInputSchema = z
   .object({
@@ -8,7 +9,13 @@ export const settingsPatchInputSchema = z
     site_locale: z.enum(['auto', 'en', 'zh-CN', 'zh-TW', 'ja', 'es']).optional(),
 
     // IANA timezone, e.g. 'UTC', 'Asia/Shanghai'.
-    site_timezone: z.string().min(1).max(64).optional(),
+    site_timezone: z
+      .string()
+      .trim()
+      .min(1)
+      .max(64)
+      .refine(isValidTimeZone, 'Invalid IANA time zone')
+      .optional(),
 
     retention_check_results_days: z.number().int().min(1).max(365).optional(),
 
