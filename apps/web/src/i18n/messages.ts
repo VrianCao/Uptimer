@@ -192,6 +192,32 @@ const en = {
   'admin_settings.defaults.help': 'Default analytics ranges in admin pages.',
   'admin_settings.defaults.overview_range': 'Overview default range',
   'admin_settings.defaults.monitor_range': 'Monitor default range',
+  'admin_settings.agent_guide.title': 'CLI & Agent Skill Guide',
+  'admin_settings.agent_guide.help':
+    'Manage this instance remotely with uptimer-cli and its bundled Agent Skill over the Admin API (requires Node.js >= 22.14; MCP is not bundled).',
+  'admin_settings.agent_guide.include_token': 'Include current session token',
+  'admin_settings.agent_guide.token_warning':
+    'Your Admin Token has full administrative access. Inject it only into a trusted local shell or agent credential environment, and never paste it into chat or shared logs.',
+  'admin_settings.agent_guide.origin_placeholder_hint':
+    'Current origin is not CLI-compatible. Replace the placeholder URL with your HTTPS Worker or Pages origin.',
+  'admin_settings.agent_guide.copy': 'Copy',
+  'admin_settings.agent_guide.copied': 'Copied',
+  'admin_settings.agent_guide.copy_failed': 'Copy failed',
+  'admin_settings.agent_guide.step1_title': '1. Install CLI & Agent Skill',
+  'admin_settings.agent_guide.step1_help':
+    'uptimer skill install runs offline on Node.js >= 22.14 without credentials; npx skills auto-detects installed agents on Node.js >= 22.20.',
+  'admin_settings.agent_guide.install_mode_cli': 'uptimer CLI',
+  'admin_settings.agent_guide.install_mode_npx': 'npx skills',
+  'admin_settings.agent_guide.step2_title': '2. Configure Environment & Verify',
+  'admin_settings.agent_guide.step2_help':
+    'UPTIMER_URL must be an HTTPS root origin without /api/v1 (or loopback HTTP for local development). .env files are not loaded automatically.',
+  'admin_settings.agent_guide.step3_title': '3. Use in Agent or Terminal',
+  'admin_settings.agent_guide.usage_mode_prompt': 'Agent Prompt',
+  'admin_settings.agent_guide.usage_mode_cli': 'CLI Commands',
+  'admin_settings.agent_guide.prompt_template':
+    'Use the uptimer-cli skill to inspect the current monitors and status pages on {origin} (UPTIMER_URL and UPTIMER_ADMIN_TOKEN are configured in the environment), then summarize the setup before making changes.',
+  'admin_settings.agent_guide.scope_note':
+    'Supports monitors/groups, notification-channels, status-pages, and settings/uptime-rating. Sensitive fields are redacted in CLI output; if a write times out, query current state before retrying.',
 
   'admin_dashboard.title': 'Admin Dashboard',
   'admin_dashboard.tab.monitors': 'Monitors',
@@ -691,6 +717,32 @@ const zhCn: LocaleMessages = {
   'admin_settings.defaults.help': '后台分析页面默认时间范围。',
   'admin_settings.defaults.overview_range': '总览默认范围',
   'admin_settings.defaults.monitor_range': '监控项默认范围',
+  'admin_settings.agent_guide.title': 'CLI 与 Agent Skill 接入引导',
+  'admin_settings.agent_guide.help':
+    '通过 uptimer-cli 与内置 Agent Skill 调用 Admin API 远程管理当前实例（需要 Node.js >= 22.14；暂未内置 MCP 服务）。',
+  'admin_settings.agent_guide.include_token': '带入当前会话 Token',
+  'admin_settings.agent_guide.token_warning':
+    'Admin Token 拥有完整管理权限。请仅将其注入受信任的本地 Shell 或 Agent 凭证环境中，切勿粘贴到对话或共享日志中。',
+  'admin_settings.agent_guide.origin_placeholder_hint':
+    '当前访问源站不符合 CLI 校验规则，请将命令中的占位地址替换为你的 HTTPS Worker 或 Pages 源站。',
+  'admin_settings.agent_guide.copy': '复制',
+  'admin_settings.agent_guide.copied': '已复制',
+  'admin_settings.agent_guide.copy_failed': '复制失败',
+  'admin_settings.agent_guide.step1_title': '1. 安装 CLI 与 Agent Skill',
+  'admin_settings.agent_guide.step1_help':
+    'uptimer skill install 在 Node.js >= 22.14 下即可离线安装且无需凭证；npx skills 会自动检测已安装的 Agent（需 Node.js >= 22.20）。',
+  'admin_settings.agent_guide.install_mode_cli': 'uptimer CLI',
+  'admin_settings.agent_guide.install_mode_npx': 'npx skills',
+  'admin_settings.agent_guide.step2_title': '2. 配置环境变量并验证连接',
+  'admin_settings.agent_guide.step2_help':
+    'UPTIMER_URL 需为不含 /api/v1 的 HTTPS 根地址（本地调试允许环回 HTTP）。CLI 不会自动读取 .env 文件。',
+  'admin_settings.agent_guide.step3_title': '3. 在 Agent 或终端中使用',
+  'admin_settings.agent_guide.usage_mode_prompt': 'Agent 提示词',
+  'admin_settings.agent_guide.usage_mode_cli': '常用命令',
+  'admin_settings.agent_guide.prompt_template':
+    '请使用 uptimer-cli skill 连接 {origin}（环境变量已配置 UPTIMER_URL 与 UPTIMER_ADMIN_TOKEN），先查看当前的监控项与状态页配置并汇报概览。',
+  'admin_settings.agent_guide.scope_note':
+    '支持 monitors/groups、notification-channels、status-pages 与 settings/uptime-rating。CLI 输出已自动脱敏；写操作超时后请先查询状态再决定是否重试。',
 
   'admin_dashboard.title': '管理面板',
   'admin_dashboard.tab.monitors': '监控项',
@@ -1182,6 +1234,32 @@ const zhTw: LocaleMessages = {
   'admin_settings.defaults.help': '設定「分析」頁面中，各區塊預設顯示的時間範圍。',
   'admin_settings.defaults.overview_range': '「總覽」預設時間範圍',
   'admin_settings.defaults.monitor_range': '「監測器分析」預設時間範圍',
+  'admin_settings.agent_guide.title': 'CLI 與 Agent Skill 存取引導',
+  'admin_settings.agent_guide.help':
+    '透過 uptimer-cli 與內建 Agent Skill 呼叫 Admin API 遠端管理此執行個體（需 Node.js >= 22.14；目前未內建 MCP 服務）。',
+  'admin_settings.agent_guide.include_token': '帶入目前工作階段 Token',
+  'admin_settings.agent_guide.token_warning':
+    'Admin Token 具備完整管理權限。請僅注入受信任的本機 Shell 或 Agent 憑證環境，切勿貼至對話或共用日誌中。',
+  'admin_settings.agent_guide.origin_placeholder_hint':
+    '目前的來源網址不符合 CLI 驗證規則，請將預留位置網址替換為你的 HTTPS Worker 或 Pages 來源網址。',
+  'admin_settings.agent_guide.copy': '複製',
+  'admin_settings.agent_guide.copied': '已複製',
+  'admin_settings.agent_guide.copy_failed': '複製失敗',
+  'admin_settings.agent_guide.step1_title': '1. 安裝 CLI 與 Agent Skill',
+  'admin_settings.agent_guide.step1_help':
+    'uptimer skill install 在 Node.js >= 22.14 即可離線安裝且不需憑證；npx skills 會自動偵測已安裝的 Agent（需 Node.js >= 22.20）。',
+  'admin_settings.agent_guide.install_mode_cli': 'uptimer CLI',
+  'admin_settings.agent_guide.install_mode_npx': 'npx skills',
+  'admin_settings.agent_guide.step2_title': '2. 設定環境變數並驗證連線',
+  'admin_settings.agent_guide.step2_help':
+    'UPTIMER_URL 必須是不含 /api/v1 的 HTTPS 根網址（本機開發允許迴圈 HTTP）。CLI 不會自動載入 .env。',
+  'admin_settings.agent_guide.step3_title': '3. 在 Agent 或終端機中使用',
+  'admin_settings.agent_guide.usage_mode_prompt': 'Agent 提示詞',
+  'admin_settings.agent_guide.usage_mode_cli': '常用指令',
+  'admin_settings.agent_guide.prompt_template':
+    '請使用 uptimer-cli skill 連線至 {origin}（環境變數已設定 UPTIMER_URL 與 UPTIMER_ADMIN_TOKEN），先檢視目前的監測器與狀態頁設定並摘要說明。',
+  'admin_settings.agent_guide.scope_note':
+    '支援 monitors/groups、notification-channels、status-pages 與 settings/uptime-rating。CLI 輸出已自動遮罩敏感欄位；寫入逾時後請先查詢狀態再決定是否重試。',
 
   'admin_dashboard.title': '管理員儀表板',
   'admin_dashboard.tab.monitors': '監測器',
@@ -1616,6 +1694,32 @@ const ja: LocaleMessages = {
   'admin_settings.locale.option.zh_tw': '中国語 (繁体字)',
   'admin_settings.locale.option.ja': '日本語',
   'admin_settings.locale.option.es': 'スペイン語',
+  'admin_settings.agent_guide.title': 'CLI & Agent Skill ガイド',
+  'admin_settings.agent_guide.help':
+    'uptimer-cli と同梱の Agent Skill を使って Admin API 経由でインスタンスをリモート管理します（Node.js >= 22.14 が必要、MCP は未同梱）。',
+  'admin_settings.agent_guide.include_token': '現在のセッショントークンを含める',
+  'admin_settings.agent_guide.token_warning':
+    'Admin Token には全管理権限があります。信頼されたローカルシェルまたは Agent の認証情報環境にのみ設定し、チャットや共有ログには貼り付けないでください。',
+  'admin_settings.agent_guide.origin_placeholder_hint':
+    '現在のオリジンは CLI の検証ルールに一致しません。プレースホルダー URL を HTTPS の Worker または Pages オリジンに置き換えてください。',
+  'admin_settings.agent_guide.copy': 'コピー',
+  'admin_settings.agent_guide.copied': 'コピーしました',
+  'admin_settings.agent_guide.copy_failed': 'コピーに失敗しました',
+  'admin_settings.agent_guide.step1_title': '1. CLI と Agent Skill をインストール',
+  'admin_settings.agent_guide.step1_help':
+    'uptimer skill install は Node.js >= 22.14 で認証情報なしにオフライン実行できます。npx skills はインストール済み Agent を自動検出します（Node.js >= 22.20）。',
+  'admin_settings.agent_guide.install_mode_cli': 'uptimer CLI',
+  'admin_settings.agent_guide.install_mode_npx': 'npx skills',
+  'admin_settings.agent_guide.step2_title': '2. 環境変数を設定して接続確認',
+  'admin_settings.agent_guide.step2_help':
+    'UPTIMER_URL は /api/v1 を含まない HTTPS ルートオリジン（ローカル開発時はループバック HTTP も可）を指定してください。.env は自動読み込みされません。',
+  'admin_settings.agent_guide.step3_title': '3. Agent またはターミナルで使用',
+  'admin_settings.agent_guide.usage_mode_prompt': 'Agent プロンプト',
+  'admin_settings.agent_guide.usage_mode_cli': 'CLI コマンド',
+  'admin_settings.agent_guide.prompt_template':
+    'uptimer-cli skill を使用して {origin} の現在のモニターとステータスページを確認し（UPTIMER_URL と UPTIMER_ADMIN_TOKEN は環境変数に設定済み）、変更前に構成を要約してください。',
+  'admin_settings.agent_guide.scope_note':
+    'monitors/groups、notification-channels、status-pages、settings/uptime-rating に対応しています。機密項目は出力時にマスクされます。書き込みがタイムアウトした場合は再試行前に状態を確認してください。',
 
   'admin_dashboard.title': '管理ダッシュボード',
   'admin_dashboard.tab.monitors': 'モニター',
@@ -1839,6 +1943,32 @@ const es: LocaleMessages = {
   'admin_settings.locale.option.zh_tw': 'Chino tradicional',
   'admin_settings.locale.option.ja': 'Japones',
   'admin_settings.locale.option.es': 'Espanol',
+  'admin_settings.agent_guide.title': 'Guia de CLI y Agent Skill',
+  'admin_settings.agent_guide.help':
+    'Administra esta instancia de forma remota con uptimer-cli y su Agent Skill mediante la Admin API (requiere Node.js >= 22.14; no incluye servidor MCP).',
+  'admin_settings.agent_guide.include_token': 'Incluir token de sesion actual',
+  'admin_settings.agent_guide.token_warning':
+    'El Admin Token tiene permisos completos de administracion. Inyectalo solo en una terminal o entorno de credenciales confiable y nunca lo pegues en chats o registros compartidos.',
+  'admin_settings.agent_guide.origin_placeholder_hint':
+    'El origen actual no es compatible con la CLI. Reemplaza la URL de ejemplo por tu origen HTTPS de Worker o Pages.',
+  'admin_settings.agent_guide.copy': 'Copiar',
+  'admin_settings.agent_guide.copied': 'Copiado',
+  'admin_settings.agent_guide.copy_failed': 'Error al copiar',
+  'admin_settings.agent_guide.step1_title': '1. Instalar CLI y Agent Skill',
+  'admin_settings.agent_guide.step1_help':
+    'uptimer skill install funciona sin conexion en Node.js >= 22.14 sin credenciales; npx skills detecta agentes instalados en Node.js >= 22.20.',
+  'admin_settings.agent_guide.install_mode_cli': 'uptimer CLI',
+  'admin_settings.agent_guide.install_mode_npx': 'npx skills',
+  'admin_settings.agent_guide.step2_title': '2. Configurar entorno y verificar',
+  'admin_settings.agent_guide.step2_help':
+    'UPTIMER_URL debe ser un origen raiz HTTPS sin /api/v1 (o HTTP loopback para desarrollo local). Los archivos .env no se cargan automaticamente.',
+  'admin_settings.agent_guide.step3_title': '3. Usar en Agent o terminal',
+  'admin_settings.agent_guide.usage_mode_prompt': 'Prompt para Agent',
+  'admin_settings.agent_guide.usage_mode_cli': 'Comandos CLI',
+  'admin_settings.agent_guide.prompt_template':
+    'Usa el skill uptimer-cli para revisar los monitores y paginas de estado actuales en {origin} (UPTIMER_URL y UPTIMER_ADMIN_TOKEN estan configurados en el entorno) y resume la configuracion antes de hacer cambios.',
+  'admin_settings.agent_guide.scope_note':
+    'Compatible con monitors/groups, notification-channels, status-pages y settings/uptime-rating. La salida de la CLI oculta credenciales; ante un timeout de escritura, consulta el estado antes de reintentar.',
 
   'admin_dashboard.title': 'Panel de administracion',
   'admin_dashboard.tab.monitors': 'Monitores',

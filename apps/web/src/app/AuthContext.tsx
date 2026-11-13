@@ -34,6 +34,7 @@ type AuthStatus = 'unauthenticated' | 'checking' | 'authenticated';
 interface AuthContextValue {
   status: AuthStatus;
   isAuthenticated: boolean;
+  token: string | null;
   login: (token: string) => Promise<void>;
   logout: () => void;
   ensureValidToken: () => Promise<boolean>;
@@ -127,11 +128,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return {
       status,
       isAuthenticated: status === 'authenticated',
+      token: status === 'authenticated' ? token : null,
       login,
       logout,
       ensureValidToken,
     };
-  }, [ensureValidToken, login, logout, status]);
+  }, [ensureValidToken, login, logout, status, token]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

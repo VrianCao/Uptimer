@@ -180,16 +180,17 @@ export function AdminAnalytics() {
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900">
-      <header className="bg-white dark:bg-slate-800 shadow-sm dark:shadow-none dark:border-b dark:border-slate-700">
+      <header className="bg-white dark:bg-slate-800 border-b border-slate-100 dark:border-slate-700">
         <div className="mx-auto max-w-[92rem] px-4 py-3 sm:px-6 sm:py-4 lg:px-8 flex justify-between items-center">
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-slate-100">
+          <h1 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-slate-100">
             {t('admin_analytics.analytics_title')}
           </h1>
 
           <div className="flex items-center gap-1">
-            <ThemeToggle />
             <Link
               to={ADMIN_PATH}
+              aria-label={t('common.dashboard')}
+              title={t('common.dashboard')}
               className="flex items-center justify-center h-10 text-base text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors px-3 rounded-lg"
             >
               <svg
@@ -209,6 +210,8 @@ export function AdminAnalytics() {
             </Link>
             <Link
               to="/"
+              aria-label={t('common.status')}
+              title={t('common.status')}
               className="flex items-center justify-center h-10 text-base text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors px-3 rounded-lg"
             >
               <svg
@@ -226,8 +229,13 @@ export function AdminAnalytics() {
               </svg>
               <span className="hidden sm:inline">{t('common.status')}</span>
             </Link>
+            <span aria-hidden="true" className="mx-1 h-5 w-px bg-slate-200 dark:bg-slate-700" />
+            <ThemeToggle />
             <button
+              type="button"
               onClick={logout}
+              aria-label={t('common.logout')}
+              title={t('common.logout')}
               className="flex items-center justify-center h-10 text-base text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors px-3 rounded-lg"
             >
               <svg

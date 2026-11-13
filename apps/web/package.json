@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "test": "vitest run",
     "lint": "pnpm -w exec eslint --config eslint.config.mjs apps/web",
     "typecheck": "pnpm -w exec tsc -p apps/web/tsconfig.json --noEmit"
   },
