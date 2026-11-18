@@ -58,7 +58,7 @@ Paid 账户选择 `free` 仍会使用 DO 包含量；需要纯 Worker/D1 路径�
 
 artifact 保留 **30 天**，也可能被提前删除；发布前私下保存已审阅包和 receipt。重跑 plan 会重新构建/观察并可能改变 hash，不能当作 apply 重试。只接受本仓库、同源码、成功手动计划的 artifact；不接受 fork PR 包。
 
-首装完成后，从 receipt 保存所分配的 D1 UUID，后续新计划选择 `upgrade`。首装中途失败应先用**同一 install 计划**续跑，不急于修改变量；读取同名空实例，仅执行剩余迁移前缀。匹配候选的已部署 Worker fingerprint/DB binding 也能识别续跑目标；同名但无关的非空库会被拒绝。
+首装时从 receipt 保存所分配的 D1 UUID，供后续 `upgrade` 使用。若 apply 在 Worker 部署前中断，核对 UUID 与已完成的迁移前缀，再针对同一个 D1 生成 `upgrade` 计划。已部署且匹配的 Worker 可凭包指纹与 D1 绑定识别续跑目标。如果新建 Pages 项目后首个部署未完成，请用 receipt 核对项目 ID，再审阅新计划。收据缺失或执行结果不明时，保留已分配的资源并先核查状态。
 
 同一已成功包再次 apply 时，迁移、Worker、Pages 和 Secret 写入均跳过，仍会做只读身份与冒烟检查。跨产品没有原子事务；GitHub 队列取消、runner 故障或 API 超时仍可能中断，先核对 receipt 与线上身份再续跑。
 

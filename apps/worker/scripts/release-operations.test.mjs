@@ -37,6 +37,7 @@ async function fixture(t, override = {}, options = {}) {
       secretNames: ['ADMIN_TOKEN', 'WEBHOOK_KEY'],
     },
     pages: {
+      projectId: 'current-project',
       deploymentId: 'old-pages',
       productionBranch: 'master',
       project: {
@@ -301,7 +302,7 @@ test('symlink artifact entries are refused', async (t) => {
   assert.ok(await readFile(join(f.directory, 'manifest.json')));
 });
 
-test('fresh install resumes partial migrations and repeat skips all cloud mutations', async (t) => {
+test('fresh install refuses a newly discovered D1 until a new plan pins its UUID', async (t) => {
   const f = await fixture(
     t,
     { RELEASE_OPERATION: 'install', UPTIMER_D1_ID: '' },
@@ -316,8 +317,7 @@ test('fresh install resumes partial migrations and repeat skips all cloud mutati
     },
   );
   const allocated = baseEnv.UPTIMER_D1_ID;
-  let created = 0,
-    failOnce = true;
+  let created = 0;
   f.cloud.request = async (path) => {
     const live = f.getLive();
     if (path === '/d1/database') {
@@ -325,27 +325,50 @@ test('fresh install resumes partial migrations and repeat skips all cloud mutati
       live.databaseId = allocated;
       return { uuid: allocated };
     }
-    if (path === '/pages/projects') {
-      live.pages = { productionBranch: 'master', deploymentId: null, project: {} };
-      return {};
-    }
     throw Error('Unexpected request');
   };
-  const run = async (args) => {
-    const live = f.getLive();
-    if (args.includes('migrations')) {
-      if (failOnce) {
-        failOnce = false;
-        live.appliedMigrations = f.plan.migrations.slice(0, 14).map((m) => m.name);
+  await assert.rejects(
+    applyRelease({
+      ...f,
+      root,
+      run: async () => {
+        f.getLive().appliedMigrations = f.plan.migrations.slice(0, 14).map((m) => m.name);
         throw Error('Interrupted install');
-      }
-      live.appliedMigrations = f.plan.migrations.map((m) => m.name);
+      },
+    }),
+    /Interrupted install/,
+  );
+  assert.equal((await readJson(join(f.directory, 'checkpoint.json'))).createdDatabaseId, allocated);
+  f.cloud.target.databaseId = null; // a new runner only has the original approved package
+  await assert.rejects(applyRelease({ ...f, root }), /verify its UUID/);
+
+  const recovery = await fixture(
+    t,
+    { RELEASE_OPERATION: 'upgrade', UPTIMER_D1_ID: allocated },
+    { live: f.getLive() },
+  );
+  recovery.cloud.request = async (path) => {
+    assert.equal(path, '/pages/projects');
+    const id = 'created-project';
+    recovery.getLive().pages = {
+      projectId: id,
+      productionBranch: 'master',
+      deploymentId: null,
+      project: {},
+    };
+    return { id };
+  };
+  const run = async (args) => {
+    const live = recovery.getLive();
+    if (args.includes('migrations')) {
+      assert.equal(live.appliedMigrations.length, 14);
+      live.appliedMigrations = recovery.plan.migrations.map((m) => m.name);
     }
     if (args.includes('--no-bundle'))
       live.worker = {
         versionId: 'install-bundle',
-        sourceSha: f.plan.sourceSha,
-        fingerprint: f.plan.fingerprint,
+        sourceSha: recovery.plan.sourceSha,
+        fingerprint: recovery.plan.fingerprint,
         profile: 'free',
         databaseId: allocated,
         hosting: 'pages',
@@ -359,16 +382,15 @@ test('fresh install resumes partial migrations and repeat skips all cloud mutati
       live.pages = {
         ...live.pages,
         deploymentId: 'install-pages',
-        sourceSha: f.plan.sourceSha,
-        fingerprint: f.plan.fingerprint,
+        sourceSha: recovery.plan.sourceSha,
+        fingerprint: recovery.plan.fingerprint,
       };
   };
-  await assert.rejects(applyRelease({ ...f, root, run }), /Interrupted install/);
-  await applyRelease({ ...f, root, run });
+  await applyRelease({ ...recovery, root, run });
   assert.equal(created, 1);
-  f.getLive().emptyProjectDatabase = false;
+  recovery.getLive().emptyProjectDatabase = false;
   const final = await applyRelease({
-    ...f,
+    ...recovery,
     root,
     run: async () => {
       throw Error('Repeat must be a no-op');
@@ -376,6 +398,40 @@ test('fresh install resumes partial migrations and repeat skips all cloud mutati
   });
   assert.equal(final.idempotentNoop, true);
   assert.equal(final.after.worker.versionId, 'install-secret');
+});
+
+test('a project appearing after the plan cannot receive a deployment or Pages settings', async (t) => {
+  const f = await fixture(t, {}, { live: { pages: null } });
+  f.getLive().pages = {
+    projectId: 'unreviewed-project',
+    productionBranch: 'master',
+    deploymentId: null,
+  };
+  await assert.rejects(applyRelease({ ...f, root }), /unreviewed Pages project/);
+});
+
+test('a Worker that changes during deploy cannot receive the planned admin secret', async (t) => {
+  const f = await fixture(t);
+  const calls = [];
+  await assert.rejects(
+    applyRelease({
+      ...f,
+      root,
+      run: async (args) => {
+        calls.push(args);
+        assert.ok(args.includes('--no-bundle'));
+        f.getLive().worker = { ...f.getLive().worker, versionId: 'external', secretNames: [] };
+      },
+    }),
+    /Worker changed outside this reviewed deployment/,
+  );
+  assert.equal(calls.length, 1);
+});
+
+test('populated legacy D1 requires maintenance even if the selected Worker is absent', async (t) => {
+  const f = await fixture(t, {}, { live: { worker: null, appliedMigrations: [] } });
+  assert.match(f.plan.blockers[0], /maintenance/);
+  await assert.rejects(applyRelease({ ...f, root }), /Blocked before any remote mutation/);
 });
 test('profile changes and failed frontend builds never start remote mutations', async (t) => {
   const f = await fixture(t, { RELEASE_PROFILE: 'paid' });
@@ -465,7 +521,7 @@ test('a fresh install plan never adopts an already existing database, even if em
   );
 });
 
-test('only initial install 503s wait for Cron propagation; existing outages fail immediately', async () => {
+test('only a new Worker waits for Cron propagation; existing outages fail immediately', async () => {
   const target = targetInput(
     { ...baseEnv, RELEASE_OPERATION: 'install', UPTIMER_D1_ID: '' },
     'alice',
@@ -491,6 +547,13 @@ test('only initial install 503s wait for Cron propagation; existing outages fail
   };
   const result = await verifyRelease({ target, before: { worker: null } }, 'test', options);
   assert.equal(result.initialWarmupMs, 30000);
+  clock = start;
+  const recovered = await verifyRelease(
+    { target: { ...target, operation: 'upgrade' }, before: { worker: null } },
+    'test',
+    options,
+  );
+  assert.equal(recovered.initialWarmupMs, 30000);
   clock = start;
   await assert.rejects(
     verifyRelease({ target: { ...target, operation: 'upgrade' } }, 'test', options),

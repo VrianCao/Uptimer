@@ -104,10 +104,10 @@ export function assertPlan(plan, expected) {
   migrationSchema.parse(plan.migrations);
   return plan;
 }
-export function deploymentSteps(plan, live) {
+export function deploymentSteps(plan, live, createdDatabaseId) {
   const t = plan.target,
     before = plan.before;
-  if (live.databaseId !== (t.databaseId ?? live.databaseId))
+  if (live.databaseId !== (t.databaseId ?? createdDatabaseId ?? live.databaseId))
     throw Error('Database identity changed');
   if (t.operation === 'upgrade' && !live.databaseId)
     throw Error('Existing database required; automatic replacement is forbidden');
@@ -125,26 +125,30 @@ export function deploymentSteps(plan, live) {
     throw Error('Worker changed outside this reviewed deployment');
   if (live.worker && live.worker.hosting !== t.hosting)
     throw Error('Hosting changes require a separate migration plan');
+  if (
+    before.pages &&
+    (!live.pages ||
+      live.pages.projectId !== before.pages.projectId ||
+      live.pages.productionBranch !== before.pages.productionBranch)
+  )
+    throw Error('Reviewed Pages project identity or production branch changed');
   const pagesReady =
     t.hosting !== 'pages' ||
     (live.pages?.sourceSha === plan.sourceSha && live.pages?.fingerprint === plan.fingerprint);
-  if (
-    !pagesReady &&
-    live.pages?.deploymentId !== before.pages?.deploymentId &&
-    !(!before.pages && !live.pages?.deploymentId) &&
-    live.pages?.fingerprint !== plan.fingerprint
-  )
+  if (!pagesReady && live.pages && !before.pages)
+    throw Error('An unreviewed Pages project appeared; inspect it and generate a new plan');
+  if (!pagesReady && live.pages?.deploymentId !== before.pages?.deploymentId)
     throw Error('Pages changed outside this reviewed deployment');
   if (!live.databaseId && (live.worker || live.pages))
     throw Error('Refusing to attach existing services to a new empty database');
   if (
     !t.databaseId &&
+    !createdDatabaseId &&
     before.databaseId !== live.databaseId &&
     live.databaseId &&
-    !live.emptyProjectDatabase &&
     !workerReady
   )
-    throw Error('Unreviewed database appeared; generate a new plan');
+    throw Error('An unreviewed database appeared; verify its UUID and generate a new plan');
   return {
     createDatabase: !live.databaseId,
     migrate: state.pending.length > 0,
@@ -156,6 +160,9 @@ export function deploymentSteps(plan, live) {
     structuralUpgrade: state.structural,
     profileChange: !!live.worker?.profile && live.worker.profile !== t.profile,
   };
+}
+export function requiresMigrationMaintenance(live, steps) {
+  return steps.migrate && (!!live.worker || !live.emptyProjectDatabase);
 }
 export function assertImmutableMigrationDiff(changes) {
   for (const { status, path } of changes)

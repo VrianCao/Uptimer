@@ -37,7 +37,7 @@ const before = {
     hosting: 'pages',
     secretNames: ['ADMIN_TOKEN'],
   },
-  pages: { deploymentId: 'old-page' },
+  pages: { projectId: 'pages-id', productionBranch: 'master', deploymentId: 'old-page' },
 };
 const candidate = () => {
   const p = {
@@ -90,7 +90,12 @@ test('successful repeat skips deployment and never rotates an existing token', (
     fingerprint: p.fingerprint,
     sourceSha: p.sourceSha,
   };
-  live.pages = { deploymentId: 'new-page', sourceSha: p.sourceSha, fingerprint: p.fingerprint };
+  live.pages = {
+    ...live.pages,
+    deploymentId: 'new-page',
+    sourceSha: p.sourceSha,
+    fingerprint: p.fingerprint,
+  };
   const s = deploymentSteps(p, live);
   assert.equal(s.worker, false);
   assert.equal(s.pages, false);
@@ -131,6 +136,12 @@ test('external version drift, hosting change and replacement database fail close
   assert.throws(() =>
     deploymentSteps(p, { ...before, databaseId: '87654321-1234-4123-8123-123456789abc' }),
   );
+  for (const pages of [
+    null,
+    { ...before.pages, projectId: 'replacement-pages' },
+    { ...before.pages, productionBranch: 'preview' },
+  ])
+    assert.throws(() => deploymentSteps(p, { ...before, pages }), /Pages project identity/);
 });
 test('migration immutability permits additions only', () => {
   assertImmutableMigrationDiff([{ status: 'A', path: 'apps/worker/migrations/0026_new.sql' }]);

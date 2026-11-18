@@ -5,8 +5,8 @@ import {
   sha256,
   revision,
   planHash,
-  migrationState,
   deploymentSteps,
+  requiresMigrationMaintenance,
   assertTarget,
 } from './release-contract.mjs';
 import {
@@ -79,6 +79,7 @@ export function publicState(state) {
       : null,
     pages: pages
       ? {
+          projectId: pages.projectId,
           deploymentId: pages.deploymentId,
           sourceSha: pages.sourceSha,
           fingerprint: pages.fingerprint,
@@ -109,8 +110,7 @@ export async function preparePackage({ root, directory, cloud, env, run = comman
     throw Error(
       'Install planning requires unused resource names; use upgrade with the exact existing D1 ID',
     );
-  const migrations = await migrationFiles(root),
-    state = migrationState(migrations, live.appliedMigrations);
+  const migrations = await migrationFiles(root);
   if (live.worker && live.worker.hosting !== target.hosting)
     throw Error('Keep the existing hosting mode during this upgrade');
   await mkdir(join(directory, 'worker'), { recursive: true });
@@ -200,7 +200,8 @@ export async function preparePackage({ root, directory, cloud, env, run = comman
     checks: { builtBeforeMutation: true, remoteMutations: 0 },
   };
   plan.blockers = [];
-  if (live.worker && state.pending.length)
+  plan.steps = deploymentSteps(plan, plan.before);
+  if (requiresMigrationMaintenance(live, plan.steps))
     plan.blockers.push(
       'Existing database has pending migrations: a separately rehearsed maintenance/forward-recovery procedure is required. This workflow will not apply them.',
     );
@@ -208,7 +209,6 @@ export async function preparePackage({ root, directory, cloud, env, run = comman
     plan.blockers.push(
       'Runtime profile changes require a separate Cron propagation and overlap review. Keep the deployed profile for this release.',
     );
-  plan.steps = deploymentSteps(plan, publicState(live));
   plan.hash = planHash(plan);
   await writeJson(join(directory, 'plan.json'), plan);
   return plan;

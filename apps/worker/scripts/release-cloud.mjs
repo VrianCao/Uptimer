@@ -140,6 +140,7 @@ export class ReleaseCloud {
         : null;
     const pages = project
       ? {
+          projectId: z.string().min(1).parse(project.id),
           deploymentId: project.canonical_deployment?.id ?? null,
           sourceSha:
             project.canonical_deployment?.deployment_trigger?.metadata?.commit_hash ?? null,
@@ -175,9 +176,14 @@ export class ReleaseCloud {
         // The finite allowlist keeps table names out of interpolated SQL.
         const dataQueries = {
           monitors: 'SELECT 1 n FROM monitors LIMIT 1',
+          monitor_state: 'SELECT 1 n FROM monitor_state LIMIT 1',
+          check_results: 'SELECT 1 n FROM check_results LIMIT 1',
+          check_result_buckets: 'SELECT 1 n FROM check_result_buckets LIMIT 1',
+          monitor_daily_rollups: 'SELECT 1 n FROM monitor_daily_rollups LIMIT 1',
           incidents: 'SELECT 1 n FROM incidents LIMIT 1',
           maintenance_windows: 'SELECT 1 n FROM maintenance_windows LIMIT 1',
           notification_channels: 'SELECT 1 n FROM notification_channels LIMIT 1',
+          notification_deliveries: 'SELECT 1 n FROM notification_deliveries LIMIT 1',
           outages: 'SELECT 1 n FROM outages LIMIT 1',
         };
         for (const [table, query] of Object.entries(dataQueries)) {

@@ -131,7 +131,7 @@ export async function verifyRelease(
     warmedAt,
     advances = 0;
   const started = now();
-  const warmupMs = t.operation === 'install' && !plan.before?.worker ? 900000 : 0;
+  const warmupMs = plan.before?.worker === null ? 900000 : 0;
   while (now() - started <= warmupMs + timeoutMs) {
     if (warmedAt !== undefined && now() - warmedAt > timeoutMs) break;
     const round = {};

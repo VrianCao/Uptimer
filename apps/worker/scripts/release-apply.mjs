@@ -1,7 +1,12 @@
 import { readFile, mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { deploymentSteps, migrationState } from './release-contract.mjs';
+import { z } from 'zod';
+import {
+  deploymentSteps,
+  migrationState,
+  requiresMigrationMaintenance,
+} from './release-contract.mjs';
 import {
   command,
   workerDeployArgs,
@@ -27,7 +32,7 @@ export async function applyRelease({ root, directory, plan, manifest, cloud, env
     if (stage) checkpoint.completed.push(stage);
     await writeJson(join(directory, 'checkpoint.json'), checkpoint);
   };
-  if (plan.blockers?.length || (live.worker && steps.migrate) || steps.profileChange)
+  if (plan.blockers?.length || requiresMigrationMaintenance(live, steps) || steps.profileChange)
     throw Error(
       'Blocked before any remote mutation: migration/profile maintenance review required',
     );
@@ -46,9 +51,15 @@ export async function applyRelease({ root, directory, plan, manifest, cloud, env
         method: 'POST',
         body: { name: plan.target.database },
       });
-      cloud.target.databaseId = db.uuid ?? db.id;
+      cloud.target.databaseId = z
+        .string()
+        .uuid()
+        .parse(db.uuid ?? db.id);
       checkpoint.createdDatabaseId = cloud.target.databaseId;
       await save('database-created');
+      live = await cloud.inspect();
+      if (live.databaseId !== checkpoint.createdDatabaseId || !live.emptyProjectDatabase)
+        throw Error('Created D1 database identity or empty state could not be verified');
     }
     cfg.d1_databases[0].database_id = cloud.target.databaseId;
     await writeJson(config, cfg);
@@ -75,13 +86,21 @@ export async function applyRelease({ root, directory, plan, manifest, cloud, env
     const afterMigrations = migrationState(plan.migrations, live.appliedMigrations);
     if (afterMigrations.pending.length)
       throw Error('Pending migrations remain; not deploying the Worker');
+    const currentSteps = deploymentSteps(plan, publicState(live), checkpoint.createdDatabaseId);
     // The reviewed package is deployed directly; there is no source rebuild here.
-    if (steps.worker) {
+    if (currentSteps.worker) {
       await run(workerDeployArgs(config), { cwd: root, env });
       await save('worker-deployed');
     }
     live = await cloud.inspect();
-    if (!live.worker?.secretNames.includes('ADMIN_TOKEN')) {
+    const verifyWorker = () => {
+      const stages = deploymentSteps(plan, publicState(live), checkpoint.createdDatabaseId);
+      if (stages.worker) throw Error('Active Worker does not match the reviewed candidate');
+      assertRuntimeConfiguration(live.worker, cfg);
+      return stages;
+    };
+    let workerStages = verifyWorker();
+    if (workerStages.initializeSecret) {
       if (!env.UPTIMER_ADMIN_TOKEN) throw Error('Missing initial admin secret');
       await run(
         [
@@ -101,28 +120,29 @@ export async function applyRelease({ root, directory, plan, manifest, cloud, env
       );
       await save('admin-secret-initialized');
       live = await cloud.inspect();
+      workerStages = verifyWorker();
     }
-    if (
-      live.worker?.fingerprint !== plan.fingerprint ||
-      live.worker.sourceSha !== plan.sourceSha ||
-      live.worker.profile !== plan.target.profile ||
-      live.worker.databaseId !== cloud.target.databaseId
-    )
-      throw Error('Active Worker does not match the reviewed candidate');
-    assertRuntimeConfiguration(live.worker, cfg);
     if (
       !plan.before.worker?.secretNames.every((name) => live.worker.secretNames.includes(name)) &&
       plan.before.worker
     )
       throw Error('An existing Worker secret was lost');
-    if (steps.pages) {
+    if (workerStages.pages) {
       if (!live.pages) {
-        await cloud.request('/pages/projects', {
+        const branch = env.DEFAULT_BRANCH || 'master';
+        const project = await cloud.request('/pages/projects', {
           method: 'POST',
-          body: { name: plan.target.pages, production_branch: env.DEFAULT_BRANCH || 'master' },
+          body: { name: plan.target.pages, production_branch: branch },
         });
+        checkpoint.createdPagesProjectId = project.id;
         await save('pages-project-created');
         live = await cloud.inspect();
+        if (
+          !project.id ||
+          live.pages?.projectId !== project.id ||
+          live.pages.productionBranch !== branch
+        )
+          throw Error('Created Pages project identity could not be verified');
       }
       // Backend origins are not credentials. Preserve every unrelated env value
       // via Wrangler's single-key secret operation; never replace an env map.
@@ -183,7 +203,7 @@ export async function applyRelease({ root, directory, plan, manifest, cloud, env
       await save('pages-deployed');
     }
     const after = await cloud.inspect();
-    const remaining = deploymentSteps(plan, publicState(after));
+    const remaining = deploymentSteps(plan, publicState(after), checkpoint.createdDatabaseId);
     if (remaining.worker || remaining.pages || remaining.migrate || remaining.initializeSecret)
       throw Error('Deployment verification found unfinished stages');
     checkpoint.after = publicState(after);
