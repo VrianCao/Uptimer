@@ -1,4 +1,5 @@
 import { Dialog } from '../components/Dialog';
+import { ContentErrorBoundary } from '../components/ContentErrorBoundary';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -137,15 +138,24 @@ function MonitorDetail({
               </div>
             </div>
           </div>
-          <Suspense
+          <ContentErrorBoundary
             fallback={
-              <div className="h-[200px] flex items-center justify-center text-slate-500 dark:text-slate-400">
-                {t('status_page.loading_chart')}
+              <div className="h-[200px] flex flex-col gap-3 items-center justify-center text-slate-500 dark:text-slate-400">
+                <p role="alert">{t('status_page.failed_load_chart')}</p>
+                <Button onClick={() => window.location.reload()}>{t('common.reload_page')}</Button>
               </div>
             }
           >
-            <LatencyChart points={data.points} />
-          </Suspense>
+            <Suspense
+              fallback={
+                <div className="h-[200px] flex items-center justify-center text-slate-500 dark:text-slate-400">
+                  {t('status_page.loading_chart')}
+                </div>
+              }
+            >
+              <LatencyChart points={data.points} />
+            </Suspense>
+          </ContentErrorBoundary>
         </>
       ) : (
         <div className="h-[200px] flex flex-col gap-3 items-center justify-center text-slate-500 dark:text-slate-400">
