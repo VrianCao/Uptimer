@@ -1,25 +1,29 @@
-# v0.2.0-rc.1 — draft / 发布说明草稿
+# Uptimer v0.2.0-rc.1
 
-**Draft only. No tag or public Release has been created.** Version naming remains subject to the final release decision.
+## Highlights
 
-候选更新聚焦 Free 套餐的资源预算与可感知性能，同时保留完整监控功能：
+- The status page shows preloaded data and then checks for updates. Latency charts load on demand, keep their animation, and respect the system reduced-motion setting. A failed chart download leaves the status page usable.
+- D1 stores complete probe samples in time buckets and buffers the current hour to reduce writes. The default Free runtime uses Workers, a SQLite Durable Object and D1. The optional Paid runtime uses Workers and D1. Workers + Pages remains the default hosting mode, with Workers Assets available as an option.
+- Monitor visibility and scope are preserved in history, incidents and maintenance. Same-origin admin authentication and narrow-screen dialog and keyboard behavior were also fixed.
+- Reviewed deployment plans bind the build, commit and target resources. The workflow rechecks resource identity before writes, preserves existing secrets and skips completed stages on a matching retry.
 
-- 首屏使用预生成数据并校验新鲜度；数据陈旧、断网或刷新失败有明确状态，避免把快速显示误当作最新数据。
-- 延迟曲线按需加载，恢复曲线动效并尊重系统“减少动态效果”设置；保留历史查询、状态与可访问交互。
-- 样本持久化采用桶和当前小时缓冲，降低 D1 写量；Free 使用 Worker + SQLite DO 混合路径，Paid 可明确选择 Worker + D1 路径。
-- 修复隐藏监控历史、事件/维护范围、同源认证路由和部署身份记录等问题。
-- 部署先执行 CI 和四种配置构建，再审阅不可变包；重复 apply 跳过已完成部署，保留既有 Secret。
+## Deployment and verification
 
-## Upgrade notice / 升级提示
+Use the [deployment guide](deploy-github-actions.md) for a fresh install or an existing database with all migrations already applied. **Upgrades from the `0014` schema are gated.** The workflow stops an apply to an existing Worker when migrations are pending. Put those upgrades through a separate cloud maintenance and recovery rehearsal. See the [upgrade and recovery guide](upgrade-and-recovery.md).
 
-Default hosting is still **Workers + Pages**. **Workers + Workers Assets** is optional through `UPTIMER_DEPLOY_MODE=single_worker`. Runtime profile is separate: `free` by default, `paid` explicitly selected. No automatic Cloudflare subscription detection.
+CI passed for all four runtime and hosting combinations. The local migration rehearsal preserved 302,400 probe samples across `0014 → 0025` and recovered from interruptions. In the final Dev short run, Pages served 60/60 requests with CPU at most 5 ms, ordinary Worker CPU reached at most 3 ms, and 2,880 expected probes were recorded once each across the deployment window. The Dev tests used the Free runtime profile on a Workers Paid account. Hard limits on a Free account and the legacy cloud upgrade remain to be verified.
 
-旧版 `0014` 到候选 `0025` 存在存储布局迁移；**已有实例若尚有 migration 待执行，通用 Workflow 会停止 apply**，须先完成独立维护/恢复演练。禁止直接回退引入 DO 和新存储以前的 Worker。见[部署指南](deploy-github-actions.zh-CN.md)与[升级/恢复说明](upgrade-and-recovery.md)。
+In a separate 24-hour observation of an earlier Dev build, 24 monitors at one-minute intervals produced 34,560 probes. D1 recorded 3,388,147 row reads and 55,310 row writes in that window.
 
-## Verified scope / 已验证范围
+## 中文说明
 
-Dev 冻结业务版本 `40dc44e` 在实际 Paid 账户使用 Free profile + Pages。2026-11-10 16:43 至 11-11 16:43 UTC 固定窗口中：24 个运行监控每分钟完整 34,560 条探测，普通 Worker 1,684 次 CPU 最大 7ms，D1 后台实测 55,310 writes / 3,388,147 reads。详细证据见 `Develop/Dev-Day-Review-2026-11-12.md`；不要将该数据外推到任意规模、访问量或所有账户。
+- 首屏展示预载数据并随后检查更新。延迟曲线按需加载，保留动画并尊重系统的减少动态效果设置。图表脚本下载失败时，状态页仍可使用。
+- D1 通过时间桶和当前小时缓冲降低写入量，保留完整探测样本。默认 Free 运行模式使用 Workers、SQLite Durable Object 和 D1，可选 Paid 模式使用 Workers 和 D1。默认托管方式是 Workers + Pages，也可使用 Workers Assets。
+- 修复了监控隐藏状态与历史、事件和维护范围的处理，并改进同源后台鉴权、窄屏弹窗和键盘操作。
+- 部署计划绑定构建包、提交和目标资源。工作流在写入前复核资源身份，保留已有密钥，并在匹配的重试中跳过已完成的阶段。
 
-真实 Free 套餐的强制限额与完整云端旧版升级/恢复尚未验收；Pages CPU 目前是短窗样本，不能写成已有 24 小时历史证据。CI 冒烟也不能代替实机、外部通知完整旅程或下一次完整日级周期。公开稳定版放行前仍需补齐相应证据。
+全新安装，以及已应用全部迁移的实例，可按[部署指南](deploy-github-actions.zh-CN.md)操作。**旧库 `0014 → 0025` 升级有独立门槛。** 已有 Worker 存在待执行迁移时，工作流会停止 apply。此类升级须先完成独立的云端维护与恢复演练。详见[升级与恢复指南](upgrade-and-recovery.md)。
 
-本说明不承诺无限访问、任意监控规模、绝对零费用或跨产品无损自动回滚。当前没有发布到 Public/Production。
+CI 的四种运行模式和托管组合均通过。本地迁移演练保留了 302,400 条探测样本，并验证了中断后的恢复。最终 Dev 短测中，Pages 60/60 请求成功，CPU 最高 5 ms，普通 Worker 最高 3 ms，部署窗口内 2,880 次预期探测均完整且无重复。Dev 使用的是 Workers Paid 账户上的 Free 运行模式。真实 Free 账户强制限额及旧库云端升级仍待验证。
+
+在较早 Dev 版本的独立 24 小时观测中，24 个监控以一分钟间隔产生 34,560 次探测。该窗口内 D1 记录了 3,388,147 行读和 55,310 行写。
