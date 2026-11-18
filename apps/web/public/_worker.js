@@ -603,10 +603,12 @@ function sanitizeHomepagePreloadHtml(value) {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
   if (!trimmed) return null;
-  if (/<\s*script\b/i.test(trimmed)) return null;
-  if (/\bon[a-z]+\s*=/i.test(trimmed)) return null;
-  if (/\bjavascript\s*:/i.test(trimmed)) return null;
-  if (/<\s*(iframe|object|embed|foreignobject|link|meta|style)\b/i.test(trimmed)) return null;
+  if (
+    /<\s*(?:script|iframe|object|embed|foreignobject|link|meta|style)\b|\bon[a-z]+\s*=|\bjavascript\s*:/i.test(
+      trimmed,
+    )
+  )
+    return null;
   return trimmed;
 }
 
@@ -726,13 +728,6 @@ function buildHomepageCacheHit(cached, ageSeconds) {
   return hit;
 }
 
-function upsertHeadTag(html, pattern, tag) {
-  if (pattern.test(html)) {
-    return html.replace(pattern, tag);
-  }
-  return html.replace('</head>', `  ${tag}\n</head>`);
-}
-
 function injectStatusMetaTags(html, artifact, url) {
   const siteTitle = normalizeSnapshotText(artifact?.meta_title, 'Uptimer');
   const siteDescription = normalizeSnapshotText(
@@ -747,55 +742,59 @@ function injectStatusMetaTags(html, artifact, url) {
   const escapedDescription = escapeHtml(siteDescription);
   const escapedUrl = escapeHtml(pageUrl);
 
-  let injected = html;
-  injected = upsertHeadTag(injected, /<title>[^<]*<\/title>/i, `<title>${escapedTitle}</title>`);
-  injected = upsertHeadTag(
-    injected,
-    /<meta[^>]+name=["']description["'][^>]*>/i,
-    `<meta name="description" content="${escapedDescription}" />`,
+  const tags = new Map([
+    ['title', `<title>${escapedTitle}</title>`],
+    ['name:description', `<meta name="description" content="${escapedDescription}" />`],
+    ['property:og:type', '<meta property="og:type" content="website" />'],
+    ['property:og:title', `<meta property="og:title" content="${escapedTitle}" />`],
+    [
+      'property:og:description',
+      `<meta property="og:description" content="${escapedDescription}" />`,
+    ],
+    ['property:og:site_name', `<meta property="og:site_name" content="${escapedTitle}" />`],
+    ['property:og:url', `<meta property="og:url" content="${escapedUrl}" />`],
+    ['name:twitter:card', '<meta name="twitter:card" content="summary" />'],
+    ['name:twitter:title', `<meta name="twitter:title" content="${escapedTitle}" />`],
+    [
+      'name:twitter:description',
+      `<meta name="twitter:description" content="${escapedDescription}" />`,
+    ],
+  ]);
+  const injected = html.replace(
+    /<title>[^<]*<\/title>|<meta[^>]+(name|property)=["']([^"']+)["'][^>]*>/gi,
+    (tag, attribute, value) => {
+      const key = attribute ? `${attribute.toLowerCase()}:${value.toLowerCase()}` : 'title';
+      const replacement = tags.get(key);
+      if (replacement === undefined) return tag;
+      tags.delete(key);
+      return replacement;
+    },
   );
-  injected = upsertHeadTag(
-    injected,
-    /<meta[^>]+property=["']og:type["'][^>]*>/i,
-    '<meta property="og:type" content="website" />',
-  );
-  injected = upsertHeadTag(
-    injected,
-    /<meta[^>]+property=["']og:title["'][^>]*>/i,
-    `<meta property="og:title" content="${escapedTitle}" />`,
-  );
-  injected = upsertHeadTag(
-    injected,
-    /<meta[^>]+property=["']og:description["'][^>]*>/i,
-    `<meta property="og:description" content="${escapedDescription}" />`,
-  );
-  injected = upsertHeadTag(
-    injected,
-    /<meta[^>]+property=["']og:site_name["'][^>]*>/i,
-    `<meta property="og:site_name" content="${escapedTitle}" />`,
-  );
-  injected = upsertHeadTag(
-    injected,
-    /<meta[^>]+property=["']og:url["'][^>]*>/i,
-    `<meta property="og:url" content="${escapedUrl}" />`,
-  );
-  injected = upsertHeadTag(
-    injected,
-    /<meta[^>]+name=["']twitter:card["'][^>]*>/i,
-    '<meta name="twitter:card" content="summary" />',
-  );
-  injected = upsertHeadTag(
-    injected,
-    /<meta[^>]+name=["']twitter:title["'][^>]*>/i,
-    `<meta name="twitter:title" content="${escapedTitle}" />`,
-  );
-  injected = upsertHeadTag(
-    injected,
-    /<meta[^>]+name=["']twitter:description["'][^>]*>/i,
-    `<meta name="twitter:description" content="${escapedDescription}" />`,
-  );
+  if (!tags.size) return injected;
+  return injected.replace('</head>', () => {
+    return [...tags.values()].map((tag) => `  ${tag}\n`).join('') + '</head>';
+  });
+}
 
-  return injected;
+function injectHomepage(html, artifact, url) {
+  const page = injectStatusMetaTags(html, artifact, url);
+  const root = '<div id="root"></div>';
+  const headEnd = '</head>';
+  let foundHead = false;
+  let foundRoot = false;
+
+  // Search the small HTML shell once and insert the two large strings literally.
+  return page.replace(/<\/head>|<div id="root"><\/div>/g, (marker) => {
+    if (marker === headEnd && !foundHead) {
+      foundHead = true;
+      return `  ${HOMEPAGE_PRELOAD_STYLE_TAG}\n  <script>globalThis.__UPTIMER_INITIAL_HOMEPAGE__=${artifact.snapshot_inline_json};</script>\n${headEnd}`;
+    }
+    if (marker === root && !foundRoot) {
+      foundRoot = true;
+      return artifact.preload_html + root;
+    }
+    return marker;
+  });
 }
 
 function buildMinimalIndexHtml(title = 'Uptimer') {
@@ -1156,37 +1155,9 @@ export default {
         const generatedAt = typeof artifact.generated_at === 'number' ? artifact.generated_at : now;
         const age = computeHomepageAge(now, generatedAt) ?? 0;
 
-        const snapshotInlineJson = artifact.snapshot_inline_json;
-
-        // Update the small static head before adding the full monitor markup.
-        // Missing metadata must not scan/copy every preloaded card repeatedly.
-        let injected = trace
-          ? trace.time('inject_meta', () => injectStatusMetaTags(html, artifact, url))
-          : injectStatusMetaTags(html, artifact, url);
-
-        injected = trace
-          ? trace.time('inject_root', () =>
-              injected.replace(
-                '<div id="root"></div>',
-                `${artifact.preload_html}<div id="root"></div>`,
-              ),
-            )
-          : injected.replace(
-              '<div id="root"></div>',
-              `${artifact.preload_html}<div id="root"></div>`,
-            );
-
-        injected = trace
-          ? trace.time('inject_bootstrap', () =>
-              injected.replace(
-                '</head>',
-                `  ${HOMEPAGE_PRELOAD_STYLE_TAG}\n  <script>globalThis.__UPTIMER_INITIAL_HOMEPAGE__=${snapshotInlineJson};</script>\n</head>`,
-              ),
-            )
-          : injected.replace(
-              '</head>',
-              `  ${HOMEPAGE_PRELOAD_STYLE_TAG}\n  <script>globalThis.__UPTIMER_INITIAL_HOMEPAGE__=${snapshotInlineJson};</script>\n</head>`,
-            );
+        const injected = trace
+          ? trace.time('inject_html', () => injectHomepage(html, artifact, url))
+          : injectHomepage(html, artifact, url);
 
         const headers = sanitizeHtmlResponseHeaders(base.headers);
         headers.set('Content-Type', 'text/html; charset=utf-8');
@@ -1194,23 +1165,20 @@ export default {
         headers.append('Vary', 'Accept');
         headers.delete('Location');
 
+        const body = new TextEncoder().encode(injected);
         const resp = trace
-          ? trace.time('resp_build', () => new Response(injected, { status: 200, headers }))
-          : new Response(injected, { status: 200, headers });
-
-        const cacheHeaders = new Headers(headers);
-        cacheHeaders.set('Cache-Control', `public, max-age=${FALLBACK_HTML_MAX_AGE_SECONDS}`);
-        cacheHeaders.set(HOMEPAGE_CACHE_GENERATED_AT_HEADER, `${generatedAt}`);
-        cacheHeaders.delete('Set-Cookie');
-        const cacheResp = trace
-          ? trace.time(
-              'cache_resp_build',
-              () => new Response(injected, { status: 200, headers: cacheHeaders }),
-            )
-          : new Response(injected, { status: 200, headers: cacheHeaders });
+          ? trace.time('resp_build', () => new Response(body, { status: 200, headers }))
+          : new Response(body, { status: 200, headers });
 
         try {
           if (!trace || trace.mode !== 'bypass-cache') {
+            // The cache and client share the already encoded, bounded HTML body.
+            const cacheResp = new Response(body, { status: 200, headers });
+            cacheResp.headers.set(
+              'Cache-Control',
+              `public, max-age=${FALLBACK_HTML_MAX_AGE_SECONDS}`,
+            );
+            cacheResp.headers.set(HOMEPAGE_CACHE_GENERATED_AT_HEADER, `${generatedAt}`);
             ctx.waitUntil(caches.default.put(cacheKey, cacheResp).catch(() => undefined));
           } else if (trace) {
             trace.setLabel('cache_put', 'skip');
@@ -1223,7 +1191,7 @@ export default {
           trace.setLabel('path', 'inject');
           trace.setLabel('age', age);
           trace.setLabel('html_chars', injected.length);
-          trace.setLabel('payload_chars', snapshotInlineJson.length);
+          trace.setLabel('payload_chars', artifact.snapshot_inline_json.length);
         }
         return finalizeTraceResponse(resp, trace);
       }
