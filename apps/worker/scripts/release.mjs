@@ -41,7 +41,9 @@ export async function releaseMain(action, env = process.env) {
       `- Target: ${target.worker} / ${target.hosting} / ${target.profile}`,
       `- Cloudflare account: \`${target.accountId}\``,
       `- D1: ${target.database} (${target.databaseId ?? 'create on first install'})`,
-      ...(target.hosting === 'pages' ? [`- Pages: ${target.pages}`] : []),
+      ...(target.hosting === 'pages'
+        ? [`- Pages: ${target.pages}${plan.before.pages ? ` (${plan.before.pages.origin})` : ''}`]
+        : []),
       `- Pending migrations: ${plan.steps.pendingMigrations.join(', ') || 'none'}`,
       '- Remote mutations: **0** (metadata and read-only D1 queries only).',
       ...plan.warnings.map((warning) => `- ${warning}`),
@@ -71,8 +73,11 @@ export async function releaseMain(action, env = process.env) {
     cloud,
     env: releaseEnv,
   });
+  let smoke;
   try {
-    const smoke = await verifyRelease(plan, env.UPTIMER_ADMIN_TOKEN);
+    smoke = await verifyRelease(plan, env.UPTIMER_ADMIN_TOKEN, {
+      pagesOrigin: checkpoint.after.pages?.origin,
+    });
     await writeJson(join(directory, 'verification.json'), smoke);
   } catch (error) {
     await writeJson(join(directory, 'verification.json'), {
@@ -83,12 +88,9 @@ export async function releaseMain(action, env = process.env) {
     throw error;
   }
   if (env.GITHUB_STEP_SUMMARY) {
-    const { target } = plan;
-    const statusUrl =
-      target.hosting === 'pages' ? `https://${target.pages}.pages.dev` : target.workerUrl;
     await appendFile(
       env.GITHUB_STEP_SUMMARY,
-      `### Release verification\n\n[Open your status page](${statusUrl})\n\nWorker: \`${checkpoint.after.worker.versionId}\`\n\nPages: \`${checkpoint.after.pages?.deploymentId ?? 'not used'}\`\n\nDeployment no-op: **${checkpoint.idempotentNoop}**. Public/auth/routing checks and two advancing publications passed.\n`,
+      `### Release verification\n\n[Open your status page](${smoke.statusUrl})\n\nWorker: \`${checkpoint.after.worker.versionId}\`\n\nPages: \`${checkpoint.after.pages?.deploymentId ?? 'not used'}\`\n\nDeployment no-op: **${checkpoint.idempotentNoop}**. Public/auth/routing checks and two advancing publications passed.\n`,
     );
   }
   return checkpoint;
@@ -99,6 +101,7 @@ export async function verifyRelease(
   plan,
   adminToken,
   {
+    pagesOrigin,
     request = fetch,
     wait = (ms) => new Promise((r) => setTimeout(r, ms)),
     now = Date.now,
@@ -108,7 +111,8 @@ export async function verifyRelease(
   const t = plan.target;
   if (!adminToken)
     throw Error('UPTIMER_ADMIN_TOKEN is required for authenticated read-only verification');
-  const app = t.hosting === 'pages' ? `https://${t.pages}.pages.dev` : t.workerUrl;
+  const app = t.hosting === 'pages' ? pagesOrigin : t.workerUrl;
+  if (!app) throw Error('Cloudflare did not provide the Pages project origin for verification');
   async function read(url, expected = 200, headers = {}) {
     const r = await request(url, {
       headers: { 'Cache-Control': 'no-cache', ...headers },
@@ -198,6 +202,7 @@ export async function verifyRelease(
     if (advances >= 2)
       return {
         passed: true,
+        statusUrl: app,
         observedAt: new Date(now()).toISOString(),
         advancingPublications: advances,
         initialWarmupMs: warmedAt - started,

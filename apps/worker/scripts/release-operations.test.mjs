@@ -18,6 +18,7 @@ const baseEnv = {
   UPTIMER_ADMIN_TOKEN: 'test-only-admin-value',
   UPTIMER_WORKER_URL: 'https://uptimer.alice.workers.dev',
 };
+const pagesOrigin = 'https://uptimer-other.pages.dev';
 async function fixture(t, override = {}, options = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'uptimer-release-test-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
@@ -39,6 +40,7 @@ async function fixture(t, override = {}, options = {}) {
     },
     pages: {
       projectId: 'current-project',
+      origin: pagesOrigin,
       deploymentId: 'old-pages',
       productionBranch: 'master',
       project: {
@@ -230,6 +232,16 @@ test('an upgrade resolves the active DB binding and only looks up that exact D1'
   assert.equal(inspected.worker.databaseId, id);
   assert.equal(cloud.target.databaseId, id);
   assert.equal(cloud.target.database, 'renamed-d1');
+
+  const pagesCloud = new ReleaseCloud(targetInput(baseEnv, 'alice'), 'test-token', {
+    confirmDatabaseName: false,
+  });
+  t.mock.method(pagesCloud, 'request', async (path) =>
+    path === '/pages/projects/uptimer'
+      ? { id: 'project', subdomain: new URL(pagesOrigin).hostname, production_branch: 'master' }
+      : request(path),
+  );
+  assert.equal((await pagesCloud.inspect()).pages.origin, pagesOrigin);
 
   // A configured UUID remains an assertion and is checked before querying D1.
   const pinned = new ReleaseCloud(
@@ -532,6 +544,7 @@ test('smoke rejects HTTP-200 stale data and proves two advancing publications wi
     return Response.json({ generated_at: Math.floor(clock / 60000) * 60 - (stale ? 180 : 0) });
   };
   const options = {
+    pagesOrigin,
     request,
     now: () => clock,
     wait: async (ms) => {
@@ -539,9 +552,29 @@ test('smoke rejects HTTP-200 stale data and proves two advancing publications wi
     },
   };
   const result = await verifyRelease({ target }, 'test-admin', options);
+  assert.equal(result.statusUrl, pagesOrigin);
   assert.equal(result.advancingPublications, 2);
+  assert.ok(
+    requests.every(
+      ([url, options]) =>
+        new URL(url).origin === (options.headers.Authorization ? target.workerUrl : pagesOrigin),
+    ),
+  );
+  await assert.rejects(
+    verifyRelease({ target }, 'test-admin', { ...options, pagesOrigin: undefined }),
+    /Cloudflare did not provide the Pages project origin/,
+  );
   assert.equal(requests.filter(([, o]) => o.headers.Authorization).length, 1);
   assert.ok(requests.every(([, o]) => !o.method));
+  const assets = targetInput({ ...baseEnv, RELEASE_HOSTING: 'single_worker' }, 'alice');
+  requests.length = 0;
+  const workerResult = await verifyRelease({ target: assets }, 'test-admin', {
+    ...options,
+    pagesOrigin: undefined,
+  });
+  assert.equal(workerResult.statusUrl, assets.workerUrl);
+  assert.ok(requests.every(([url]) => new URL(url).origin === assets.workerUrl));
+
   stale = true;
   await assert.rejects(verifyRelease({ target }, 'test-admin', options), /stale/);
 });
@@ -553,6 +586,7 @@ test('legacy smoke waits out maintenance and stale snapshots before accepting ne
     { target: t, legacyUpgrade: true, before: { worker: {} } },
     'test',
     {
+      pagesOrigin,
       now: () => time,
       wait: async (ms) => {
         time += ms;
@@ -636,6 +670,7 @@ test('fresh install refuses a newly discovered D1 until a new plan pins its UUID
     const id = 'created-project';
     recovery.getLive().pages = {
       projectId: id,
+      origin: pagesOrigin,
       productionBranch: 'master',
       deploymentId: null,
       project: {},
@@ -823,6 +858,7 @@ test('only a new Worker waits for Cron propagation; existing outages fail immedi
     return Response.json({ generated_at: Math.floor(clock / 60000) * 60 });
   };
   const options = {
+    pagesOrigin,
     request,
     now: () => clock,
     wait: async (ms) => {
