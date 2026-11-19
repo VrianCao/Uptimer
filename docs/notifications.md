@@ -75,6 +75,31 @@ Webhook channel `config_json` fields (validated by Zod):
 | `enabled_events`   | No       | —       | Event whitelist array. Empty = all events. `test.ping` always passes.                  |
 | `signing`          | No       | —       | `{ enabled: boolean, secret_ref: string }` — HMAC-SHA256 signing                       |
 
+## WPush Preset
+
+WPush can be configured from the notification channel form without writing a custom webhook template.
+
+The preset sends form-encoded requests to `https://api.wpush.cn/api/v1/send` and supports:
+
+- an API key encrypted in D1 using `ADMIN_TOKEN`, or a Worker Secret reference
+- one or more WPush channel values such as `wechat,app`
+- optional WPush channel instance `option`
+- optional message URL
+- timeout, title template, message template, and event filtering
+
+Example configuration using a Worker Secret:
+
+```json
+{
+  "preset": "wpush",
+  "api_key_secret_ref": "UPTIMER_WPUSH_API_KEY",
+  "channel": "wechat",
+  "option": "ops"
+}
+```
+
+Store the actual API key as the Worker Secret named by `api_key_secret_ref`. When a key is entered directly in the Admin UI, Uptimer encrypts it before storing the channel configuration and never returns the ciphertext through the Admin API.
+
 ## Payload Modes
 
 ### Mode 1: Default JSON (no template)
@@ -289,7 +314,7 @@ wrangler d1 execute uptimer --local \
 
 ## Known Limitations
 
-- Only webhook channels are supported (no built-in email, Telegram, etc.)
+- Built-in presets currently include Telegram and WPush; email is not built in
 - Template substitution always produces strings (see Type Caveat above)
 - `payload_template` JSON depth is capped at 32 levels
 
