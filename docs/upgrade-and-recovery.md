@@ -10,25 +10,25 @@ An existing instance can use the reviewed package workflow when its migration tr
 
 已有实例在迁移全部完成、hosting/profile 不变时，可使用计划/执行流程。重复相同已完成包不再执行迁移、部署或 Secret 写入；Worker 成功而 Pages 失败时，续跑只补未完成步骤。仍执行只读身份及新鲜度检查。
 
-| Situation / 状态                                        | Required action / 处理                                                                                                                                                   |
-| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Build/CI failure                                        | No deployment began. Fix source, create a new plan. / 未开始云端写入；修复后重新计划。                                                                                   |
-| Plan lists pending migrations on an existing Worker     | **Blocked** before apply. Prepare and rehearse maintenance/recovery below. / 阻断，不自动迁移。                                                                          |
-| First empty install interrupted during migrations       | Retain the new database, confirm the UUID and migration prefix against the receipt, and review a new `upgrade` plan. / 保留原库，核对 UUID 与迁移前缀并审阅新 `upgrade` 计划。 |
+| Situation / 状态                                        | Required action / 处理                                                                                                                                                                                       |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Build/CI failure                                        | No deployment began. Fix source, create a new plan. / 未开始云端写入；修复后重新计划。                                                                                                                       |
+| Plan lists pending migrations on an existing Worker     | **Blocked** before apply. Prepare and rehearse maintenance/recovery below. / 阻断，不自动迁移。                                                                                                              |
+| First empty install interrupted during migrations       | Retain the new database, confirm the UUID and migration prefix against the receipt, and review a new `upgrade` plan. / 保留原库，核对 UUID 与迁移前缀并审阅新 `upgrade` 计划。                               |
 | Worker deployed, Pages failed                           | Keep Worker and D1. If the Pages project was added after planning, confirm its ID against the receipt and review a new plan first. / 保留后端和数据库。若 Pages 项目在计划之后新建，先核对 ID 并审阅新计划。 |
-| Secret initialization created another Worker version    | Receipt must record that final version. Normal upgrades do not reset the key. / 记录最终版本，普通升级不覆盖密钥。                                                       |
-| All stages deployed, freshness smoke fails              | Preserve receipt and investigate; repeat smoke through the same apply if identities still match. Do not expand rollout. / 保留现场、排查数据前进，暂停扩大发布。         |
-| Unrelated Worker/Pages version or target config changed | Stop; inventory and generate a new plan. / 停止，重新核对与计划。                                                                                                        |
+| Secret initialization created another Worker version    | Receipt must record that final version. Normal upgrades do not reset the key. / 记录最终版本，普通升级不覆盖密钥。                                                                                           |
+| All stages deployed, freshness smoke fails              | Preserve receipt and investigate; repeat smoke through the same apply if identities still match. Do not expand rollout. / 保留现场、排查数据前进，暂停扩大发布。                                             |
+| Unrelated Worker/Pages version or target config changed | Stop; inventory and generate a new plan. / 停止，重新核对与计划。                                                                                                                                            |
 
-## Legacy storage transition: stop gate / 旧存储升级：必须停下
+## Upgrading a legacy database / 升级旧版数据库
 
-The public baseline `a89f29e` has migrations through `0014`. The candidate includes `0015`–`0025`, introduces SQLite `SiteCoordinator` and changes `check_results` into a compatibility view over bucket/pending storage. A view accepting old SQL is not proof of equivalent behavior: old retention may perform many underlying sample writes while `changes()` reports zero. Re-deploying the unchanged legacy Worker is therefore not a safe emergency strategy.
+If the plan reports pending D1 migrations for an existing Worker, keep serving the current site. The public baseline has migrations through `0014`. Updating its code in GitHub is safe. Moving the live database through `0015`–`0025` needs a separate maintenance procedure, which the generic apply workflow blocks.
 
-公开旧基线 `a89f29e` 到本次候选有 `0015`–`0025` 迁移，并引入 `SiteCoordinator`。兼容视图只能说明部分旧 SQL 可执行，不能保证旧清理算法的行写成本和循环语义。**不得把直接 rollback 到旧版当作恢复方案。**
+已有 Worker 的计划如果列出待执行的 D1 迁移，可以先同步 GitHub 代码并让当前站点继续运行。旧版数据库需要经过一次维护切换，通用 apply 会在开始修改云端之前停止。
 
-The generic workflow intentionally has **no `force` flag**, does not install an unverified maintenance bridge, and does not run these migrations against an existing Worker. A blocked plan remains useful: it contains the exact target, ordered migration hashes, package hashes and current versions. No production write has been authorized by preparing it.
+The legacy Worker can still execute some SQL after migration, but with different results. Its retention loop can stop early when the compatibility view reports zero affected rows. An old Worker creating a site-wide incident after `0025` can also misclassify it, hiding it from the public site. Returning to the original Worker with the migrated schema is unsafe.
 
-本轮准备没有在云端执行旧库迁移、数据库恢复或临时桥接代码。已有 Dev 已完成 `0025`；它的日级验收不能替代旧版生产实例的首次升级演练。
+兼容视图保留了部分旧 SQL 的入口。旧版的清理循环可能提前退出，旧版新建的全站事件也可能在 `0025` 后被错误归类，从公开页消失。迁移后须使用兼容新 schema 的恢复包。
 
 Before enabling this path in a future reviewed change, complete all of the following **on authorized isolated resources** (do not create them implicitly):
 

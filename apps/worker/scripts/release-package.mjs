@@ -227,11 +227,15 @@ export async function verifyReviewedPackage(directory, plan, manifest, env) {
   )
     throw Error('Package manifest differs from the reviewed plan');
   const expectedTarget = targetInput(
-    env,
+    {
+      ...env,
+      CLOUDFLARE_ACCOUNT_ID: env.CLOUDFLARE_ACCOUNT_ID || plan.target.accountId,
+      UPTIMER_D1_ID: env.UPTIMER_D1_ID || plan.target.databaseId,
+      UPTIMER_D1_NAME:
+        env.UPTIMER_D1_NAME || (plan.target.operation === 'upgrade' ? plan.target.database : ''),
+    },
     new URL(plan.target.workerUrl).hostname.split('.').slice(1, -2).join('.'),
   );
-  if (expectedTarget.operation === 'install' && !expectedTarget.databaseId)
-    expectedTarget.databaseId = plan.target.databaseId;
   if (sha256(expectedTarget) !== sha256(plan.target))
     throw Error('Deployment variables changed since planning; generate a new plan');
   if (env.RELEASE_ROOT) {

@@ -16,8 +16,9 @@ import {
 import { writeJson } from './release-config.mjs';
 export async function applyRelease({ root, directory, plan, manifest, cloud, env, run = command }) {
   await verifyReviewedPackage(directory, plan, manifest, env);
-  if (env.CLOUDFLARE_ACCOUNT_ID !== plan.target.accountId)
-    throw Error('Reviewed account differs from this run');
+  if (cloud.target.accountId !== plan.target.accountId)
+    throw Error('Cloudflare client does not use the reviewed account');
+  env = { ...env, CLOUDFLARE_ACCOUNT_ID: plan.target.accountId };
   let live = await cloud.inspect(),
     steps = deploymentSteps(plan, publicState(live));
   const checkpoint = {

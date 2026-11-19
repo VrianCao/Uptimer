@@ -102,73 +102,15 @@ Admin ─────────►│  Workers (Hono API)                     
 | CI/CD           | GitHub Actions                                                      |
 | Package Manager | pnpm (monorepo)                                                     |
 
-## Quick Deploy (5 Steps)
+## Deploy Uptimer
 
-Deploy your own Uptimer instance without touching any code or config files:
+1. Fork this repository and enable workflows in your fork’s **Actions** tab.
+2. Add `CLOUDFLARE_API_TOKEN` and `UPTIMER_ADMIN_TOKEN` as repository secrets.
+3. In **Actions → Deploy to Cloudflare**, run `plan`. Review the summary, then run `apply` at the same commit. Open your status page from the completed run.
 
-### Step 1 — Fork
+[Deployment guide](docs/deploy-github-actions.md) · [Upgrade and recovery](docs/upgrade-and-recovery.md)
 
-Click the **Fork** button at the top-right of this repository to create your own copy.
-
-### Step 2 — Create a Cloudflare API Token
-
-1. Go to [Cloudflare Dashboard → API Tokens](https://dash.cloudflare.com/profile/api-tokens)
-2. Click **Create Token** → use the **Edit Cloudflare Workers** template
-3. Add the following permissions:
-   - `Account / Cloudflare Pages / Edit`
-   - `Account / D1 / Edit`
-   - `Account / Account Settings / Read`
-4. Copy the generated token
-
-> `Cloudflare Pages / Edit` is only required for the default `pages` deploy mode. Single-worker mode (`UPTIMER_DEPLOY_MODE=single_worker`) does not need Pages permission.
-
-### Step 3 — Add GitHub Secrets
-
-Go to your forked repo → **Settings** → **Secrets and variables** → **Actions** → **New repository secret**, and add:
-
-| Secret Name             | Value                                                                                                         | Required |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------- | :------: |
-| `CLOUDFLARE_API_TOKEN`  | Token from Step 2                                                                                             |   Yes    |
-| `UPTIMER_ADMIN_TOKEN`   | Any strong string (this is your admin dashboard password)                                                     |   Yes    |
-| `CLOUDFLARE_ACCOUNT_ID` | Your [Cloudflare Account ID](https://developers.cloudflare.com/fundamentals/setup/find-account-and-zone-ids/) |   Yes    |
-
-Optional repository **variable** (not secret): `UPTIMER_DEPLOY_MODE` = `pages` (default) or `single_worker`.
-
-Set repository variable `UPTIMER_RUNTIME_PROFILE=paid` for a Workers Paid/Standard account to run directly on Workers + D1. The default `free` profile uses the site Durable Object coordinator. This is independent of hosting mode; see [runtime profiles](Develop/Runtime-Profiles.md).
-
-### Step 4 — Run GitHub Actions
-
-Configure the `cloudflare-release` Environment's reviewer/branch protection, then open **Actions → Deploy to Cloudflare**:
-
-1. For a **new empty instance**, run `release_action=plan`, `operation=install`. CI and all builds finish before cloud writes.
-2. Review the `uptimer-release-package` artifact and summary, including exact target identities and blockers.
-3. On the **same source commit**, run `release_action=apply`, filling in the plan's run ID and full plan hash. This deploys the reviewed package without rebuilding.
-
-Ordinary pushes/syncs run CI without deployment. For existing instances, use `operation=upgrade` and repository variable **`UPTIMER_D1_ID`**. Pending migrations on an existing Worker are **blocked** until the [legacy maintenance/recovery procedure](docs/upgrade-and-recovery.md) is rehearsed; profile/hosting changes also require a separate plan. Existing secrets are preserved.
-
-### Step 5 — Visit Your Status Page
-
-Once apply and freshness verification succeed:
-
-**Default (`pages` mode):**
-
-- **Status page** → `https://<your-pages-project>.pages.dev`
-- **Admin dashboard** → `https://<your-pages-project>.pages.dev/admin`
-- **API** → `https://<your-worker-name>.<account-subdomain>.workers.dev/api/v1/public/status`
-
-**Optional (`single_worker` mode):**
-
-- **Status page** → `https://<your-worker-name>.<account-subdomain>.workers.dev`
-- **Admin dashboard** → `https://<your-worker-name>.<account-subdomain>.workers.dev/admin`
-- **API** → `https://<your-worker-name>.<account-subdomain>.workers.dev/api/v1/public/status`
-
-After a first install, save the allocated D1 UUID from the receipt as `UPTIMER_D1_ID` for future upgrade plans.
-
-Log in to the admin dashboard with the `UPTIMER_ADMIN_TOKEN` you set, and start adding monitors.
-
-> **Staying up to date** — Since you deploy from your own fork, you can [sync with upstream](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/working-with-forks/syncing-a-fork) at any time. Sync runs CI; review a new plan and explicitly apply it before updating your instance.
-
-> For advanced options (custom domain, resource naming, admin path), see the [Deployment Guide](docs/deploy-github-actions.md).
+Use **Sync fork** to update your code. Cloudflare deployment remains manual.
 
 ---
 

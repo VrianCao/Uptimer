@@ -102,73 +102,15 @@ Admin ─────────►│  Workers (Hono API)                     
 | CI/CD  | GitHub Actions                                                     |
 | 包管理 | pnpm（monorepo）                                                   |
 
-## 快速部署（5 步完成）
+## 部署 Uptimer
 
-无需修改任何代码或配置文件，即可部署专属于你的 Uptimer 实例：
+1. Fork 本仓库，在 Fork 的 **Actions** 页面启用工作流。
+2. 添加仓库 Secrets `CLOUDFLARE_API_TOKEN` 和 `UPTIMER_ADMIN_TOKEN`。
+3. 在 **Actions → Deploy to Cloudflare** 运行 `plan`，核对摘要后在同一提交运行 `apply`。验收通过后，从运行摘要打开状态页。
 
-### 第 1 步 — Fork 仓库
+[部署指南](docs/deploy-github-actions.zh-CN.md) · [升级与恢复](docs/upgrade-and-recovery.md)
 
-点击本仓库右上角的 **Fork** 按钮，创建你自己的副本。
-
-### 第 2 步 — 创建 Cloudflare API Token
-
-1. 前往 [Cloudflare Dashboard → API Tokens](https://dash.cloudflare.com/profile/api-tokens)
-2. 点击 **Create Token** → 使用 **Edit Cloudflare Workers** 模板
-3. 添加以下权限：
-   - `Account / Cloudflare Pages / Edit`
-   - `Account / D1 / Edit`
-   - `Account / Account Settings / Read`
-4. 复制生成的 Token
-
-> `Cloudflare Pages / Edit` 仅默认 `pages` 模式需要。若使用 `UPTIMER_DEPLOY_MODE=single_worker`，可不授予 Pages 权限。
-
-### 第 3 步 — 添加 GitHub Secrets
-
-进入你 Fork 的仓库 → **Settings** → **Secrets and variables** → **Actions** → **New repository secret**，添加：
-
-| Secret 名称             | 值                                                                                                            | 是否必填 |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------- | :------: |
-| `CLOUDFLARE_API_TOKEN`  | 第 2 步获取的 Token                                                                                           |   必填   |
-| `UPTIMER_ADMIN_TOKEN`   | 任意强密码字符串（用于登录管理后台）                                                                          |   必填   |
-| `CLOUDFLARE_ACCOUNT_ID` | 你的 [Cloudflare Account ID](https://developers.cloudflare.com/fundamentals/setup/find-account-and-zone-ids/) |   必填   |
-
-可选仓库 **变量**（非 Secret）：`UPTIMER_DEPLOY_MODE` = `pages`（默认）或 `single_worker`。
-
-Workers Paid/Standard 账户可设置仓库变量 `UPTIMER_RUNTIME_PROFILE=paid`，直接使用 Worker + D1；默认 `free` 使用站点 DO 协调。该选项独立于托管方式，详见[运行配置与限制](Develop/Runtime-Profiles.md)。
-
-### 第 4 步 — 运行 GitHub Actions
-
-先配置 `cloudflare-release` Environment 的审批与分支保护，再进入 **Actions → Deploy to Cloudflare**：
-
-1. **空实例首装**选择 `release_action=plan`、`operation=install`；先完成 CI 和全部构建，不写入云端。
-2. 审阅 `uptimer-release-package` artifact 与 Summary，核对准确目标及 blockers。
-3. 在**同一源码提交**运行 `release_action=apply`，填写计划的 run ID 与完整 hash；直接部署已审阅包，不重新构建。
-
-普通 push/同步只跑 CI，不自动部署。已有实例选 `operation=upgrade` 并设置仓库变量 **`UPTIMER_D1_ID`**。已有 Worker 尚有待执行 migration 时会**阻断 apply**，须先演练[旧版维护/恢复流程](docs/upgrade-and-recovery.md)；profile/hosting 切换也需独立方案。升级保留已有 Secret。
-
-### 第 5 步 — 访问你的状态页
-
-apply 与新鲜度验收成功后：
-
-**默认（`pages` 模式）：**
-
-- **状态页** → `https://<你的-pages-项目名>.pages.dev`
-- **管理后台** → `https://<你的-pages-项目名>.pages.dev/admin`
-- **API** → `https://<你的-worker-名>.<账户子域>.workers.dev/api/v1/public/status`
-
-**可选（`single_worker` 模式）：**
-
-- **状态页** → `https://<你的-worker-名>.<账户子域>.workers.dev`
-- **管理后台** → `https://<你的-worker-名>.<账户子域>.workers.dev/admin`
-- **API** → `https://<你的-worker-名>.<账户子域>.workers.dev/api/v1/public/status`
-
-首装完成后，从 receipt 保存分配的 D1 UUID 为 `UPTIMER_D1_ID`，用于后续 upgrade 计划。
-
-使用你设置的 `UPTIMER_ADMIN_TOKEN` 登录管理后台，即可开始添加监控项。
-
-> **保持更新** — 由于你从自己的 Fork 部署，随时可以[同步上游仓库](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/working-with-forks/syncing-a-fork)获取最新功能。同步会触发 CI；更新实例前需重新审阅计划并明确执行 apply。
-
-> 高级选项（自定义域名、资源命名、管理路径等）请参阅[部署指南](docs/deploy-github-actions.zh-CN.md)。
+通过 **Sync fork** 更新代码。Cloudflare 部署由你手动发起。
 
 ---
 

@@ -1,11 +1,12 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 const name = z.string().regex(/^[a-z0-9][a-z0-9-]{0,62}$/);
+export const cloudflareAccountId = z.string().regex(/^[a-f0-9]{32}$/);
 export const digest = z.string().regex(/^[a-f0-9]{64}$/);
 export const revision = z.string().regex(/^[a-f0-9]{40}$/);
 export const targetSchema = z.object({
   repository: z.string().regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/),
-  accountId: z.string().regex(/^[a-f0-9]{32}$/),
+  accountId: cloudflareAccountId,
   worker: name,
   database: name,
   databaseId: z.string().uuid().nullable(),
@@ -34,7 +35,7 @@ export function sha256(value) {
     )
     .digest('hex');
 }
-export function assertTarget(input, repository) {
+export function assertTarget(input, repository, { allowUnresolvedDatabase = false } = {}) {
   const t = targetSchema.parse(input);
   if (t.repository !== repository) throw Error('Package repository differs from this run');
   for (const raw of [t.workerUrl, t.apiOrigin]) {
@@ -65,8 +66,8 @@ export function assertTarget(input, repository) {
       t.apiOrigin !== t.workerUrl)
   )
     throw Error('Dev API origin must be its own Worker');
-  if (t.operation === 'upgrade' && !t.databaseId)
-    throw Error('Upgrade requires an explicit UPTIMER_D1_ID');
+  if (t.operation === 'upgrade' && !t.databaseId && !allowUnresolvedDatabase)
+    throw Error('Upgrade plan must identify the existing database');
   return t;
 }
 export const migrationSchema = z

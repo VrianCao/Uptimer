@@ -3,7 +3,7 @@ import { resolve, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { z } from 'zod';
 import { targetInput, writeJson } from './release-config.mjs';
-import { ReleaseCloud } from './release-cloud.mjs';
+import { ReleaseCloud, resolveAccountId } from './release-cloud.mjs';
 import { preparePackage, readJson } from './release-package.mjs';
 import { applyRelease } from './release-apply.mjs';
 
@@ -14,17 +14,19 @@ export async function releaseMain(action, env = process.env) {
     env.RELEASE_DIRECTORY || join(env.RUNNER_TEMP || '/tmp', 'uptimer-release'),
   );
   const releaseEnv = { ...env, RELEASE_ROOT: root };
-  let target = targetInput(releaseEnv, 'pending');
-  const cloud = new ReleaseCloud(target, env.CLOUDFLARE_API_TOKEN, { readOnly: action === 'plan' });
-  if (!env.UPTIMER_WORKER_URL) {
-    const domain = await cloud.request('/workers/subdomain');
-    if (!domain.subdomain)
-      throw Error('Enable a workers.dev subdomain or configure UPTIMER_WORKER_URL');
-    target = targetInput(releaseEnv, domain.subdomain);
-    cloud.target = target;
-  }
   if (action === 'plan') {
+    releaseEnv.CLOUDFLARE_ACCOUNT_ID = await resolveAccountId(releaseEnv);
+    const cloud = new ReleaseCloud(targetInput(releaseEnv, 'pending'), env.CLOUDFLARE_API_TOKEN, {
+      confirmDatabaseName: !!env.UPTIMER_D1_NAME,
+    });
+    if (!env.UPTIMER_WORKER_URL) {
+      const domain = await cloud.request('/workers/subdomain');
+      if (!domain.subdomain)
+        throw Error('Enable a workers.dev subdomain or configure UPTIMER_WORKER_URL');
+      cloud.target = targetInput(releaseEnv, domain.subdomain);
+    }
     const plan = await preparePackage({ root, directory, cloud, env: releaseEnv });
+    const { target } = plan;
     if (env.GITHUB_OUTPUT)
       await appendFile(
         env.GITHUB_OUTPUT,
@@ -33,14 +35,20 @@ export async function releaseMain(action, env = process.env) {
     const summary = [
       '### Reviewed release plan',
       '',
-      `Source: \`${plan.sourceSha}\``,
-      `Plan SHA-256: \`${plan.hash}\``,
-      `Target: ${target.worker} / ${target.hosting} / ${target.profile}`,
-      `Pending migrations: ${plan.steps.pendingMigrations.join(', ') || 'none'}`,
-      'Remote mutations: **0** (metadata and read-only D1 queries only).',
+      ...(/^\d+$/.test(env.GITHUB_RUN_ID ?? '') ? [`- Plan run ID: \`${env.GITHUB_RUN_ID}\``] : []),
+      `- Source: \`${plan.sourceSha}\``,
+      `- Plan SHA-256: \`${plan.hash}\``,
+      `- Target: ${target.worker} / ${target.hosting} / ${target.profile}`,
+      `- Cloudflare account: \`${target.accountId}\``,
+      `- D1: ${target.database} (${target.databaseId ?? 'create on first install'})`,
+      ...(target.hosting === 'pages' ? [`- Pages: ${target.pages}`] : []),
+      `- Pending migrations: ${plan.steps.pendingMigrations.join(', ') || 'none'}`,
+      '- Remote mutations: **0** (metadata and read-only D1 queries only).',
       ...plan.blockers.map((b) => `- BLOCKED: ${b}`),
       '',
-      'Inspect plan.json and manifest.json before applying. Apply requires this exact source revision and plan hash.',
+      plan.blockers.length
+        ? 'Resolve the blockers before applying.'
+        : 'Review the target and pending migrations, then run apply at this commit with this run ID and plan hash.',
       '',
     ].join('\n');
     if (env.GITHUB_STEP_SUMMARY) await appendFile(env.GITHUB_STEP_SUMMARY, summary);
@@ -53,6 +61,7 @@ export async function releaseMain(action, env = process.env) {
   ]);
   if (!env.UPTIMER_ADMIN_TOKEN)
     throw Error('Admin credential is required before applying for read-only smoke verification');
+  const cloud = new ReleaseCloud(plan.target, env.CLOUDFLARE_API_TOKEN, { readOnly: false });
   const checkpoint = await applyRelease({
     root,
     directory,
@@ -72,11 +81,15 @@ export async function releaseMain(action, env = process.env) {
     });
     throw error;
   }
-  if (env.GITHUB_STEP_SUMMARY)
+  if (env.GITHUB_STEP_SUMMARY) {
+    const { target } = plan;
+    const statusUrl =
+      target.hosting === 'pages' ? `https://${target.pages}.pages.dev` : target.workerUrl;
     await appendFile(
       env.GITHUB_STEP_SUMMARY,
-      `### Release verification\n\nWorker: \`${checkpoint.after.worker.versionId}\`\n\nPages: \`${checkpoint.after.pages?.deploymentId ?? 'not used'}\`\n\nDeployment no-op: **${checkpoint.idempotentNoop}**. Public/auth/routing checks and two advancing publications passed.\n`,
+      `### Release verification\n\n[Open your status page](${statusUrl})\n\nWorker: \`${checkpoint.after.worker.versionId}\`\n\nPages: \`${checkpoint.after.pages?.deploymentId ?? 'not used'}\`\n\nDeployment no-op: **${checkpoint.idempotentNoop}**. Public/auth/routing checks and two advancing publications passed.\n`,
     );
+  }
   return checkpoint;
 }
 

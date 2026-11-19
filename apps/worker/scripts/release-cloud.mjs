@@ -1,9 +1,33 @@
 import { z } from 'zod';
-import { assertTarget } from './release-contract.mjs';
+import { assertTarget, cloudflareAccountId } from './release-contract.mjs';
+
+export async function resolveAccountId(env, request = fetch) {
+  if (env.CLOUDFLARE_ACCOUNT_ID) return cloudflareAccountId.parse(env.CLOUDFLARE_ACCOUNT_ID);
+  const message =
+    'Cannot identify one Cloudflare account. Set CLOUDFLARE_ACCOUNT_ID in GitHub Actions.';
+  if (env.GITHUB_REPOSITORY === 'VrianCao/UptimerDev') throw Error(message);
+  const token = z.string().min(1).parse(env.CLOUDFLARE_API_TOKEN);
+  const response = await request('https://api.cloudflare.com/client/v4/accounts?per_page=5', {
+    headers: { Authorization: `Bearer ${token}` },
+    signal: AbortSignal.timeout(20000),
+  });
+  if (!response.ok) throw Error(message);
+  const accounts = z
+    .object({
+      success: z.literal(true),
+      result: z.tuple([z.object({ id: cloudflareAccountId })]),
+      result_info: z.object({ total_count: z.literal(1).optional() }).optional(),
+    })
+    .safeParse(await response.json());
+  if (!accounts.success) throw Error(message);
+  return accounts.data.result[0].id;
+}
+
 export class ReleaseCloud {
-  constructor(target, token, { readOnly = true } = {}) {
+  constructor(target, token, { readOnly = true, confirmDatabaseName = true } = {}) {
     this.readOnly = readOnly;
-    this.target = assertTarget(target, target.repository);
+    this.confirmDatabaseName = confirmDatabaseName;
+    this.target = assertTarget(target, target.repository, { allowUnresolvedDatabase: readOnly });
     this.token = z.string().min(1).parse(token);
   }
   async request(path, { method = 'GET', body, missing = false, raw = false } = {}) {
@@ -35,11 +59,7 @@ export class ReleaseCloud {
       throw Error('Plan cannot mutate Cloudflare');
     if (method !== 'GET' && !supportedMutation) throw Error('Release mutation guard failed');
 
-    if (
-      path.startsWith('/d1/database/') &&
-      this.target.databaseId &&
-      !path.startsWith('/d1/database/' + t.databaseId)
-    )
+    if (path.startsWith('/d1/database/') && path.split('/')[3] !== t.databaseId)
       throw Error('D1 identity guard failed');
     const r = await fetch(base + path, {
       method,
@@ -80,21 +100,26 @@ export class ReleaseCloud {
   }
   async inspect() {
     const t = this.target;
-    const databases = t.databaseId
-      ? [await this.request('/d1/database/' + t.databaseId)]
-      : await this.request(`/d1/database?name=${t.database}&per_page=100`);
-    if (!Array.isArray(databases)) throw Error('Unexpected D1 metadata');
-    const matches = databases.filter((db) => db.name === t.database);
-    if (matches.length > 1) throw Error('Ambiguous database name');
-    const db = matches[0] ?? null,
-      id = db?.uuid ?? db?.id ?? null;
-    if (t.databaseId && id !== t.databaseId) throw Error('Configured D1 ID/name does not match');
-    if (id) this.target.databaseId = id;
+    let database;
+    if (t.operation === 'install' && !t.databaseId) {
+      const databases = await this.request(`/d1/database?name=${t.database}&per_page=100`);
+      if (!Array.isArray(databases)) throw Error('Unexpected D1 metadata');
+      const matches = databases.filter((db) => db.name === t.database);
+      if (matches.length > 1) throw Error('Ambiguous database name');
+      database = matches[0];
+      if (database)
+        t.databaseId = z
+          .string()
+          .uuid()
+          .parse(database.uuid ?? database.id);
+    }
     const workerInfo = await this.request(`/workers/scripts/${t.worker}/settings`, {
       missing: true,
     });
     let worker = null;
     if (workerInfo) {
+      if (t.operation === 'install' && !t.databaseId)
+        throw Error('The configured Worker already exists; check the target or plan an upgrade');
       const deps = await this.request(`/workers/scripts/${t.worker}/deployments`),
         active = deps.deployments[0];
       if (active.versions.length !== 1 || active.versions[0].percentage !== 100)
@@ -106,8 +131,16 @@ export class ReleaseCloud {
         v = await this.request(`/workers/scripts/${t.worker}/versions/${versionId}`),
         bindings = v.resources.bindings,
         value = (n) => bindings.find((b) => b.name === n)?.text;
-      if (bindings.find((b) => b.name === 'DB')?.id !== id)
+      const dbBinding = bindings.find((b) => b.name === 'DB' && b.type === 'd1');
+      const boundId = z
+        .string()
+        .uuid()
+        .safeParse(dbBinding?.database_id ?? dbBinding?.id);
+      if (!boundId.success)
+        throw Error('Active Worker has no valid DB binding; check the Worker name and binding');
+      if (t.databaseId && t.databaseId !== boundId.data)
         throw Error('Worker is attached to a different database');
+      t.databaseId = boundId.data;
       const crons = (await this.request(`/workers/scripts/${t.worker}/schedules`)).schedules
         .map((s) => s.cron)
         .sort();
@@ -116,7 +149,7 @@ export class ReleaseCloud {
         sourceSha: value('UPTIMER_BUILD_SHA') ?? null,
         fingerprint: value('UPTIMER_RELEASE_FINGERPRINT') ?? null,
         profile: value('UPTIMER_RUNTIME_PROFILE') ?? 'free',
-        databaseId: id,
+        databaseId: boundId.data,
         hosting: bindings.some((b) => b.name === 'ASSETS') ? 'single_worker' : 'pages',
         secretNames: bindings
           .filter((b) => b.type === 'secret_text')
@@ -129,11 +162,25 @@ export class ReleaseCloud {
           selfService: bindings.find((b) => b.name === 'SELF')?.service,
           coordinatorBound: bindings.some((b) => b.name === 'COORDINATOR'),
           assetsBound: bindings.some((b) => b.name === 'ASSETS'),
-          cpuMs: v.resources.script_runtime.limits?.cpu_ms,
+          cpuMs: v.resources.script_runtime?.limits?.cpu_ms,
           crons,
         },
       };
     }
+    if (t.operation === 'upgrade' && !t.databaseId)
+      throw Error(
+        'Worker not found. Check UPTIMER_WORKER_NAME or set UPTIMER_D1_ID to resume an interrupted install.',
+      );
+    if (t.databaseId) {
+      database ??= await this.request('/d1/database/' + t.databaseId);
+      if ((database?.uuid ?? database?.id) !== t.databaseId)
+        throw Error('The D1 ID does not match the reviewed database');
+      if (t.operation === 'upgrade' && this.readOnly && !this.confirmDatabaseName)
+        t.database = database.name;
+      if (database.name !== t.database)
+        throw Error('The D1 ID and database name do not match; check UPTIMER_D1_NAME');
+    }
+    const id = t.databaseId;
     const project =
       t.hosting === 'pages'
         ? await this.request(`/pages/projects/${t.pages}`, { missing: true })

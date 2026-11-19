@@ -14,12 +14,14 @@ export async function migrationFiles(root) {
   );
 }
 export function targetInput(env, subdomain) {
-  const repository = env.GITHUB_REPOSITORY,
-    slug = repository
-      ?.split('/')[1]
-      ?.toLowerCase()
-      .replace(/[^a-z0-9-]+/g, '-');
-  const worker = env.UPTIMER_WORKER_NAME || env.UPTIMER_PREFIX || slug;
+  const repository = env.GITHUB_REPOSITORY;
+  const slug = repository
+    ?.split('/')[1]
+    ?.toLowerCase()
+    .replace(/[^a-z0-9-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  const prefix = env.UPTIMER_PREFIX || slug || 'uptimer';
+  const worker = env.UPTIMER_WORKER_NAME || prefix;
   const workerUrl = env.UPTIMER_WORKER_URL || `https://${worker}.${subdomain}.workers.dev`;
   const hosting =
     env.RELEASE_HOSTING === 'auto' || !env.RELEASE_HOSTING
@@ -42,9 +44,9 @@ export function targetInput(env, subdomain) {
       repository,
       accountId: env.CLOUDFLARE_ACCOUNT_ID,
       worker,
-      database: env.UPTIMER_D1_NAME || env.UPTIMER_PREFIX || slug,
+      database: env.UPTIMER_D1_NAME || prefix,
       databaseId: env.UPTIMER_D1_ID || null,
-      pages: env.UPTIMER_PAGES_PROJECT || env.UPTIMER_PREFIX || slug,
+      pages: env.UPTIMER_PAGES_PROJECT || prefix,
       hosting,
       profile,
       operation: env.RELEASE_OPERATION || 'upgrade',
@@ -52,6 +54,7 @@ export function targetInput(env, subdomain) {
       ...api,
     },
     repository,
+    { allowUnresolvedDatabase: true },
   );
 }
 export async function deploymentConfig(root, target, sourceSha, databaseId) {

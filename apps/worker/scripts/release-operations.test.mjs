@@ -6,7 +6,7 @@ import { resolve, join } from 'node:path';
 import { preparePackage, verifyReviewedPackage, readJson } from './release-package.mjs';
 import { deploymentConfig, targetInput } from './release-config.mjs';
 import { applyRelease, assertRuntimeConfiguration } from './release-apply.mjs';
-import { ReleaseCloud } from './release-cloud.mjs';
+import { ReleaseCloud, resolveAccountId } from './release-cloud.mjs';
 import { verifyRelease } from './release.mjs';
 const root = resolve(import.meta.dirname, '../../..');
 const baseEnv = {
@@ -139,6 +139,9 @@ test('source, target and build-input drift reject apply before effects', async (
   for (const changed of [
     { GITHUB_SHA: 'd'.repeat(40) },
     { UPTIMER_WORKER_NAME: 'another' },
+    { CLOUDFLARE_ACCOUNT_ID: '0'.repeat(32) },
+    { UPTIMER_D1_ID: '87654321-4321-4321-8321-abcdef012345' },
+    { UPTIMER_D1_NAME: 'another-db' },
     { RELEASE_PROFILE: 'paid' },
     { VITE_ADMIN_PATH: '/changed', RELEASE_ROOT: root },
   ])
@@ -151,6 +154,113 @@ test('source, target and build-input drift reject apply before effects', async (
     /Unmanifested/,
   );
 });
+test('default names match deployments created by the legacy workflow', () => {
+  for (const [repo, expected] of [
+    ['_Status.Page_', 'status-page'],
+    ['._-', 'uptimer'],
+  ]) {
+    const target = targetInput({ ...baseEnv, GITHUB_REPOSITORY: `alice/${repo}` }, 'alice');
+    assert.deepEqual([target.worker, target.pages, target.database], Array(3).fill(expected));
+  }
+});
+
+test('a single visible Cloudflare account is inferred and explicit accounts skip discovery', async () => {
+  const accountId = baseEnv.CLOUDFLARE_ACCOUNT_ID;
+  const env = { CLOUDFLARE_API_TOKEN: 'fixture-token' };
+  const noDiscovery = async () => assert.fail('Account discovery must not run');
+  assert.equal(
+    await resolveAccountId({ ...env, CLOUDFLARE_ACCOUNT_ID: accountId }, noDiscovery),
+    accountId,
+  );
+  assert.equal(
+    await resolveAccountId(env, async (url) => {
+      assert.equal(new URL(url).pathname, '/client/v4/accounts');
+      return Response.json({ success: true, result: [{ id: accountId }] });
+    }),
+    accountId,
+  );
+  for (const data of [
+    { success: true, result: [] },
+    { success: true, result: [{ id: accountId }, { id: 'b'.repeat(32) }] },
+    { success: true, result: [{ id: accountId }], result_info: { total_count: 2 } },
+  ])
+    await assert.rejects(
+      resolveAccountId(env, async () => Response.json(data)),
+      /CLOUDFLARE_ACCOUNT_ID/,
+    );
+  await assert.rejects(
+    resolveAccountId(env, async () => new Response(null, { status: 403 })),
+    /CLOUDFLARE_ACCOUNT_ID/,
+  );
+  await assert.rejects(
+    resolveAccountId({ ...env, GITHUB_REPOSITORY: 'VrianCao/UptimerDev' }, noDiscovery),
+    /CLOUDFLARE_ACCOUNT_ID/,
+  );
+});
+
+test('an upgrade resolves the active DB binding and only looks up that exact D1', async (t) => {
+  const id = baseEnv.UPTIMER_D1_ID;
+  const target = targetInput(
+    { ...baseEnv, UPTIMER_D1_ID: '', RELEASE_HOSTING: 'single_worker' },
+    'alice',
+  );
+  const worker = '/workers/scripts/uptimer';
+  const version = '22222222-2222-4222-8222-222222222222';
+  const cloud = new ReleaseCloud(target, 'test-token', { confirmDatabaseName: false });
+  const routes = {
+    [worker + '/settings']: {},
+    [worker + '/deployments']: {
+      deployments: [{ versions: [{ version_id: version, percentage: 100 }] }],
+    },
+    [worker + '/versions']: { items: [{ id: version }] },
+    [worker + '/versions/' + version]: {
+      resources: { bindings: [{ name: 'DB', type: 'd1', database_id: id }] },
+    },
+    [worker + '/schedules']: { schedules: [] },
+    ['/d1/database/' + id]: { uuid: id, name: 'renamed-d1' },
+    ['/d1/database/' + id + '/query']: [{ results: [], meta: { rows_written: 0 } }],
+  };
+  const request = async (path) => {
+    assert.ok(Object.hasOwn(routes, path), 'Unexpected discovery request: ' + path);
+    return routes[path];
+  };
+  t.mock.method(cloud, 'request', request);
+  const inspected = await cloud.inspect();
+  assert.equal(inspected.worker.databaseId, id);
+  assert.equal(cloud.target.databaseId, id);
+  assert.equal(cloud.target.database, 'renamed-d1');
+
+  // A configured UUID remains an assertion and is checked before querying D1.
+  const pinned = new ReleaseCloud(
+    { ...target, databaseId: '87654321-4321-4321-8321-abcdef012345' },
+    'test-token',
+  );
+  t.mock.method(pinned, 'request', request);
+  await assert.rejects(pinned.inspect(), /Worker is attached to a different database/);
+  const missing = new ReleaseCloud(target, 'test-token');
+  t.mock.method(missing, 'request', async (path) => {
+    assert.equal(path, worker + '/settings');
+    return null;
+  });
+  await assert.rejects(missing.inspect(), /Worker not found.*UPTIMER_D1_ID/);
+});
+
+test('an interrupted install needs the verified D1 ID when there is no Worker', async (t) => {
+  const id = baseEnv.UPTIMER_D1_ID;
+  const target = targetInput({ ...baseEnv, RELEASE_HOSTING: 'single_worker' }, 'alice');
+  const cloud = new ReleaseCloud(target, 'test-token', { confirmDatabaseName: false });
+  t.mock.method(cloud, 'request', async (path) => {
+    if (path === '/workers/scripts/uptimer/settings') return null;
+    assert.equal(path, '/d1/database/' + id);
+    return { uuid: id, name: 'custom-database' };
+  });
+  t.mock.method(cloud, 'sql', async () => ({ results: [] }));
+  const inspected = await cloud.inspect();
+  assert.equal(inspected.worker, null);
+  assert.equal(inspected.databaseId, id);
+  assert.equal(cloud.target.database, 'custom-database');
+});
+
 test('API planner cannot mutate or reach an unapproved resource', async () => {
   const cloud = new ReleaseCloud(targetInput(baseEnv, 'alice'), 'test-token');
   await assert.rejects(
@@ -184,10 +294,14 @@ test('existing pending migrations and profile switches are blocked before any wr
   assert.equal(calls, 0);
 });
 test('Pages failure resumes without redeploying Worker; successful repeat has zero commands', async (t) => {
-  const f = await fixture(t);
+  const f = await fixture(t, { UPTIMER_D1_NAME: 'renamed-d1' });
+  delete f.env.CLOUDFLARE_ACCOUNT_ID;
+  delete f.env.UPTIMER_D1_ID;
+  delete f.env.UPTIMER_D1_NAME;
   const calls = [];
   let failPages = true;
-  const run = async (args) => {
+  const run = async (args, { env }) => {
+    assert.equal(env.CLOUDFLARE_ACCOUNT_ID, f.plan.target.accountId);
     calls.push(args.join(' '));
     const live = f.getLive();
     if (args.includes('deploy') && !args.includes('pages')) {
