@@ -9,7 +9,7 @@
 
 ## Deployment and verification
 
-Use the [deployment guide](deploy-github-actions.md) for a fresh install or an upgrade. For supported `0014` databases, Apply pauses probes and admin writes, migrates the existing D1, and resumes monitoring. See the [upgrade and recovery guide](upgrade-and-recovery.md).
+The [v0.2.0 deployment and upgrade guide](v0.2.0-upgrade.md) covers fresh installs, upgrade steps, and Agent assistance. For supported `0014` databases, Apply pauses probes and admin writes, migrates the existing D1, and resumes monitoring. See the [upgrade and recovery guide](upgrade-and-recovery.md).
 
 CI covers all four runtime and hosting combinations. The local migration rehearsal preserved 302,400 probe samples across `0014 → 0025`. An isolated Cloudflare rehearsal verified interruption and resume, retention of 1,440 historical samples in the original D1, rejection of old Worker writes and a no-op repeat. After the maintenance snapshot fix, a complete upgrade kept the sampled homepage requests at HTTP 200 and showed the previous snapshot during about 30 seconds of maintenance.
 
@@ -24,7 +24,7 @@ In a separate 24-hour observation of an earlier Dev build, 24 monitors at one-mi
 - 修复了监控隐藏状态与历史、事件和维护范围的处理，并改进同源后台鉴权、窄屏弹窗和键盘操作。
 - 部署计划绑定构建包、提交和目标资源。工作流在写入前复核资源身份，保留已有密钥，并在匹配的重试中跳过已完成的阶段。
 
-首装和升级都可按[部署指南](deploy-github-actions.zh-CN.md)操作。对于受支持的 `0014` 旧库，Apply 会暂时暂停探测与后台写入，在原 D1 上迁移后恢复监控。详见[升级与恢复指南](upgrade-and-recovery.md)。
+[v0.2.0 部署与升级指南](v0.2.0-upgrade.zh-CN.md)介绍了首装、升级步骤和如何让 Agent 协助。对于受支持的 `0014` 旧库，Apply 会暂时暂停探测与后台写入，在原 D1 上迁移后恢复监控。详见[升级与恢复指南](upgrade-and-recovery.md)。
 
 CI 覆盖四种运行模式与托管组合。本地演练确认 `0014 → 0025` 保留了 302,400 条探测样本。Cloudflare 隔离演练验证了中断续跑、原 D1 保留 1,440 条历史样本、拒绝旧 Worker 写入，以及完成后重跑不重复迁移或部署。修复维护快照后，完整升级的维护窗口约 30 秒，采样的首页请求均返回 HTTP 200 并显示上一次快照。
 

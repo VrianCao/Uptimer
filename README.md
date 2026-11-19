@@ -108,9 +108,29 @@ Admin ─────────►│  Workers (Hono API)                     
 2. Add `CLOUDFLARE_API_TOKEN` and `UPTIMER_ADMIN_TOKEN` as repository secrets.
 3. In **Actions → Deploy to Cloudflare**, run `plan`. Review the summary, then run `apply` at the same commit. Open your status page from the completed run.
 
-[Deployment guide](docs/deploy-github-actions.md) · [Upgrade and recovery](docs/upgrade-and-recovery.md)
+[v0.2.0 deployment and upgrade guide](docs/v0.2.0-upgrade.md) · [General deployment guide](docs/deploy-github-actions.md) · [Upgrade and recovery](docs/upgrade-and-recovery.md)
 
 Use **Sync fork** to update your code. Cloudflare deployment remains manual.
+
+---
+
+## Upgrade to v0.2.0 with an agent
+
+Copy this prompt into an agent that can access your GitHub repository. The agent can check your setup or run the workflow with your approval.
+
+<details>
+<summary>Copy the upgrade prompt</summary>
+
+```text
+Help me upgrade my own Uptimer site to v0.2.0. Use plain, concise language. Tell me what is running now, what comes next, and what my site may experience. Ask one question at a time when the answer affects the next step. Look up anything you can verify yourself.
+
+1. Start with read-only checks. Identify my fork, target branch and commit, the published upstream version, Actions status, custom deployment triggers, and the latest deployment outcome. Read docs/v0.2.0-upgrade.md at the target version and inspect the actual deploy.yml. Determine whether this is a first install, an existing upgrade, an interrupted Apply, or a source sync awaiting deployment. Use available configuration and Plan to verify the Worker, D1, hosting mode, and free/paid runtime profile. Label unknowns.
+2. Give me the shortest path. If a sync is needed, tell me whether custom workflows could deploy on push or whether there is a conflict. Keep the current hosting mode and runtime profile for an upgrade. Free is the default and Plan usually detects the account and D1. Ask only for missing settings or permissions and tell me where to fix them. Direct me to GitHub Secrets for credentials and keep their values out of chat and logs.
+3. Act only on the steps I authorize, in my fork on the agreed branch. Use GitHub's Deploy to Cloudflare Action. Run the read-only Plan first and give me the source commit, account, Worker, D1, Pages project if applicable, pending migrations, and expected maintenance impact. After I authorize Apply for that plan, dispatch it at the same commit with plan_run and plan_hash. Recheck any changed commit or target. Stop at BLOCKED and explain the reason.
+4. If the target version is already live and healthy, tell me. If you start the Action, watch it through completion. Give me a one-line result, the run link, and the live site link. If Apply stopped during maintenance, resume the original run within the authorization I gave you. Explain the impact and obtain authorization for conflict resolution, configuration changes, database resets, or restores. If you lack access to act, give me the GitHub clicks and the values to enter for the current step.
+```
+
+</details>
 
 ---
 
@@ -154,6 +174,7 @@ Default addresses:
 
 | Document                                                                                                   | Description                                                |
 | ---------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| [v0.2.0 deployment and upgrade guide](docs/v0.2.0-upgrade.md) ([中文](docs/v0.2.0-upgrade.zh-CN.md))       | Release overview, installation, upgrades, and recovery     |
 | [Deployment Guide](docs/deploy-github-actions.md) ([中文](docs/deploy-github-actions.zh-CN.md))            | Full GitHub Actions deployment walkthrough                 |
 | [Configuration Reference](docs/configuration-reference.md) ([中文](docs/configuration-reference.zh-CN.md)) | All configurable parameters (secrets, variables, settings) |
 | [Notification System](docs/notifications.md) ([中文](docs/notifications.zh-CN.md))                         | Webhook setup, templates, signatures, troubleshooting      |

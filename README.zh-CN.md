@@ -108,9 +108,29 @@ Admin ─────────►│  Workers (Hono API)                     
 2. 添加仓库 Secrets `CLOUDFLARE_API_TOKEN` 和 `UPTIMER_ADMIN_TOKEN`。
 3. 在 **Actions → Deploy to Cloudflare** 运行 `plan`，核对摘要后在同一提交运行 `apply`。验收通过后，从运行摘要打开状态页。
 
-[部署指南](docs/deploy-github-actions.zh-CN.md) · [升级与恢复](docs/upgrade-and-recovery.md)
+[v0.2.0 部署与升级指南](docs/v0.2.0-upgrade.zh-CN.md) · [通用部署指南](docs/deploy-github-actions.zh-CN.md) · [升级与恢复](docs/upgrade-and-recovery.md)
 
 通过 **Sync fork** 更新代码。Cloudflare 部署由你手动发起。
+
+---
+
+## 让 Agent 协助升级到 v0.2.0
+
+把下面的提示词复制给能访问你的 GitHub 仓库的 Agent。它可以帮你核对升级路径，或者在你授权后代你运行 Action。
+
+<details>
+<summary>复制升级提示词</summary>
+
+```text
+帮我把自己的 Uptimer 站点升级到 v0.2.0。请用中文直白、直观、简洁地和我沟通，优先说「现在是什么情况、下一步做什么、站点会受什么影响」。一次只问一个会影响下一步的问题。你能查到的信息就自己查。
+
+1. 先做只读核对。识别我的 fork、目标分支和提交、上游已发布的目标版本、Actions 状态、自定义部署触发器和最近的部署结果。阅读目标版本的 docs/v0.2.0-upgrade.zh-CN.md 和实际 deploy.yml。判断是首装、已有站点升级、维护中续跑，还是只同步了代码。结合可用的配置和 Plan 核对现有 Worker、D1、托管方式与 free/paid 运行配置，分清已确认和未知的信息。
+2. 给我最短的操作路径。需要同步时，先说明自定义流程会不会自动部署，以及有无冲突。已有实例沿用原托管方式和运行配置。默认 free 可留空，通常由 Plan 查到账户和 D1。若缺少配置或权限，只告诉我具体缺哪一项和到哪里处理。请在 GitHub Secrets 页面引导我设置密钥，聊天和日志里都不要索取或显示密钥值。
+3. 我授权了哪一步，就在我的 fork 和指定分支执行哪一步。若获准代办，使用 GitHub 的 Deploy to Cloudflare Action。先运行只读 Plan，告诉我摘要中的目标提交、账户、Worker、D1、Pages（如有）、待迁移项和维护影响。得到对该 Plan 的 Apply 授权后，在同一提交填写 plan_run 和 plan_hash 触发 Apply。提交或目标变化时重新核对；有 BLOCKED 时停在 Plan 并解释原因。
+4. 若目标版本已上线且站点正常，直接告诉我。触发 Action 后跟踪到结束，再给我一句结果、运行链接和状态页链接。已经进入维护的 Apply 中断时，优先在授权范围内续跑原 Apply。对冲突、配置变更、数据库重置或恢复，先说明影响并征得对应授权。若你只能指导我操作，给我 GitHub 上的点击路径和这一步要填的值。
+```
+
+</details>
 
 ---
 
@@ -152,12 +172,13 @@ pnpm dev
 
 ## 文档
 
-| 文档                                              | 说明                               |
-| ------------------------------------------------- | ---------------------------------- |
-| [部署指南](docs/deploy-github-actions.zh-CN.md)   | GitHub Actions 部署完整流程        |
-| [配置参考](docs/configuration-reference.zh-CN.md) | 所有可配置参数（密钥、变量、设置） |
-| [通知系统](docs/notifications.zh-CN.md)           | Webhook 配置、模板、签名、故障排除 |
-| [本地开发](Develop/LOCAL-TESTING.md)              | 本地环境搭建、种子数据、测试流程   |
+| 文档                                                  | 说明                               |
+| ----------------------------------------------------- | ---------------------------------- |
+| [v0.2.0 部署与升级指南](docs/v0.2.0-upgrade.zh-CN.md) | 版本说明、首装、升级和续跑         |
+| [部署指南](docs/deploy-github-actions.zh-CN.md)       | GitHub Actions 部署完整流程        |
+| [配置参考](docs/configuration-reference.zh-CN.md)     | 所有可配置参数（密钥、变量、设置） |
+| [通知系统](docs/notifications.zh-CN.md)               | Webhook 配置、模板、签名、故障排除 |
+| [本地开发](Develop/LOCAL-TESTING.md)                  | 本地环境搭建、种子数据、测试流程   |
 
 ## 质量检查
 
