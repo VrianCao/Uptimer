@@ -6,6 +6,7 @@ import {
   revision,
   planHash,
   deploymentSteps,
+  migrationState,
   requiresMigrationMaintenance,
   assertTarget,
 } from './release-contract.mjs';
@@ -17,6 +18,7 @@ import {
   portableConfig,
   writeJson,
 } from './release-config.mjs';
+import { eligibleLegacyUpgrade, releaseConfigForLegacy } from './release-legacy.mjs';
 // Used by both package validation and live apply. No release-only flags may
 // bypass the parser/build validation of the project's locked Wrangler version.
 export function workerDeployArgs(config) {
@@ -72,6 +74,7 @@ export function publicState(state) {
           sourceSha: worker.sourceSha,
           fingerprint: worker.fingerprint,
           profile: worker.profile,
+          ...(worker.maintenance ? { maintenance: true } : {}),
           databaseId: worker.databaseId,
           hosting: worker.hosting,
           secretNames: worker.secretNames,
@@ -116,7 +119,12 @@ export async function preparePackage({ root, directory, cloud, env, run = comman
   await mkdir(join(directory, 'worker'), { recursive: true });
   await mkdir(join(directory, 'web'), { recursive: true });
   await mkdir(join(directory, 'migrations'), { recursive: true });
-  const cfg = await deploymentConfig(root, target, sourceSha, live.databaseId);
+  const legacyUpgrade = eligibleLegacyUpgrade(
+    { target, before: publicState(live) },
+    migrationState(migrations, live.appliedMigrations),
+  );
+  const baseConfig = await deploymentConfig(root, target, sourceSha, live.databaseId);
+  const cfg = legacyUpgrade || live.legacy ? releaseConfigForLegacy(baseConfig) : baseConfig;
   // Full build happens before any remote mutation, including migration/provisioning.
   const buildEnv = {
     ...env,
@@ -196,12 +204,17 @@ export async function preparePackage({ root, directory, cloud, env, run = comman
     manifestHash: sha256(manifest),
     migrations,
     before: publicState(live),
+    ...(legacyUpgrade ? { legacyUpgrade: true } : {}),
     warnings: [],
     checks: { builtBeforeMutation: true, remoteMutations: 0 },
   };
   plan.blockers = [];
   plan.steps = deploymentSteps(plan, plan.before);
-  if (requiresMigrationMaintenance(live, plan.steps))
+  if (live.worker?.maintenance || (live.legacy && live.legacy.phase !== 'open'))
+    plan.blockers.push('An approved legacy upgrade is in progress. Resume its original Apply.');
+  if (legacyUpgrade)
+    plan.warnings.push('Apply will pause probes and admin writes during the one-time D1 upgrade.');
+  if (!legacyUpgrade && requiresMigrationMaintenance(live, plan.steps))
     plan.blockers.push(
       'Existing database has pending migrations: a separately rehearsed maintenance/forward-recovery procedure is required. This workflow will not apply them.',
     );

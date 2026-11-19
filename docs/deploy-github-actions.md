@@ -13,13 +13,15 @@ In your fork, open **Settings → Secrets and variables → Actions → New repo
 | `CLOUDFLARE_API_TOKEN` | In [Cloudflare API Tokens](https://dash.cloudflare.com/profile/api-tokens), use the **Edit Cloudflare Workers** template, scope it to the deployment account, and add **D1 / Edit**. Default Pages hosting also needs **Cloudflare Pages / Edit**. |
 | `UPTIMER_ADMIN_TOKEN`  | For a new site, generate a strong random key. For an upgrade, enter the existing admin key. Deployment preserves the Worker secret that is already configured.                                                                                     |
 
-Workers + Pages is the default. To host the frontend and API on one Worker, set the repository variable `UPTIMER_DEPLOY_MODE=single_worker` before your first install. For upgrades, keep the current hosting mode and runtime profile. See the [configuration reference](configuration-reference.md) for custom names, domains, and admin paths.
+Workers + Pages is the default. To host the frontend and API on one Worker, set the repository variable `UPTIMER_DEPLOY_MODE=single_worker` before your first install. For upgrades, keep the current hosting mode.
+
+The runtime profile defaults to `free` when the repository variable is unset. If you have Cloudflare Workers Paid and want the `paid` runtime profile, set `UPTIMER_RUNTIME_PROFILE=paid`. Keep your current profile when upgrading and retain the variable if your site already uses `paid`. See the [configuration reference](configuration-reference.md) for custom names, domains, and admin paths.
 
 ## 2. Generate a plan
 
 Go to **Actions → Deploy to Cloudflare → Run workflow**, choose the branch to deploy, and select `release_action=plan`. Choose `operation=install` for a new site or `upgrade` for an existing site. The workflow provisions resources on first install.
 
-In the completed plan's **Summary**, check the account, Worker, database, Pages project if applicable, and pending migrations. The plan only reads cloud data. If it reports **BLOCKED**, follow the reason in the summary. Existing sites with pending D1 migrations need the [upgrade and recovery procedure](upgrade-and-recovery.md).
+In the completed plan's **Summary**, check the account, Worker, database, Pages project if applicable, and pending migrations. The plan only reads cloud data. If it reports **BLOCKED**, follow the reason in the summary. Upgrading a supported `0014` database temporarily pauses probes and admin writes. The Action handles the maintenance window and recovery. See [upgrade and recovery](upgrade-and-recovery.md).
 
 ## 3. Apply and open the site
 

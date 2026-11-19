@@ -6,6 +6,7 @@ import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { deploymentConfig, targetInput, writeJson } from './release-config.mjs';
 import { command } from './release-package.mjs';
+import { expectedGuards } from './release-legacy.mjs';
 
 // Uses the already-locked Wrangler/Miniflare dependency. It cannot use remote
 // bindings: all state directories and database IDs are disposable local fixtures.
@@ -76,7 +77,7 @@ export async function rehearseRuntime(root, evidenceDirectory) {
       compatibilityDate: cfg.compatibility_date,
       compatibilityFlags: cfg.compatibility_flags,
       cf: false,
-      bindings: { ...cfg.vars, ADMIN_TOKEN: 'fixture-only-admin' },
+      bindings: { ...cfg.vars, ADMIN_TOKEN: 'fixture-only-admin', UPTIMER_D1_LEGACY_FENCE: '1' },
       serviceBindings: { SELF: 'app' },
       durableObjects: { COORDINATOR: { className: 'SiteCoordinator', useSQLite: true } },
       durableObjectsPersist: join(directory, 'do'),
@@ -99,6 +100,16 @@ export async function rehearseRuntime(root, evidenceDirectory) {
     (await (await mf.getD1Database('DB')).prepare('SELECT count(*) n FROM check_results').first())
       .n;
   try {
+    const db = await mf.getD1Database('DB');
+    await db.batch(expectedGuards(25).map(({ sql }) => db.prepare(sql)));
+    await assert.rejects(
+      db
+        .prepare(
+          "INSERT INTO incidents (title,status,impact,started_at) VALUES ('old','investigating','minor',100)",
+        )
+        .run(),
+      /obsolete writer/,
+    );
     assert.equal(
       (await (await mf.getD1Database('DB')).prepare('SELECT count(*) n FROM monitors').first()).n,
       30,
@@ -175,6 +186,7 @@ export async function rehearseRuntime(root, evidenceDirectory) {
       migratedSamples: summary.samples,
       newChecks: 30,
       coldReplacementPreservedData: true,
+      legacyWriterRejectedAfterCutover: true,
       repeatedMinuteDidNotDuplicate: true,
       publicRepresentations: 3,
       cloudOperations: 0,

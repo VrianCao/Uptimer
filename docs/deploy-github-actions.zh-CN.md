@@ -13,13 +13,15 @@
 | `CLOUDFLARE_API_TOKEN` | 在 [Cloudflare API Tokens](https://dash.cloudflare.com/profile/api-tokens) 使用 **Edit Cloudflare Workers** 模板，把范围限定在部署账户，添加 **D1 / Edit**。默认使用 Pages，还需 **Cloudflare Pages / Edit**。 |
 | `UPTIMER_ADMIN_TOKEN`  | 首装填一个高强度随机密钥。升级填当前用于管理后台的密钥，部署会保留已配置的 Worker Secret。                                                                                                                     |
 
-默认使用 Workers + Pages。若要把前端和 API 都部署在同一个 Worker，首装前添加仓库变量 `UPTIMER_DEPLOY_MODE=single_worker`。升级时沿用已有的托管方式和运行配置。自定义名称、域名或登录路径见[配置参考](configuration-reference.zh-CN.md)。
+默认使用 Workers + Pages。若要把前端和 API 都部署在同一个 Worker，首装前添加仓库变量 `UPTIMER_DEPLOY_MODE=single_worker`。升级时沿用已有的托管方式。
+
+运行配置默认是 `free`，无需填写。已开通 Cloudflare Workers Paid 且希望使用 `paid` 运行配置时，设置仓库变量 `UPTIMER_RUNTIME_PROFILE=paid`。升级已有实例时沿用当前配置，已使用 `paid` 的实例应保留该变量。自定义名称、域名或登录路径见[配置参考](configuration-reference.zh-CN.md)。
 
 ## 2. 生成计划
 
 在 **Actions → Deploy to Cloudflare → Run workflow** 选择要部署的分支，设置 `release_action=plan`。首次部署选 `operation=install`，已有站点选 `upgrade`。首装由工作流创建资源。
 
-等待计划完成，在 **Summary** 核对账户、Worker、数据库、Pages 项目（如果使用）和待执行迁移。计划只读取云端。看到 **BLOCKED** 时，按摘要中的原因处理。旧版实例有待执行的 D1 迁移时，先看[升级与恢复](upgrade-and-recovery.md)。
+等待计划完成，在 **Summary** 核对账户、Worker、数据库、Pages 项目（如果使用）和待执行迁移。计划只读取云端。看到 **BLOCKED** 时，按摘要中的原因处理。受支持的 `0014` 旧库升级会暂时暂停探测和后台写入，维护与恢复由 Action 负责。详见[升级与恢复](upgrade-and-recovery.md)。
 
 ## 3. 部署并打开站点
 

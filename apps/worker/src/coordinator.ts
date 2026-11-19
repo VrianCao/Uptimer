@@ -2,6 +2,7 @@ import { DurableObject } from 'cloudflare:workers';
 import { z } from 'zod';
 import type { Env } from './env';
 import app from './index';
+import { legacyMaintenanceResponse, withLegacyWriter } from './legacy-upgrade';
 import { SITE_COORDINATOR_NAME } from './coordinator-binding';
 import { runCoordinatedInvocation } from './internal/coordinated-execution';
 import { queuePublicHomepageSnapshotRefresh } from './public/queue-refresh';
@@ -22,7 +23,7 @@ export class SiteCoordinator extends DurableObject<Env> {
     };
     return runCoordinatedInvocation(
       {
-        env,
+        env: withLegacyWriter(env),
         waitUntil: (promise) => this.ctx.waitUntil(promise),
         dispatch: (request) => {
           if (!this.env.COORDINATOR) throw new Error('Coordinator binding missing');
@@ -36,6 +37,7 @@ export class SiteCoordinator extends DurableObject<Env> {
   }
 
   async scheduled(input: unknown): Promise<void> {
+    if (this.env.UPTIMER_MAINTENANCE === '1') return;
     const controller = scheduledSchema.parse(input);
     await this.execute(
       (env, ctx) => app.scheduled({ ...controller, noRetry() {} }, env, ctx),
@@ -44,12 +46,14 @@ export class SiteCoordinator extends DurableObject<Env> {
   }
 
   async refresh(): Promise<void> {
+    if (this.env.UPTIMER_MAINTENANCE === '1') return;
     await this.execute(async (env, executionCtx) => {
       queuePublicHomepageSnapshotRefresh({ env, executionCtx });
     }, true);
   }
 
   async fetch(request: Request): Promise<Response> {
+    if (this.env.UPTIMER_MAINTENANCE === '1') return legacyMaintenanceResponse(request, this.env);
     const url = new URL(request.url);
     const internal = url.hostname === 'internal';
     const apiRequest = /^\/api\/v1\/(public|admin)(?:\/|$)/.test(url.pathname);

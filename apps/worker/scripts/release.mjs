@@ -44,6 +44,7 @@ export async function releaseMain(action, env = process.env) {
       ...(target.hosting === 'pages' ? [`- Pages: ${target.pages}`] : []),
       `- Pending migrations: ${plan.steps.pendingMigrations.join(', ') || 'none'}`,
       '- Remote mutations: **0** (metadata and read-only D1 queries only).',
+      ...plan.warnings.map((warning) => `- ${warning}`),
       ...plan.blockers.map((b) => `- BLOCKED: ${b}`),
       '',
       plan.blockers.length
@@ -125,18 +126,30 @@ export async function verifyRelease(
     }
     return r;
   }
+  const deadline = now() + (plan.legacyUpgrade ? 120000 : 0);
+  async function readAfterCutover(url, expected = 200, headers = {}) {
+    for (;;) {
+      try {
+        return await read(url, expected, headers);
+      } catch (error) {
+        if (!plan.legacyUpgrade || now() >= deadline || ![502, 503].includes(error.status))
+          throw error;
+        await wait(5000);
+      }
+    }
+  }
   const api = t.apiBase.startsWith('/') ? app + t.apiBase : t.apiBase;
-  const html = await (await read(app + '/')).text();
+  const html = await (await readAfterCutover(app + '/')).text();
   if (!html.includes('<div id="root"')) throw Error('Frontend root missing');
   const asset = html.match(/<script[^>]+src="([^"]+\.js)"/);
   if (!asset) throw Error('Built frontend entry missing');
   const assetUrl = new URL(asset[1], app);
   if (assetUrl.origin !== app) throw Error('Unexpected frontend entry origin');
-  await read(assetUrl.href);
-  await read(api + '/admin/monitors', 401);
-  await read(app + '/api/v1/internal/scheduled', 404);
+  await readAfterCutover(assetUrl.href);
+  await readAfterCutover(api + '/admin/monitors', 401);
+  await readAfterCutover(app + '/api/v1/internal/scheduled', 404);
   // Never send an admin token through a proxy whose pre-existing trust pin is unknown.
-  await read(t.workerUrl + '/api/v1/admin/monitors', 200, {
+  await readAfterCutover(t.workerUrl + '/api/v1/admin/monitors', 200, {
     Authorization: `Bearer ${adminToken}`,
   });
   const observations = [];
@@ -144,7 +157,7 @@ export async function verifyRelease(
     warmedAt,
     advances = 0;
   const started = now();
-  const warmupMs = plan.before?.worker === null ? 900000 : 0;
+  const warmupMs = plan.before?.worker === null ? 900000 : plan.legacyUpgrade ? 300000 : 0;
   while (now() - started <= warmupMs + timeoutMs) {
     if (warmedAt !== undefined && now() - warmedAt > timeoutMs) break;
     const round = {};
@@ -152,16 +165,21 @@ export async function verifyRelease(
       for (const path of ['homepage', 'status', 'homepage-artifact']) {
         const body = snapshot.parse(await (await read(api + '/public/' + path)).json());
         const age = now() / 1000 - body.generated_at;
-        if (age < -60 || age > 120) throw Error('Public data is stale or future-dated');
+        if (age < -60) throw Error('Public data is stale or future-dated');
+        if (age > 120) {
+          const error = Error('Public data is stale or future-dated');
+          error.isStale = true;
+          throw error;
+        }
         round[path] = body.generated_at;
       }
     } catch (error) {
-      // New Cron registrations can take up to 15 minutes to propagate. Only
-      // an initial 502/503 during first install is retried, and never stale 200s.
+      // Legacy maintenance can pause publications without removing the Cron.
+      // A stale response can be retried while warming, never counted as success.
       if (
         warmedAt === undefined &&
         now() - started < warmupMs &&
-        [502, 503].includes(error.status)
+        ([502, 503].includes(error.status) || (plan.legacyUpgrade && error.isStale))
       ) {
         await wait(15000);
         continue;

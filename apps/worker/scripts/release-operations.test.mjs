@@ -1,10 +1,11 @@
 import { test } from 'node:test';
+import { DatabaseSync } from 'node:sqlite';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 import { preparePackage, verifyReviewedPackage, readJson } from './release-package.mjs';
-import { deploymentConfig, targetInput } from './release-config.mjs';
+import { deploymentConfig, migrationFiles, targetInput } from './release-config.mjs';
 import { applyRelease, assertRuntimeConfiguration } from './release-apply.mjs';
 import { ReleaseCloud, resolveAccountId } from './release-cloud.mjs';
 import { verifyRelease } from './release.mjs';
@@ -293,6 +294,143 @@ test('existing pending migrations and profile switches are blocked before any wr
   );
   assert.equal(calls, 0);
 });
+test('legacy Apply resumes after a committed migration loses its response; old writes stay fenced', async (t) => {
+  const names = (await migrationFiles(root)).map((m) => m.name);
+  const f = await fixture(
+    t,
+    {},
+    { live: { appliedMigrations: names.slice(0, 14), legacyCatalog: true } },
+  );
+  assert.equal(f.plan.legacyUpgrade, true);
+  assert.deepEqual(f.plan.blockers, []);
+  const databasePath = join(
+    f.directory,
+    '..',
+    'legacy-' + f.directory.split('/').at(-1) + '.sqlite3',
+  );
+  const db = new DatabaseSync(databasePath);
+  const oldWorker = new DatabaseSync(databasePath);
+  t.after(async () => {
+    oldWorker.close();
+    db.close();
+    await rm(databasePath, { force: true });
+  });
+  db.exec(
+    'CREATE TABLE d1_migrations (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)',
+  );
+  for (const name of names.slice(0, 14)) {
+    db.exec(await readFile(join(root, 'apps/worker/migrations', name), 'utf8'));
+    db.prepare('INSERT INTO d1_migrations (name) VALUES (?)').run(name);
+  }
+  db.exec(
+    "INSERT INTO monitors (id, name, type, target) VALUES (1,'Example','http','https://example.invalid')",
+  );
+  db.exec("INSERT INTO check_results (monitor_id, checked_at, status) VALUES (1, 100, 'up')");
+  const oldIncident = oldWorker.prepare(
+    "INSERT INTO incidents (title, status, impact, started_at) VALUES (?, 'investigating', 'minor', 100)",
+  );
+  oldIncident.run('Existing site-wide incident');
+  const inspect = f.cloud.inspect;
+  f.cloud.inspect = async () => {
+    const state = await inspect();
+    state.appliedMigrations = db
+      .prepare('SELECT name FROM d1_migrations ORDER BY id')
+      .all()
+      .map((r) => r.name);
+    if (db.prepare("SELECT name FROM sqlite_master WHERE name='uptimer_legacy_upgrade'").get())
+      state.legacy = db.prepare('SELECT plan_hash, phase FROM uptimer_legacy_upgrade').get();
+    if (state.worker?.maintenance)
+      state.worker.configuration = {
+        ...state.worker.configuration,
+        vars: { ...state.worker.configuration.vars, UPTIMER_MAINTENANCE: '1' },
+      };
+    return state;
+  };
+  const mutations = [];
+  let loseResponse = true;
+  f.cloud.legacyRecoveryBookmark = async () => 'synthetic-recovery-bookmark';
+  f.cloud.writeLegacyBatch = async (batch) => {
+    let results;
+    db.exec('BEGIN');
+    try {
+      results = batch.map(({ sql, params = [] }) => ({
+        success: true,
+        results: db.prepare(sql).all(...params),
+      }));
+      db.exec('COMMIT');
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
+    const migration = batch.find(({ sql }) => sql.startsWith('INSERT INTO d1_migrations'))
+      ?.params[0];
+    mutations.push(migration || 'control');
+    if (migration === names[15] && loseResponse) {
+      loseResponse = false;
+      throw Error('Synthetic lost migration response');
+    }
+    return results;
+  };
+  const deployments = [];
+  const run = async (args) => {
+    assert.ok(!args.includes('migrations'), 'legacy files must use the guarded batch');
+    const state = f.getLive();
+    if (args.includes('--no-bundle')) {
+      const config = await readJson(args.at(-1));
+      const maintenance = config.vars.UPTIMER_MAINTENANCE === '1';
+      deployments.push(maintenance ? 'maintenance' : 'running');
+      state.worker = {
+        ...state.worker,
+        maintenance,
+        versionId: 'version-' + deployments.length,
+        sourceSha: f.plan.sourceSha,
+        fingerprint: f.plan.fingerprint,
+      };
+    } else if (args.includes('pages') && args.includes('deploy')) {
+      state.pages = {
+        ...state.pages,
+        deploymentId: 'new-pages',
+        sourceSha: f.plan.sourceSha,
+        fingerprint: f.plan.fingerprint,
+      };
+    }
+  };
+  const request = async (url) => {
+    if (url.searchParams.get('uptimer') === 'before-upgrade')
+      return Response.json({ generated_at: 100, site_title: 'Fixture', site_description: '' });
+    return new Response(null, { status: 200, headers: { 'X-Uptimer-Maintenance': 'upgrade' } });
+  };
+  await assert.rejects(
+    applyRelease({ ...f, root, run, request }),
+    /Synthetic lost migration response/,
+  );
+  assert.deepEqual(deployments, ['maintenance']);
+  assert.throws(() => oldIncident.run('Delayed writer'), /obsolete writer/);
+  assert.throws(() => oldWorker.exec('DELETE FROM check_results'), /obsolete writer/);
+  const receipt = await applyRelease({ ...f, root, run, request });
+  assert.equal(receipt.after.databaseId, f.plan.target.databaseId);
+  assert.deepEqual(deployments, ['maintenance', 'running']);
+  assert.deepEqual(
+    mutations.filter((m) => m !== 'control'),
+    names.slice(14),
+  );
+  assert.equal(
+    db.prepare("SELECT scope FROM incidents WHERE title='Existing site-wide incident'").get().scope,
+    'global',
+  );
+  assert.equal(db.prepare('SELECT count(*) AS n FROM check_results').get().n, 1);
+  assert.throws(() => oldIncident.run('Old writer after recovery'), /obsolete writer/);
+  db.exec(
+    "BEGIN; PRAGMA defer_foreign_keys=ON; INSERT INTO incidents (title,status,impact,started_at,scope) VALUES ('New writer','investigating','minor',100,'global'); COMMIT;",
+  );
+  assert.throws(() => oldIncident.run('Old writer after new batch'), /obsolete writer/);
+  assert.equal(receipt.after.legacy.phase, 'open');
+  const count = mutations.length;
+  const repeated = await applyRelease({ ...f, root, run, request });
+  assert.equal(repeated.idempotentNoop, true);
+  assert.equal(mutations.length, count);
+  assert.deepEqual(deployments, ['maintenance', 'running']);
+});
 test('Pages failure resumes without redeploying Worker; successful repeat has zero commands', async (t) => {
   const f = await fixture(t, { UPTIMER_D1_NAME: 'renamed-d1' });
   delete f.env.CLOUDFLARE_ACCOUNT_ID;
@@ -406,6 +544,38 @@ test('smoke rejects HTTP-200 stale data and proves two advancing publications wi
   assert.ok(requests.every(([, o]) => !o.method));
   stale = true;
   await assert.rejects(verifyRelease({ target }, 'test-admin', options), /stale/);
+});
+test('legacy smoke waits out maintenance and stale snapshots before accepting new publications', async () => {
+  const t = targetInput(baseEnv, 'alice');
+  const start = 1_700_000_040_000;
+  let time = start;
+  const result = await verifyRelease(
+    { target: t, legacyUpgrade: true, before: { worker: {} } },
+    'test',
+    {
+      now: () => time,
+      wait: async (ms) => {
+        time += ms;
+      },
+      request: async (url, req) => {
+        const path = new URL(url).pathname;
+        if (path === '/')
+          return new Response('<div id="root"></div><script src="/entry.js"></script>');
+        if (path === '/entry.js') return new Response('app');
+        if (path.includes('/internal/')) return new Response('', { status: 404 });
+        if (path.endsWith('/admin/monitors')) {
+          if (time === start) return new Response('', { status: 503 });
+          return new Response(null, { status: req.headers.Authorization ? 200 : 401 });
+        }
+        const now = time / 1000;
+        return Response.json({
+          generated_at: time - start < 30000 ? now - 600 : Math.floor(now / 60) * 60,
+        });
+      },
+    },
+  );
+  assert.equal(result.advancingPublications, 2);
+  assert.ok(result.initialWarmupMs >= 30000);
 });
 test('symlink artifact entries are refused', async (t) => {
   const f = await fixture(t);

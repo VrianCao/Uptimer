@@ -1,5 +1,6 @@
 import { readFile, mkdtemp, rm } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { setTimeout as wait } from 'node:timers/promises';
 import { tmpdir } from 'node:os';
 import { z } from 'zod';
 import {
@@ -14,11 +15,31 @@ import {
   verifyReviewedPackage,
 } from './release-package.mjs';
 import { writeJson } from './release-config.mjs';
-export async function applyRelease({ root, directory, plan, manifest, cloud, env, run = command }) {
+import {
+  captureLegacySnapshots,
+  eligibleLegacyUpgrade,
+  initialFence,
+  legacyCapabilityProbe,
+  legacyMigrationBatch,
+  prepareLegacySnapshots,
+  releaseConfigForLegacy,
+  resumeWriter,
+} from './release-legacy.mjs';
+export async function applyRelease({
+  root,
+  directory,
+  plan,
+  manifest,
+  cloud,
+  env,
+  run = command,
+  request = fetch,
+}) {
   await verifyReviewedPackage(directory, plan, manifest, env);
   if (cloud.target.accountId !== plan.target.accountId)
     throw Error('Cloudflare client does not use the reviewed account');
   env = { ...env, CLOUDFLARE_ACCOUNT_ID: plan.target.accountId };
+  if (plan.legacyUpgrade === true) cloud.reviewedLegacyPlan = plan;
   let live = await cloud.inspect(),
     steps = deploymentSteps(plan, publicState(live));
   const checkpoint = {
@@ -33,12 +54,26 @@ export async function applyRelease({ root, directory, plan, manifest, cloud, env
     if (stage) checkpoint.completed.push(stage);
     await writeJson(join(directory, 'checkpoint.json'), checkpoint);
   };
-  if (plan.blockers?.length || requiresMigrationMaintenance(live, steps) || steps.profileChange)
+  const legacy = plan.legacyUpgrade === true;
+  if (
+    plan.blockers?.length ||
+    (!legacy && requiresMigrationMaintenance(live, steps)) ||
+    steps.profileChange
+  )
     throw Error(
       'Blocked before any remote mutation: migration/profile maintenance review required',
     );
   if (!live.worker?.secretNames.includes('ADMIN_TOKEN') && !env.UPTIMER_ADMIN_TOKEN)
     throw Error('Missing initial admin secret; no mutations were made');
+  if (
+    legacy &&
+    !eligibleLegacyUpgrade(plan, migrationState(plan.migrations, plan.before.appliedMigrations))
+  )
+    throw Error('This plan does not authorize the legacy upgrade procedure');
+  if (!legacy && (live.worker?.maintenance || (live.legacy && live.legacy.phase !== 'open')))
+    throw Error('Resume the original legacy upgrade plan');
+  if (!legacy && live.legacy?.plan_hash !== plan.before.legacy?.plan_hash)
+    throw Error('The reviewed D1 write protection changed');
   const work = await mkdtemp(join(tmpdir(), 'uptimer-release-apply-'));
   const cfg = JSON.parse(await readFile(join(directory, 'worker/wrangler.json'), 'utf8'));
   cfg.main = join(directory, 'worker', cfg.main);
@@ -64,6 +99,23 @@ export async function applyRelease({ root, directory, plan, manifest, cloud, env
     }
     cfg.d1_databases[0].database_id = cloud.target.databaseId;
     await writeJson(config, cfg);
+    if (legacy) {
+      live = await prepareLegacyDatabase({
+        cloud,
+        plan,
+        live,
+        config,
+        cfg,
+        directory,
+        root,
+        env,
+        run,
+        save,
+        request,
+      });
+      steps = deploymentSteps(plan, publicState(live));
+      if (steps.migrate) throw Error('The guarded upgrade did not finish every migration');
+    }
     if (steps.migrate) {
       await run(
         [
@@ -128,6 +180,14 @@ export async function applyRelease({ root, directory, plan, manifest, cloud, env
       plan.before.worker
     )
       throw Error('An existing Worker secret was lost');
+    if (legacy && live.legacy?.phase === 'maintenance') {
+      await cloud.writeLegacyBatch(resumeWriter(plan.hash));
+      live = await cloud.inspect();
+      if (live.legacy?.phase !== 'open' || live.legacy.plan_hash !== plan.hash)
+        throw Error('Database writer continuity could not be verified');
+      workerStages = verifyWorker();
+      await save('legacy-upgrade-open');
+    }
     if (workerStages.pages) {
       if (!live.pages) {
         const branch = env.DEFAULT_BRANCH || 'master';
@@ -209,8 +269,7 @@ export async function applyRelease({ root, directory, plan, manifest, cloud, env
       throw Error('Deployment verification found unfinished stages');
     checkpoint.after = publicState(after);
     checkpoint.completedAt = new Date().toISOString();
-    checkpoint.idempotentNoop =
-      !steps.worker && !steps.pages && !steps.migrate && !steps.initializeSecret;
+    checkpoint.idempotentNoop = !checkpoint.completed.length;
     await save('identity-verified');
     return checkpoint;
   } catch (error) {
@@ -221,6 +280,133 @@ export async function applyRelease({ root, directory, plan, manifest, cloud, env
   } finally {
     await rm(work, { recursive: true, force: true });
   }
+}
+
+async function prepareLegacyDatabase({
+  cloud,
+  plan,
+  live,
+  config,
+  cfg,
+  directory,
+  root,
+  env,
+  run,
+  save,
+  request,
+}) {
+  const pending = migrationState(plan.migrations, live.appliedMigrations).pending;
+  if (live.legacy && live.legacy.plan_hash !== plan.hash)
+    throw Error('A different plan owns the database maintenance window');
+  if (!pending.length) {
+    if (!live.legacy) throw Error('Legacy migrations advanced outside the reviewed upgrade');
+    return live;
+  }
+  if (
+    live.legacy?.phase === 'open' ||
+    (live.legacy?.phase === 'maintenance' && !live.worker?.maintenance)
+  )
+    throw Error('D1 is still migrating and the reviewed maintenance Worker is no longer active');
+  if (
+    live.legacy?.phase !== 'maintenance' &&
+    (!live.legacyCatalog ||
+      migrationState(plan.migrations, live.appliedMigrations).applied.length !== 14)
+  )
+    throw Error('Legacy migrations advanced outside the reviewed upgrade');
+
+  const maintenanceConfig = releaseConfigForLegacy(cfg, { maintenance: true });
+  if (!live.legacy) {
+    const result = await cloud.writeLegacyBatch(legacyCapabilityProbe());
+    const unmarked = result[0];
+    const marked = result.at(-1);
+    if (unmarked.results[0]?.enabled !== 0 || marked.results[0]?.enabled !== 1)
+      throw Error('Cloudflare D1 could not confirm transaction-scoped write protection');
+    const snapshots = await captureLegacySnapshots(plan.target.workerUrl, request);
+    const bookmark = await cloud.legacyRecoveryBookmark();
+    const previousVersion = live.worker.versionId;
+    live = await cloud.inspect();
+    if (live.worker?.versionId !== previousVersion || live.legacy)
+      throw Error('Worker or D1 changed before capturing the public snapshot');
+    await cloud.writeLegacyBatch(prepareLegacySnapshots(plan.hash, bookmark, snapshots));
+    live = await cloud.inspect();
+    if (live.legacy?.plan_hash !== plan.hash || live.legacy.phase !== 'prepared')
+      throw Error('The public snapshot was not captured for this plan');
+    await save('legacy-snapshot-captured');
+  }
+  if (!live.worker?.maintenance) {
+    const path = join(dirname(config), 'maintenance.json');
+    await writeJson(path, maintenanceConfig);
+    await run(workerDeployArgs(path), { cwd: root, env });
+    live = await cloud.inspect();
+    await save('legacy-maintenance-worker');
+  }
+  function verifyMaintenance(state) {
+    if (
+      !state.worker?.maintenance ||
+      state.worker.fingerprint !== plan.fingerprint ||
+      state.worker.sourceSha !== plan.sourceSha ||
+      !plan.before.worker.secretNames.every((name) => state.worker.secretNames.includes(name))
+    )
+      throw Error('Active Worker is not the reviewed maintenance version');
+    assertRuntimeConfiguration(state.worker, maintenanceConfig);
+    deploymentSteps(plan, publicState(state));
+  }
+  verifyMaintenance(live);
+  const maintenanceVersion = live.worker.versionId;
+  if (live.legacy?.phase === 'prepared') {
+    await waitForMaintenance(plan.target.workerUrl, request);
+    live = await cloud.inspect();
+    verifyMaintenance(live);
+    if (
+      live.worker.versionId !== maintenanceVersion ||
+      live.legacy?.phase !== 'prepared' ||
+      live.legacy.plan_hash !== plan.hash ||
+      !live.legacyCatalog ||
+      migrationState(plan.migrations, live.appliedMigrations).applied.length !== 14
+    )
+      throw Error('Worker or D1 changed before the write fence was recorded');
+    await cloud.writeLegacyBatch(initialFence(plan.hash));
+    live = await cloud.inspect();
+    await save('legacy-d1-fenced');
+  }
+  for (const migration of pending) {
+    verifyMaintenance(live);
+    if (
+      live.legacy?.phase !== 'maintenance' ||
+      live.legacy.plan_hash !== plan.hash ||
+      live.worker.versionId !== maintenanceVersion ||
+      migrationState(plan.migrations, live.appliedMigrations).pending[0] !== migration
+    )
+      throw Error('Legacy upgrade state changed during migration');
+    await cloud.writeLegacyBatch(
+      await legacyMigrationBatch(directory, migration, plan.hash, live.appliedMigrations.length),
+    );
+    live = await cloud.inspect();
+    if (!live.appliedMigrations.includes(migration)) throw Error('Migration was not recorded');
+    await save(migration);
+  }
+  verifyMaintenance(live);
+  if (live.worker.versionId !== maintenanceVersion || live.legacy?.plan_hash !== plan.hash)
+    throw Error('Legacy maintenance ownership changed');
+  return live;
+}
+
+async function waitForMaintenance(workerUrl, request) {
+  const endpoint = new URL('/api/v1/public/homepage', workerUrl);
+  endpoint.searchParams.set('uptimer', 'maintenance');
+  const deadline = Date.now() + 120000;
+  while (Date.now() < deadline) {
+    const response = await request(endpoint, {
+      cache: 'no-store',
+      redirect: 'error',
+      signal: AbortSignal.timeout(5000),
+    }).catch(() => null);
+    await response?.body?.cancel();
+    if (response?.headers.get('X-Uptimer-Maintenance') === 'upgrade' && response.status === 200)
+      return;
+    await wait(3000);
+  }
+  throw Error('Maintenance Worker did not respond at its reviewed public origin');
 }
 
 export function assertRuntimeConfiguration(worker, cfg) {

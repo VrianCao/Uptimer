@@ -100,7 +100,7 @@ jobs:
         if: always() && inputs.action == 'apply'
         uses: actions/upload-artifact@v4
         with:
-          name: uptimer-release-receipt
+          name: ${{ github.run_attempt == '1' && 'uptimer-release-receipt' || format('uptimer-release-receipt-attempt-{0}', github.run_attempt) }}
           path: |
             ${{ env.RELEASE_DIRECTORY }}/checkpoint.json
             ${{ env.RELEASE_DIRECTORY }}/verification.json

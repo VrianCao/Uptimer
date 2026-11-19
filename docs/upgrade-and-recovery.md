@@ -4,44 +4,29 @@ This release changes sample storage and scheduling. **Cloudflare Worker, D1 and 
 
 本次更新涉及样本存储与调度。Worker、D1、Pages 不构成跨产品事务；重试不是回退，前端失败也不应自动恢复数据库。
 
-## Supported automated upgrades / 可自动执行的升级
+## Upgrading from `0014` / 从 `0014` 升级
 
-An existing instance can use the reviewed package workflow when its migration tracker already matches all packaged migrations, and hosting/profile remain unchanged. Ordinary upgrades preserve D1 identity and secret bindings. The workflow serializes runs, verifies the package/source/config, skips matching completed stages, and records the actual final version after secret initialization. See [deployment guide](deploy-github-actions.md) / [中文部署指南](deploy-github-actions.zh-CN.md).
+**Run Plan and then Apply** using the same source commit and keep the current hosting mode and runtime profile. Plan shows the existing D1 and the pending migrations. For the supported `0014` schema, Apply switches the same Worker to maintenance mode, records a D1 Time Travel bookmark, and migrates the existing database. The public homepage shows the last saved data and its original timestamp. Probes and admin writes pause during the migration.
 
-已有实例在迁移全部完成、hosting/profile 不变时，可使用计划/执行流程。重复相同已完成包不再执行迁移、部署或 Secret 写入；Worker 成功而 Pages 失败时，续跑只补未完成步骤。仍执行只读身份及新鲜度检查。
+**按原流程生成 Plan，再手动执行 Apply。** 沿用现有托管方式和运行配置。对于支持的 `0014` 旧库，Action 会在原 Worker 上进入维护模式，记录 D1 恢复点并迁移原库。公开首页展示最后一次保存的数据和原更新时间。迁移期间暂停探测与后台写入。
 
-| Situation / 状态                                        | Required action / 处理                                                                                                                                                                                       |
-| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Build/CI failure                                        | No deployment began. Fix source, create a new plan. / 未开始云端写入；修复后重新计划。                                                                                                                       |
-| Plan lists pending migrations on an existing Worker     | **Blocked** before apply. Prepare and rehearse maintenance/recovery below. / 阻断，不自动迁移。                                                                                                              |
-| First empty install interrupted during migrations       | Retain the new database, confirm the UUID and migration prefix against the receipt, and review a new `upgrade` plan. / 保留原库，核对 UUID 与迁移前缀并审阅新 `upgrade` 计划。                               |
-| Worker deployed, Pages failed                           | Keep Worker and D1. If the Pages project was added after planning, confirm its ID against the receipt and review a new plan first. / 保留后端和数据库。若 Pages 项目在计划之后新建，先核对 ID 并审阅新计划。 |
-| Secret initialization created another Worker version    | Receipt must record that final version. Normal upgrades do not reset the key. / 记录最终版本，普通升级不覆盖密钥。                                                                                           |
-| All stages deployed, freshness smoke fails              | Preserve receipt and investigate; repeat smoke through the same apply if identities still match. Do not expand rollout. / 保留现场、排查数据前进，暂停扩大发布。                                             |
-| Unrelated Worker/Pages version or target config changed | Stop; inventory and generate a new plan. / 停止，重新核对与计划。                                                                                                                                            |
+If Apply stops, re-run **the same Apply run** with its original reviewed plan. Completed SQL files stay recorded in D1. Apply checks the migration prefix and Worker identity before resuming, then verifies that public data advances again. A different plan reports that maintenance is already in progress. Keep the original plan artifact available during recovery. Each retry uploads its own receipt, with the attempt number in its name.
 
-## Upgrading a legacy database / 升级旧版数据库
+Apply 中断时，在 GitHub 上重新运行**原 Apply**。Action 按 D1 已记录的迁移前缀继续，已经提交的文件会被跳过。完成后会验证探测恢复及公开数据重新更新。保留原 Plan 产物，维护中生成的新计划会提示续跑原流程。每次重跑会上传带有本次尝试编号的独立回执。
 
-If the plan reports pending D1 migrations for an existing Worker, keep serving the current site. The public baseline has migrations through `0014`. Updating its code in GitHub is safe. Moving the live database through `0015`–`0025` needs a separate maintenance procedure, which the generic apply workflow blocks.
+The upgraded database continues to reject writes from obsolete Worker invocations, even after the new Worker resumes. Its original database ID and existing Worker secrets are preserved. Restoring D1 separately requires deciding how to handle writes and notifications made after the recovery point. [D1 Time Travel](https://developers.cloudflare.com/d1/reference/time-travel/)
 
-已有 Worker 的计划如果列出待执行的 D1 迁移，可以先同步 GitHub 代码并让当前站点继续运行。旧版数据库需要经过一次维护切换，通用 apply 会在开始修改云端之前停止。
+新版恢复探测之后，D1 仍会拒绝迟到的旧版写入。数据库 UUID 和现有 Worker Secrets 会保留。如果确实需要恢复数据库，应先确认恢复点之后的数据与通知如何处理。
 
-The legacy Worker can still execute some SQL after migration, but with different results. Its retention loop can stop early when the compatibility view reports zero affected rows. An old Worker creating a site-wide incident after `0025` can also misclassify it, hiding it from the public site. Returning to the original Worker with the migrated schema is unsafe.
+## Other recovery cases / 其他恢复场景
 
-兼容视图保留了部分旧 SQL 的入口。旧版的清理循环可能提前退出，旧版新建的全站事件也可能在 `0025` 后被错误归类，从公开页消失。迁移后须使用兼容新 schema 的恢复包。
-
-Before enabling this path in a future reviewed change, complete all of the following **on authorized isolated resources** (do not create them implicitly):
-
-1. Inventory the actual installed Worker/Pages versions, D1 UUID/migration tracker, bindings, custom domains, API trust pins and known current traffic. Preserve the historical extra `0014_check_results_without_autoincrement.sql` tracker entry if present.
-2. Privately retain a D1 recovery point/export, reviewed source/package and a **tested emergency Worker compatible with the final schema and DO class history**. A Time Travel bookmark expires with the account's retention window; merely recording it does not extend recovery. [D1 limits](https://developers.cloudflare.com/d1/platform/limits/).
-3. Design a bounded maintenance interval: public reads remain usable with an explicit freshness/maintenance signal; admin writes are prevented; old Cron/batch/retention writers are drained, fenced and cannot restart while DDL is in progress. Prove this against the actual old scheduler lock contract. An in-memory flag or local computer staying awake is insufficient.
-4. Inventory incidents/maintenance without linked monitors before `0025`. Existing unlinked history preserves its old global audience; newly orphaned monitor-scoped history must remain private. Resolve ambiguous historical intent explicitly rather than guessing.
-5. Rehearse the ordered migration prefix on realistic legacy data, interrupt after each file and verify counts, timestamps, status/latency, pending samples, retention cost and history visibility. Do not edit published SQL or delete tracker records. Each completed migration may persist after a later file fails.
-6. Verify DO registration and emergency package compatibility without routing new code to old schema prematurely. Never remove a DO class or its migration history merely to suppress a deploy warning. [Workers rollbacks](https://developers.cloudflare.com/workers/versions-and-deployments/rollbacks/).
-7. Rehearse Worker failure, Pages failure and recovery; measure the maintenance interval, data loss boundary and post-recovery notification deduplication. Retrying notification delivery against restored old state can send duplicates.
-8. Obtain explicit authorization for the concrete production plan and maintenance interval, then execute it with a cloud-side guard independent of a sleeping developer laptop. Capture new receipts, immediate acceptance and the next full daily cycle before stable rollout.
-
-旧版迁移与恢复属于可能改变数据语义、无法无损自动撤销的操作。完成上述演练和明确授权前，保持阻断；不能为“让 Workflow 变绿”绕过它。
+| Situation / 状态                                        | Action / 处理                                                                                                                                                                              |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Build or planning fails                                 | Resolve the error and create a new plan. / 排查错误后重新生成计划。                                                                                                                        |
+| Plan blocks an unsupported schema or migration sequence | Keep the current site online and inspect the tracker and receipt. / 保持当前站点在线，核对迁移记录和回执。                                                                                 |
+| First install creates D1 before the Worker deploys      | Verify the database UUID and use it in a new `upgrade` plan. / 核对原库 UUID 后生成 `upgrade` 计划。                                                                                       |
+| Worker deployed, Pages failed                           | Keep Worker and D1, then retry the reviewed Apply. If a new Pages project appeared after Plan, verify its project ID first. / 保留后端与 D1 后重试，先核对 Plan 之后新建的 Pages 项目 ID。 |
+| Public data fails freshness verification                | Check the receipt and retry once the active Worker and D1 match the reviewed plan. / 查看回执，核对线上 Worker 和 D1 后再续跑。                                                            |
 
 ## Runtime/hosting switches / 执行路径与托管切换
 

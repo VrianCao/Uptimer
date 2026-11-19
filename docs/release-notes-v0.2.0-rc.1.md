@@ -9,9 +9,11 @@
 
 ## Deployment and verification
 
-Use the [deployment guide](deploy-github-actions.md) for a fresh install or an existing database with all migrations already applied. **Upgrades from the `0014` schema are gated.** The workflow stops an apply to an existing Worker when migrations are pending. Put those upgrades through a separate cloud maintenance and recovery rehearsal. See the [upgrade and recovery guide](upgrade-and-recovery.md).
+Use the [deployment guide](deploy-github-actions.md) for a fresh install or an upgrade. For supported `0014` databases, Apply pauses probes and admin writes, migrates the existing D1, and resumes monitoring. See the [upgrade and recovery guide](upgrade-and-recovery.md).
 
-CI passed for all four runtime and hosting combinations. The local migration rehearsal preserved 302,400 probe samples across `0014 → 0025` and recovered from interruptions. In the final Dev short run, Pages served 60/60 requests with CPU at most 5 ms, ordinary Worker CPU reached at most 3 ms, and 2,880 expected probes were recorded once each across the deployment window. The Dev tests used the Free runtime profile on a Workers Paid account. Hard limits on a Free account and the legacy cloud upgrade remain to be verified.
+CI covers all four runtime and hosting combinations. The local migration rehearsal preserved 302,400 probe samples across `0014 → 0025`. An isolated Cloudflare rehearsal verified interruption and resume, retention of 1,440 historical samples in the original D1, rejection of old Worker writes and a no-op repeat. After the maintenance snapshot fix, a complete upgrade kept the sampled homepage requests at HTTP 200 and showed the previous snapshot during about 30 seconds of maintenance.
+
+The hosted upgrade used Pages and the `free` runtime profile on a Workers Paid account. Native Free account limits and the GitHub web Sync fork path still need direct verification. In an earlier Dev short run, Pages served 60/60 requests with CPU at most 5 ms, ordinary Worker CPU reached at most 3 ms, and 2,880 expected probes were recorded once each across the deployment window.
 
 In a separate 24-hour observation of an earlier Dev build, 24 monitors at one-minute intervals produced 34,560 probes. D1 recorded 3,388,147 row reads and 55,310 row writes in that window.
 
@@ -22,8 +24,10 @@ In a separate 24-hour observation of an earlier Dev build, 24 monitors at one-mi
 - 修复了监控隐藏状态与历史、事件和维护范围的处理，并改进同源后台鉴权、窄屏弹窗和键盘操作。
 - 部署计划绑定构建包、提交和目标资源。工作流在写入前复核资源身份，保留已有密钥，并在匹配的重试中跳过已完成的阶段。
 
-全新安装，以及已应用全部迁移的实例，可按[部署指南](deploy-github-actions.zh-CN.md)操作。**旧库 `0014 → 0025` 升级有独立门槛。** 已有 Worker 存在待执行迁移时，工作流会停止 apply。此类升级须先完成独立的云端维护与恢复演练。详见[升级与恢复指南](upgrade-and-recovery.md)。
+首装和升级都可按[部署指南](deploy-github-actions.zh-CN.md)操作。对于受支持的 `0014` 旧库，Apply 会暂时暂停探测与后台写入，在原 D1 上迁移后恢复监控。详见[升级与恢复指南](upgrade-and-recovery.md)。
 
-CI 的四种运行模式和托管组合均通过。本地迁移演练保留了 302,400 条探测样本，并验证了中断后的恢复。最终 Dev 短测中，Pages 60/60 请求成功，CPU 最高 5 ms，普通 Worker 最高 3 ms，部署窗口内 2,880 次预期探测均完整且无重复。Dev 使用的是 Workers Paid 账户上的 Free 运行模式。真实 Free 账户强制限额及旧库云端升级仍待验证。
+CI 覆盖四种运行模式与托管组合。本地演练确认 `0014 → 0025` 保留了 302,400 条探测样本。Cloudflare 隔离演练验证了中断续跑、原 D1 保留 1,440 条历史样本、拒绝旧 Worker 写入，以及完成后重跑不重复迁移或部署。修复维护快照后，完整升级的维护窗口约 30 秒，采样的首页请求均返回 HTTP 200 并显示上一次快照。
+
+云端升级使用 Workers Paid 账户上的 `free` 运行配置和 Pages 托管。真实 Free 账户额度与 GitHub 网页 Sync fork 路径仍待直接验证。此前 Dev 短测中，Pages 60/60 请求成功，CPU 最高 5 ms，普通 Worker 最高 3 ms，部署窗口内 2,880 次预期探测均完整且无重复。
 
 在较早 Dev 版本的独立 24 小时观测中，24 个监控以一分钟间隔产生 34,560 次探测。该窗口内 D1 记录了 3,388,147 行读和 55,310 行写。

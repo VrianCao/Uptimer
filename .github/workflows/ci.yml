@@ -189,6 +189,8 @@ jobs:
       - name: Rehearse legacy migrations, interruption and cold recovery locally
         id: drill
         run: node apps/worker/scripts/verify-migration-recovery.mjs full
+      - name: Rehearse guarded Apply batches and delayed legacy writers
+        run: node apps/worker/scripts/release-legacy-rehearsal.mjs
       - name: Upload sanitized local recovery evidence
         uses: actions/upload-artifact@v4
         with:

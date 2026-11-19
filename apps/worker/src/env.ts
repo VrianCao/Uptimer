@@ -1,5 +1,8 @@
 export interface Env extends Pick<WorkerBindings, 'DB'> {
   ADMIN_TOKEN: string;
+  UPTIMER_D1_LEGACY_FENCE?: string;
+  UPTIMER_MAINTENANCE?: string;
+  ASSETS?: Fetcher;
 
   // free: site coordinator; paid: execute all work directly in Worker + D1.
   UPTIMER_RUNTIME_PROFILE?: string;

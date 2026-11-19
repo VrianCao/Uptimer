@@ -1,5 +1,11 @@
 import { z } from 'zod';
 import { assertTarget, cloudflareAccountId } from './release-contract.mjs';
+import {
+  containsLegacyTables,
+  ledger,
+  legacyStateSchema,
+  matchesLegacyGuards,
+} from './release-legacy.mjs';
 
 export async function resolveAccountId(env, request = fetch) {
   if (env.CLOUDFLARE_ACCOUNT_ID) return cloudflareAccountId.parse(env.CLOUDFLARE_ACCOUNT_ID);
@@ -51,6 +57,11 @@ export class ReleaseCloud {
         /^\s*(SELECT|WITH)\b/i.test(body?.sql ?? '') &&
         !/\b(INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|ATTACH|DETACH|PRAGMA)\b/i.test(body.sql)) ||
       (method === 'POST' &&
+        queryPath &&
+        !this.readOnly &&
+        t.operation === 'upgrade' &&
+        Array.isArray(body?.batch)) ||
+      (method === 'POST' &&
         path === '/d1/database' &&
         t.operation === 'install' &&
         body?.name === t.database) ||
@@ -98,6 +109,28 @@ export class ReleaseCloud {
     if (result.meta.rows_written !== 0) throw Error('Unexpected SQL write');
     return result;
   }
+  async writeLegacyBatch(batch) {
+    if (this.readOnly || this.target.operation !== 'upgrade' || !this.target.databaseId)
+      throw Error('Legacy writes require an approved existing installation');
+    const results = await this.request(`/d1/database/${this.target.databaseId}/query`, {
+      method: 'POST',
+      body: { batch },
+    });
+    if (
+      !Array.isArray(results) ||
+      results.length !== batch.length ||
+      results.some((result) => result.success !== true)
+    )
+      throw Error('Cloudflare did not confirm all D1 batch statements');
+    return results;
+  }
+  async legacyRecoveryBookmark() {
+    if (!this.target.databaseId) throw Error('Missing exact database ID');
+    const result = await this.request(
+      `/d1/database/${this.target.databaseId}/time_travel/bookmark`,
+    );
+    return z.string().min(1).max(512).parse(result?.bookmark);
+  }
   async inspect() {
     const t = this.target;
     let database;
@@ -125,8 +158,23 @@ export class ReleaseCloud {
       if (active.versions.length !== 1 || active.versions[0].percentage !== 100)
         throw Error('Gradual deployments must be resolved before upgrading');
       const versions = await this.request(`/workers/scripts/${t.worker}/versions`);
-      if (versions.items?.[0]?.id !== active.versions[0].version_id)
-        throw Error('An undeployed Worker version exists; resolve it before release');
+      const latest = versions.items?.[0]?.id;
+      if (latest !== active.versions[0].version_id) {
+        const reviewed = this.reviewedLegacyPlan;
+        if (!reviewed || !latest)
+          throw Error('An undeployed Worker version exists; resolve it before release');
+        const staged = await this.request(`/workers/scripts/${t.worker}/versions/${latest}`);
+        const bindings = staged.resources.bindings;
+        const value = (name) => bindings.find((binding) => binding.name === name)?.text;
+        const db = bindings.find((binding) => binding.name === 'DB' && binding.type === 'd1');
+        if (
+          value('UPTIMER_RELEASE_FINGERPRINT') !== reviewed.fingerprint ||
+          value('UPTIMER_BUILD_SHA') !== reviewed.sourceSha ||
+          value('UPTIMER_D1_LEGACY_FENCE') !== '1' ||
+          (db?.database_id ?? db?.id) !== t.databaseId
+        )
+          throw Error('An unreviewed Worker version exists; resolve it before release');
+      }
       const versionId = active.versions[0].version_id,
         v = await this.request(`/workers/scripts/${t.worker}/versions/${versionId}`),
         bindings = v.resources.bindings,
@@ -149,6 +197,7 @@ export class ReleaseCloud {
         sourceSha: value('UPTIMER_BUILD_SHA') ?? null,
         fingerprint: value('UPTIMER_RELEASE_FINGERPRINT') ?? null,
         profile: value('UPTIMER_RUNTIME_PROFILE') ?? 'free',
+        maintenance: value('UPTIMER_MAINTENANCE') === '1',
         databaseId: boundId.data,
         hosting: bindings.some((b) => b.name === 'ASSETS') ? 'single_worker' : 'pages',
         secretNames: bindings
@@ -204,6 +253,8 @@ export class ReleaseCloud {
         }
       : null;
     let appliedMigrations = [],
+      legacy = null,
+      legacyCatalog = false,
       emptyProjectDatabase = true;
     if (id) {
       const tables = (
@@ -215,6 +266,21 @@ export class ReleaseCloud {
         appliedMigrations = (
           await this.sql('SELECT name FROM d1_migrations ORDER BY id')
         ).results.map((row) => row.name);
+      legacyCatalog = containsLegacyTables(tables);
+      if (tables.some((row) => row.name === ledger)) {
+        const state = (await this.sql('SELECT plan_hash, phase FROM ' + ledger + ' WHERE id=1'))
+          .results;
+        legacy = legacyStateSchema.parse(state[0]);
+        const guards = (
+          await this.sql(
+            "SELECT name, tbl_name AS 'table', sql FROM sqlite_master WHERE type='trigger' AND name GLOB 'uptimer_legacy_*'",
+          )
+        ).results;
+        const stage = appliedMigrations.some((name) => name.startsWith('0016_')) ? 16 : 14;
+        const guardsValid =
+          legacy.phase === 'prepared' ? !guards.length : matchesLegacyGuards(guards, stage);
+        if (!guardsValid) throw Error('Legacy D1 write guards changed; stop before continuing');
+      }
       const hasMonitors = tables.some((row) => row.name === 'monitors');
       if (hasMonitors && !tables.some((row) => row.name === 'd1_migrations'))
         throw Error('Recognized migration tracker is required for an existing application schema');
@@ -242,6 +308,14 @@ export class ReleaseCloud {
       } else if (tables.some((row) => row.name !== 'd1_migrations'))
         throw Error('Existing database is not an empty or recognized Uptimer schema');
     }
-    return { databaseId: id, appliedMigrations, emptyProjectDatabase, worker, pages };
+    return {
+      databaseId: id,
+      appliedMigrations,
+      emptyProjectDatabase,
+      worker,
+      pages,
+      legacy,
+      legacyCatalog,
+    };
   }
 }

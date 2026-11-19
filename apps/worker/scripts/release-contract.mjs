@@ -117,12 +117,19 @@ export function deploymentSteps(plan, live, createdDatabaseId) {
   if (state.applied.length < original.applied.length)
     throw Error('Migration history moved backwards');
   const workerReady =
+    !live.worker?.maintenance &&
     live.worker?.fingerprint === plan.fingerprint &&
     live.worker?.sourceSha === plan.sourceSha &&
     live.worker?.profile === t.profile &&
     live.worker?.databaseId === live.databaseId &&
     live.worker?.hosting === t.hosting;
-  if (!workerReady && live.worker?.versionId !== before.worker?.versionId)
+  const maintenanceReady =
+    plan.legacyUpgrade === true &&
+    live.worker?.maintenance &&
+    live.worker.fingerprint === plan.fingerprint &&
+    live.worker.sourceSha === plan.sourceSha &&
+    live.worker.databaseId === live.databaseId;
+  if (!workerReady && !maintenanceReady && live.worker?.versionId !== before.worker?.versionId)
     throw Error('Worker changed outside this reviewed deployment');
   if (live.worker && live.worker.hosting !== t.hosting)
     throw Error('Hosting changes require a separate migration plan');
