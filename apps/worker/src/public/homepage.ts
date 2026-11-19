@@ -1,3 +1,4 @@
+import { readPublicHistoryRows, type PublicHistoryRow } from './history-cache';
 import { z } from 'zod';
 
 import {
@@ -114,7 +115,10 @@ type HomepageScheduledFastGuardState = {
 };
 
 type HomepageMonitorDataOptions = {
+  useHistoricalCache?: boolean;
   cardLimit?: number;
+  cardOffset?: number;
+  onMonitorIds?: (ids: number[]) => void;
   uptimeRatingLevel?: 1 | 2 | 3 | 4 | 5;
   maintenanceMonitorIdsPromise?: Promise<ReadonlySet<number>>;
   baseSnapshot?: PublicHomepageResponse | null;
@@ -898,6 +902,7 @@ async function buildHomepageMonitorCardsFromRows(
   baseSnapshot: PublicHomepageResponse | null | undefined,
   runtimeSnapshot: PublicMonitorRuntimeSnapshot | null | undefined,
   trace?: Trace,
+  useHistoricalCache = false,
 ): Promise<HomepageMonitorCard[]> {
   if (rows.length === 0) {
     return [];
@@ -951,19 +956,42 @@ async function buildHomepageMonitorCardsFromRows(
         })),
       )
     : withTraceAsync(trace, 'homepage_cards_heartbeat_query', async () => {
-        const statement = db.prepare(
-          `
+        const select = `
       SELECT checked_at, latency_ms, status
       FROM check_results
       WHERE monitor_id = ?1
-      ORDER BY checked_at DESC, id DESC
-      LIMIT ?2
-    `,
+        AND storage_shard = CAST((?1 - 1) / 4 AS INTEGER)`;
+        const order = ' ORDER BY checked_at DESC, id DESC LIMIT ?2';
+        const statement = db.prepare(
+          select + ' AND bucket_start_at >= ?3 - 3599 AND checked_at >= ?3' + order,
         );
         const results = await db.batch<HomepageHeartbeatRow>(
-          rows.map((monitor) => statement.bind(monitor.id, HEARTBEAT_POINTS)),
+          rows.map((monitor) =>
+            statement.bind(
+              monitor.id,
+              HEARTBEAT_POINTS,
+              Math.max(
+                0,
+                (monitor.last_checked_at ?? 0) - monitor.interval_sec * HEARTBEAT_POINTS * 2,
+              ),
+            ),
+          ),
         );
-
+        // Gaps, an interval change or a long pause must not remove older bars.
+        // The ordinary path reads a small time window; only incomplete windows
+        // use the lossless all-history query.
+        const incomplete = rows.flatMap((monitor, index) =>
+          (results[index]?.results?.length ?? 0) < HEARTBEAT_POINTS ? [{ monitor, index }] : [],
+        );
+        if (incomplete.length) {
+          const fallback = db.prepare(select + order);
+          const older = await db.batch<HomepageHeartbeatRow>(
+            incomplete.map(({ monitor }) => fallback.bind(monitor.id, HEARTBEAT_POINTS)),
+          );
+          incomplete.forEach(({ index }, offset) => {
+            results[index] = older[offset]!;
+          });
+        }
         return rows.map((monitor, index) => ({
           monitorId: monitor.id,
           rows: results[index]?.results ?? [],
@@ -972,15 +1000,22 @@ async function buildHomepageMonitorCardsFromRows(
 
   const canReuseHistoricalRollups =
     baseMonitorsById !== null && selectedIds.every((id) => baseMonitorsById.has(id));
+  let cachedHistoricalRows: PublicHistoryRow[] | null = null;
   const rollupRowsPromise = canReuseHistoricalRollups
     ? Promise.resolve<HomepageUptimeDayStripAggRawRow[]>([])
-    : withTraceAsync(
-        trace,
-        'homepage_cards_rollup_query',
-        async () =>
-          await db
-            .prepare(
-              `
+    : withTraceAsync(trace, 'homepage_cards_rollup_query', async () => {
+        if (useHistoricalCache) {
+          cachedHistoricalRows = await readPublicHistoryRows(
+            db,
+            selectedIds,
+            rangeStart,
+            rangeEndFullDays,
+          );
+          return [];
+        }
+        return await db
+          .prepare(
+            `
         SELECT
           monitor_id,
           json_group_array(day_start_at) AS day_start_at_json,
@@ -1005,11 +1040,11 @@ async function buildHomepageMonitorCardsFromRows(
         GROUP BY monitor_id
         ORDER BY monitor_id
       `,
-            )
-            .bind(...selectedIds, rangeStart, rangeEndFullDays)
-            .raw<HomepageUptimeDayStripAggRawRow>()
-            .then((resultRows) => resultRows ?? []),
-      );
+          )
+          .bind(...selectedIds, rangeStart, rangeEndFullDays)
+          .raw<HomepageUptimeDayStripAggRawRow>()
+          .then((resultRows) => resultRows ?? []);
+      });
 
   const todayByMonitorIdPromise: Promise<Map<number, UptimeWindowTotals>> = !needsToday
     ? Promise.resolve(new Map<number, UptimeWindowTotals>())
@@ -1089,6 +1124,23 @@ async function buildHomepageMonitorCardsFromRows(
       return;
     }
 
+    if (cachedHistoricalRows) {
+      for (const row of cachedHistoricalRows) {
+        const index = monitorIndexById.get(row.monitor_id);
+        if (index === undefined) continue;
+        const monitor = monitors[index]!,
+          totals = totalsByMonitor[index]!;
+        monitor.uptime_day_strip.day_start_at.push(row.day_start_at);
+        monitor.uptime_day_strip.downtime_sec.push(row.downtime_sec);
+        monitor.uptime_day_strip.unknown_sec.push(row.unknown_sec);
+        monitor.uptime_day_strip.uptime_pct_milli.push(
+          row.total_sec ? Math.round((row.uptime_sec * 100000) / row.total_sec) : null,
+        );
+        totals.totalSec += row.total_sec;
+        totals.uptimeSec += row.uptime_sec;
+      }
+      return;
+    }
     for (const row of rollupRows) {
       const index = monitorIndexById.get(row[0]);
       if (index === undefined) continue;
@@ -1219,8 +1271,14 @@ async function buildHomepageMonitorData(
     ? (monitorMetadataStamp?.monitorCountTotal ?? rawMonitors.length)
     : rawMonitors.length;
   const ids = rawMonitors.map((monitor) => monitor.id);
+  opts.onMonitorIds?.(ids);
   const selectedRows =
-    opts.cardLimit === undefined ? rawMonitors : rawMonitors.slice(0, Math.max(0, opts.cardLimit));
+    opts.cardLimit === undefined
+      ? rawMonitors
+      : rawMonitors.slice(
+          opts.cardOffset ?? 0,
+          (opts.cardOffset ?? 0) + Math.max(0, opts.cardLimit),
+        );
 
   const maintenanceMonitorIdsPromise =
     opts.maintenanceMonitorIdsPromise === undefined
@@ -1286,6 +1344,7 @@ async function buildHomepageMonitorData(
         opts.baseSnapshot,
         runtimeSnapshot,
         trace,
+        opts.useHistoricalCache ?? false,
       ),
   );
 
@@ -2498,6 +2557,8 @@ export async function computePublicHomepagePayload(
     runtimeSnapshot?: PublicMonitorRuntimeSnapshot | null;
     monitorMetadataStamp?: HomepageMonitorMetadataStamp | null;
     trustBaseSnapshotMonitorMetadata?: boolean;
+    monitorSlice?: { offset: number; limit: number };
+    onMonitorIds?: (ids: number[]) => void;
   } = {},
 ): Promise<PublicHomepageResponse> {
   const trace = opts.trace;
@@ -2525,6 +2586,14 @@ export async function computePublicHomepagePayload(
           await settingsPromise.then((resolvedSettings) =>
             buildHomepageMonitorData(db, now, includeHiddenMonitors, {
               uptimeRatingLevel: resolvedSettings.uptime_rating_level,
+              ...(opts.monitorSlice
+                ? {
+                    cardOffset: opts.monitorSlice.offset,
+                    cardLimit: opts.monitorSlice.limit,
+                    useHistoricalCache: true,
+                  }
+                : {}),
+              ...(opts.onMonitorIds ? { onMonitorIds: opts.onMonitorIds } : {}),
               maintenanceMonitorIdsPromise: maintenanceWindowsPromise.then(
                 (resolvedMaintenance) => resolvedMaintenance.activeMonitorIds,
               ),

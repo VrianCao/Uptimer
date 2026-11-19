@@ -1,7 +1,8 @@
 name = "uptimer"
-main = "src/index.ts"
+main = "src/worker-entry.ts"
 compatibility_date = "2026-01-28"
 minify = true
+upload_source_maps = true
 
 [observability]
 enabled = true
@@ -21,16 +22,19 @@ database_id = "00000000-0000-0000-0000-000000000000"
 
 # Keep this table even if empty so `wrangler dev` loads secrets/vars from `.dev.vars`.
 [vars]
+UPTIMER_RUNTIME_PROFILE = "free"
 ADMIN_RATE_LIMIT_MAX = "60"
 ADMIN_RATE_LIMIT_WINDOW_SEC = "60"
 UPTIMER_SCHEDULED_STATUS_REFRESH = "1"
 UPTIMER_TRUST_SCHEDULED_RUNTIME_UPDATES = "1"
-UPTIMER_INTERNAL_SCHEDULED_BATCH_SIZE = "2"
+UPTIMER_INTERNAL_SCHEDULED_BATCH_SIZE = "5"
+UPTIMER_INTERNAL_SCHEDULED_BATCH_CONCURRENCY = "15"
 
-# Free Plan CPU profile verified for issue #24 final close.
-# Keep this set in sync; do not enable UPTIMER_PUBLIC_SHARDED_HOMEPAGE_RUNTIME_SEED.
-UPTIMER_PUBLIC_MONITOR_UPDATE_FRAGMENT_WRITES = "1"
-UPTIMER_SCHEDULED_RUNTIME_FRAGMENT_REFRESH = "1"
+# Bounded Free Plan profile: fresh pages read lossless check buckets directly.
+# Legacy runtime snapshot flags remain supported for older/custom profiles.
+# See Develop/Performance-Refactor.md for budgets and validation status.
+UPTIMER_PUBLIC_MONITOR_UPDATE_FRAGMENT_WRITES = "0"
+UPTIMER_SCHEDULED_RUNTIME_FRAGMENT_REFRESH = "0"
 UPTIMER_PUBLIC_SHARDED_FRAGMENT_SEED = "1"
 UPTIMER_SCHEDULED_SHARDED_FRAGMENT_SEED = "1"
 UPTIMER_PUBLIC_SHARDED_ASSEMBLER = "1"
@@ -41,9 +45,21 @@ UPTIMER_PUBLIC_HOMEPAGE_ARTIFACT_FRAGMENT_WRITES = "1"
 UPTIMER_SHARDED_ASSEMBLER_MODE = "json"
 UPTIMER_SCHEDULED_SHARDED_SKIP_HOMEPAGE_REFRESH = "1"
 UPTIMER_SCHEDULED_SHARDED_CONTINUATION = "1"
-UPTIMER_SHARDED_FRAGMENT_SEED_BATCH_SIZE = "4"
+UPTIMER_PUBLIC_COMBINED_SEED = "1"
+UPTIMER_SHARDED_FRAGMENT_SEED_BATCH_SIZE = "10"
 UPTIMER_SHARDED_RUNTIME_UPDATE_BATCH_SIZE = "5"
 UPTIMER_INTERNAL_SCHEDULED_CHECK_BATCH_TIMEOUT_MS = "75000"
-UPTIMER_INTERNAL_CHECK_BATCH_FRAGMENT_WRITE_SPLIT = "1"
+UPTIMER_INTERNAL_CHECK_BATCH_FRAGMENT_WRITE_SPLIT = "0"
 UPTIMER_INTERNAL_CHECK_BATCH_TRUST_SCHEDULER_LEASE = "1"
 UPTIMER_SCHEDULED_REFRESH_LOGS = "0"
+
+# One scheduling/publication unit per single-tenant site. D1 remains canonical.
+# Do not set limits.cpu_ms=10 here: it also lowers the DO's CPU allowance.
+# Workers Free supplies the ordinary Worker 10ms and the DO 30s defaults.
+[[durable_objects.bindings]]
+name = "COORDINATOR"
+class_name = "SiteCoordinator"
+
+[[migrations]]
+tag = "v1-site-coordinator"
+new_sqlite_classes = ["SiteCoordinator"]

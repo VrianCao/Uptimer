@@ -1,5 +1,7 @@
 # Structure.md: Repository Structure (Uptimer)
 
+> 当前性能重构与 Free Plan 额度核对见 [Performance-Refactor.md](Performance-Refactor.md)；其中明确区分官方限制、本地证据与云端验收。
+
 本文定义 Uptimer 仓库的目录结构、模块边界与命名约定，用于初始化与后续协作一致性。
 
 ---
@@ -35,7 +37,11 @@ apps/worker/
 ├─ wrangler.toml                # Worker 配置（D1 binding、cron triggers、Free Plan CPU profile；CI 按需注入 [assets]）
 ├─ migrations/                  # D1 SQL migrations（wrangler d1 migrations apply）
 └─ src/
-   ├─ index.ts                  # Worker entry：fetch/scheduled/export default
+   ├─ worker-entry.ts           # Wrangler entry：默认 Worker + SiteCoordinator 导出
+   ├─ runtime-profile.ts         # 显式 Free / Paid 运行配置校验
+   ├─ coordinator.ts            # 单站点 API/调度/发布协调（D1 保持 canonical）
+   ├─ worker-configuration.d.ts # Wrangler 生成的 binding 类型
+   ├─ index.ts                  # Worker fetch/scheduled 业务入口
    ├─ fetch-handler.ts          # fetch 入口拆分，降低 scheduled cold path 负担
    ├─ hono-app.ts               # Hono app 与路由挂载
    ├─ env.ts                    # Env interface（D1 binding、secrets、feature flags）
@@ -54,6 +60,7 @@ apps/worker/
    │  └─ ...
    ├─ scheduler/
    │  ├─ scheduled.ts           # scheduled() 编排、check-batch children、CPU profile
+   │  ├─ paid-crons.json        # Paid 独立 Cron 事件表达式，配置生成与运行时共用
    │  ├─ daily-rollup.ts        # monitor_daily_rollups
    │  ├─ lock.ts / lease-guard.ts
    │  ├─ notifications.ts

@@ -1,13 +1,14 @@
+import { queuePublicHomepageSnapshotRefresh } from '../public/queue-refresh';
 import { Hono } from 'hono';
 import { z } from 'zod';
 
 import {
-  asc,
   eq,
   type CustomWebhookChannelConfig,
   expectedStatusJsonSchema,
   forbiddenStatusJsonSchema,
   getDb,
+  getTableColumns,
   httpHeadersJsonSchema,
   monitors,
   monitorState,
@@ -24,14 +25,12 @@ import type { Env } from '../env';
 import { requireAdmin } from '../middleware/auth';
 import { AppError, handleError, handleNotFound } from '../middleware/errors';
 import { requireAdminRateLimit } from '../middleware/rate-limit';
-import { computePublicHomepagePayload } from '../public/homepage';
 import {
   bumpHomepageIncidentGuardVersion,
   bumpHomepageMaintenanceGuardVersion,
   bumpHomepageMonitorGuardVersions,
   bumpHomepageSettingsGuardVersion,
 } from '../public/homepage-guard-state';
-import { refreshPublicHomepageSnapshotIfNeeded } from '../snapshots';
 import { runHttpCheck } from '../monitor/http';
 import {
   validateHttpResponseAssertionConfig,
@@ -96,21 +95,6 @@ adminRoutes.use('*', requireAdmin);
 adminRoutes.route('/analytics', adminAnalyticsRoutes);
 adminRoutes.route('/exports', adminExportsRoutes);
 adminRoutes.route('/settings', adminSettingsRoutes);
-
-function queuePublicHomepageSnapshotRefresh(c: { env: Env; executionCtx: ExecutionContext }) {
-  const now = Math.floor(Date.now() / 1000);
-  c.executionCtx.waitUntil(
-    refreshPublicHomepageSnapshotIfNeeded({
-      db: c.env.DB,
-      now,
-      force: true,
-      seedDataSnapshot: true,
-      compute: () => computePublicHomepagePayload(c.env.DB, Math.floor(Date.now() / 1000)),
-    }).catch((err) => {
-      console.warn('homepage snapshot: refresh failed', err);
-    }),
-  );
-}
 
 function normalizeMonitorGroupName(groupName: string | null | undefined): string | null {
   const trimmed = groupName?.trim() ?? '';
@@ -221,52 +205,29 @@ function buildGroupReorderUpdate(
   groups: MonitorGroupReorderEntry[],
   updatedAt: number,
 ): { sql: string; binds: (string | number)[] } {
-  const binds: (string | number)[] = [];
-  const sortCaseClauses: string[] = [];
-  const whereClauses: string[] = [];
-  let idx = 1;
-
-  for (const group of groups) {
-    if (group.groupName === null) {
-      const sortIdx = idx;
-      idx += 1;
-      binds.push(group.groupSortOrder);
-      sortCaseClauses.push(`WHEN group_name IS NULL OR trim(group_name) = '' THEN ?${sortIdx}`);
-      whereClauses.push(`(group_name IS NULL OR trim(group_name) = '')`);
-      continue;
-    }
-
-    const nameIdx = idx;
-    idx += 1;
-    const sortIdx = idx;
-    idx += 1;
-
-    binds.push(group.groupName, group.groupSortOrder);
-
-    sortCaseClauses.push(`WHEN lower(trim(group_name)) = lower(?${nameIdx}) THEN ?${sortIdx}`);
-    whereClauses.push(`lower(trim(group_name)) = lower(?${nameIdx})`);
-  }
-
-  const updatedAtIdx = idx;
-  binds.push(updatedAt);
-
+  // Keep one atomic update without allocating two SQL parameters per group.
   const sql = `
+    WITH group_order AS (
+      SELECT
+        coalesce(lower(trim(json_extract(value, '$.groupName'))), '') AS name,
+        json_extract(value, '$.groupSortOrder') AS sort_order
+      FROM json_each(?1)
+    )
     UPDATE monitors
-    SET
-      group_sort_order = CASE
-        ${sortCaseClauses.join('\n        ')}
-        ELSE group_sort_order
-      END,
-      updated_at = ?${updatedAtIdx}
-    WHERE ${whereClauses.join(' OR ')}
+    SET group_sort_order = group_order.sort_order,
+        updated_at = ?2
+    FROM group_order
+    WHERE coalesce(lower(trim(monitors.group_name)), '') = group_order.name
   `;
-
-  return { sql, binds };
+  return { sql, binds: [JSON.stringify(groups), updatedAt] };
 }
 
 function monitorRowToApi(
   row: typeof monitors.$inferSelect,
-  state?: typeof monitorState.$inferSelect | null,
+  state?: Pick<
+    typeof monitorState.$inferSelect,
+    'status' | 'lastCheckedAt' | 'lastLatencyMs' | 'lastError'
+  > | null,
 ) {
   const groupName = normalizeMonitorGroupName(row.groupName);
 
@@ -310,6 +271,36 @@ function monitorRowToApi(
   };
 }
 
+// Generate the fixed read projection once during startup. It follows Drizzle's
+// column definitions without constructing a query and nested result mapper on
+// the first management request in each isolate.
+const ADMIN_MONITOR_LIST_SQL = `
+  SELECT ${Object.entries(getTableColumns(monitors))
+    .map(([key, column]) => `m."${column.name}" AS "${key}"`)
+    .join(',')},
+    s.status AS list_state_status, s.last_checked_at AS list_checked_at,
+    s.last_latency_ms AS list_latency_ms, s.last_error AS list_error
+  FROM monitors m LEFT JOIN monitor_state s ON s.monitor_id=m.id
+  WHERE ?2 IS NULL OR m.group_sort_order > ?2 OR
+    (m.group_sort_order = ?2 AND (
+      (?3 IS NULL AND m.group_name IS NOT NULL) OR m.group_name > ?3 OR
+      (m.group_name IS ?3 AND (m.sort_order,m.id) > (?4,?5))
+    ))
+  ORDER BY m.group_sort_order,m.group_name,m.sort_order,m.id LIMIT ?1
+`;
+type AdminMonitorListRow = Omit<
+  typeof monitors.$inferSelect,
+  'followRedirects' | 'showOnStatusPage' | 'isActive'
+> & {
+  followRedirects: number;
+  showOnStatusPage: number;
+  isActive: number;
+  list_state_status: (typeof monitorState.$inferSelect)['status'] | null;
+  list_checked_at: number | null;
+  list_latency_ms: number | null;
+  list_error: string | null;
+};
+
 adminRoutes.get('/monitors', async (c) => {
   const limit = z.coerce
     .number()
@@ -319,22 +310,49 @@ adminRoutes.get('/monitors', async (c) => {
     .optional()
     .default(50)
     .parse(c.req.query('limit'));
-  const db = getDb(c.env);
-
-  const rows = await db
-    .select({ monitor: monitors, state: monitorState })
-    .from(monitors)
-    .leftJoin(monitorState, eq(monitorState.monitorId, monitors.id))
-    .orderBy(
-      asc(monitors.groupSortOrder),
-      asc(monitors.groupName),
-      asc(monitors.sortOrder),
-      asc(monitors.id),
-    )
-    .limit(limit)
-    .all();
-
-  return c.json({ monitors: rows.map((r) => monitorRowToApi(r.monitor, r.state)) });
+  let cursor: [number, string | null, number, number] | null = null;
+  const rawCursor = c.req.query('cursor');
+  if (rawCursor !== undefined) {
+    try {
+      cursor = z
+        .tuple([
+          z.number().int(),
+          z.string().max(64).nullable(),
+          z.number().int(),
+          z.number().int().positive(),
+        ])
+        .parse(JSON.parse(z.string().max(512).parse(rawCursor)));
+    } catch {
+      throw new AppError(400, 'INVALID_ARGUMENT', 'Invalid monitor cursor');
+    }
+  }
+  const { results } = await c.env.DB.prepare(ADMIN_MONITOR_LIST_SQL)
+    .bind(limit + 1, ...(cursor ?? [null, null, null, null]))
+    .all<AdminMonitorListRow>();
+  const rows = (results ?? []).slice(0, limit);
+  const last = rows.at(-1);
+  return c.json({
+    monitors: rows.map((row) =>
+      monitorRowToApi(
+        {
+          ...row,
+          followRedirects: row.followRedirects === 1,
+          showOnStatusPage: row.showOnStatusPage === 1,
+          isActive: row.isActive === 1,
+        },
+        {
+          status: row.list_state_status ?? 'unknown',
+          lastCheckedAt: row.list_checked_at,
+          lastLatencyMs: row.list_latency_ms,
+          lastError: row.list_error,
+        },
+      ),
+    ),
+    next_cursor:
+      last && (results?.length ?? 0) > limit
+        ? JSON.stringify([last.groupSortOrder, last.groupName, last.sortOrder, last.id])
+        : null,
+  });
 });
 
 adminRoutes.post('/monitors/groups/reorder', async (c) => {
@@ -371,17 +389,16 @@ adminRoutes.post('/monitors/groups/assign', async (c) => {
   const targetGroupSortOrder =
     input.group_sort_order ?? (await findGroupSortOrder(c.env.DB, targetGroupName)) ?? 0;
 
-  const placeholders = monitorIds.map(() => '?').join(', ');
   const result = await c.env.DB.prepare(
     `
       UPDATE monitors
       SET group_name = ?,
           group_sort_order = ?,
           updated_at = ?
-      WHERE id IN (${placeholders})
+      WHERE id IN (SELECT value FROM json_each(?))
     `,
   )
-    .bind(targetGroupName, targetGroupSortOrder, now, ...monitorIds)
+    .bind(targetGroupName, targetGroupSortOrder, now, JSON.stringify(monitorIds))
     .run();
 
   if (input.group_sort_order !== undefined) {
@@ -675,7 +692,36 @@ adminRoutes.delete('/monitors/:id', async (c) => {
   // consistent. We hard-delete and cascade-delete all monitor-scoped records.
   // (No FK constraints are enforced by D1 here.)
   await c.env.DB.batch([
-    c.env.DB.prepare('DELETE FROM check_results WHERE monitor_id = ?1').bind(id),
+    // Determine the audience inside the same transaction as deletion, rather
+    // than trusting the earlier read if visibility changed concurrently.
+    c.env.DB.prepare(
+      `UPDATE incidents SET scope='global'
+      WHERE scope='monitors' AND EXISTS (
+        SELECT 1 FROM monitors WHERE id=?1 AND show_on_status_page=1
+      ) AND id IN (SELECT incident_id FROM incident_monitors WHERE monitor_id=?1)
+      AND NOT EXISTS (
+        SELECT 1 FROM incident_monitors im
+        WHERE im.incident_id=incidents.id AND im.monitor_id != ?1
+      )`,
+    ).bind(id),
+    c.env.DB.prepare(
+      `UPDATE maintenance_windows SET scope='global'
+      WHERE scope='monitors' AND EXISTS (
+        SELECT 1 FROM monitors WHERE id=?1 AND show_on_status_page=1
+      ) AND id IN (
+        SELECT maintenance_window_id FROM maintenance_window_monitors WHERE monitor_id=?1
+      ) AND NOT EXISTS (
+        SELECT 1 FROM maintenance_window_monitors mwm
+        WHERE mwm.maintenance_window_id=maintenance_windows.id AND mwm.monitor_id != ?1
+      )`,
+    ).bind(id),
+    c.env.DB.prepare('DELETE FROM check_results_legacy WHERE monitor_id = ?1').bind(id),
+    c.env.DB.prepare(
+      `UPDATE check_result_buckets
+      SET samples_json = (SELECT json_group_array(json(value)) FROM json_each(samples_json)
+        WHERE type = 'array' AND json_extract(value, '$[0]') != ?1)
+      WHERE shard_id = CAST((?1 - 1) / 4 AS INTEGER)`,
+    ).bind(id),
     c.env.DB.prepare('DELETE FROM outages WHERE monitor_id = ?1').bind(id),
     c.env.DB.prepare('DELETE FROM monitor_state WHERE monitor_id = ?1').bind(id),
     c.env.DB.prepare('DELETE FROM monitor_daily_rollups WHERE monitor_id = ?1').bind(id),
@@ -1151,16 +1197,15 @@ async function ensureMonitorsExist(db: D1Database, monitorIds: number[]): Promis
     );
   }
 
-  const placeholders = ids.map((_, idx) => `?${idx + 1}`).join(', ');
   const { results } = await db
     .prepare(
       `
         SELECT id
         FROM monitors
-        WHERE id IN (${placeholders})
+        WHERE id IN (SELECT value FROM json_each(?1))
       `,
     )
-    .bind(...ids)
+    .bind(JSON.stringify(ids))
     .all<{ id: number }>();
 
   const found = new Set((results ?? []).map((r) => r.id));
@@ -1254,17 +1299,16 @@ async function listIncidentUpdatesByIncidentId(
   const byIncident = new Map<number, IncidentUpdateRow[]>();
   if (incidentIds.length === 0) return byIncident;
 
-  const placeholders = incidentIds.map((_, idx) => `?${idx + 1}`).join(', ');
   const sql = `
     SELECT id, incident_id, status, message, created_at
     FROM incident_updates
-    WHERE incident_id IN (${placeholders})
+    WHERE incident_id IN (SELECT value FROM json_each(?1))
     ORDER BY incident_id, created_at, id
   `;
 
   const { results } = await db
     .prepare(sql)
-    .bind(...incidentIds)
+    .bind(JSON.stringify(incidentIds))
     .all<IncidentUpdateRow>();
   for (const r of results ?? []) {
     const existing = byIncident.get(r.incident_id) ?? [];
@@ -1281,17 +1325,16 @@ async function listIncidentMonitorIdsByIncidentId(
   const byIncident = new Map<number, number[]>();
   if (incidentIds.length === 0) return byIncident;
 
-  const placeholders = incidentIds.map((_, idx) => `?${idx + 1}`).join(', ');
   const sql = `
     SELECT incident_id, monitor_id
     FROM incident_monitors
-    WHERE incident_id IN (${placeholders})
+    WHERE incident_id IN (SELECT value FROM json_each(?1))
     ORDER BY incident_id, monitor_id
   `;
 
   const { results } = await db
     .prepare(sql)
-    .bind(...incidentIds)
+    .bind(JSON.stringify(incidentIds))
     .all<IncidentMonitorLinkRow>();
   for (const r of results ?? []) {
     const existing = byIncident.get(r.incident_id) ?? [];
@@ -1335,17 +1378,16 @@ async function listMaintenanceWindowMonitorIdsByWindowId(
   const byWindow = new Map<number, number[]>();
   if (windowIds.length === 0) return byWindow;
 
-  const placeholders = windowIds.map((_, idx) => `?${idx + 1}`).join(', ');
   const sql = `
     SELECT maintenance_window_id, monitor_id
     FROM maintenance_window_monitors
-    WHERE maintenance_window_id IN (${placeholders})
+    WHERE maintenance_window_id IN (SELECT value FROM json_each(?1))
     ORDER BY maintenance_window_id, monitor_id
   `;
 
   const { results } = await db
     .prepare(sql)
-    .bind(...windowIds)
+    .bind(JSON.stringify(windowIds))
     .all<MaintenanceWindowMonitorLinkRow>();
   for (const r of results ?? []) {
     const existing = byWindow.get(r.maintenance_window_id) ?? [];
@@ -1898,10 +1940,15 @@ adminRoutes.patch('/maintenance-windows/:id', async (c) => {
     throw new AppError(400, 'INVALID_ARGUMENT', '`starts_at` must be less than `ends_at`');
   }
 
+  if (input.monitor_ids !== undefined) {
+    await ensureMonitorsExist(c.env.DB, normalizeIdList(input.monitor_ids));
+  }
+
   const updated = await c.env.DB.prepare(
     `
       UPDATE maintenance_windows
-      SET title = ?1, message = ?2, starts_at = ?3, ends_at = ?4
+      SET title = ?1, message = ?2, starts_at = ?3, ends_at = ?4,
+          scope = CASE WHEN ?6 = 1 THEN 'monitors' ELSE scope END
       WHERE id = ?5
       RETURNING id, title, message, starts_at, ends_at, created_at
     `,
@@ -1912,6 +1959,7 @@ adminRoutes.patch('/maintenance-windows/:id', async (c) => {
       nextStartsAt,
       nextEndsAt,
       id,
+      input.monitor_ids !== undefined ? 1 : 0,
     )
     .first<MaintenanceWindowRow>();
 
@@ -1921,7 +1969,6 @@ adminRoutes.patch('/maintenance-windows/:id', async (c) => {
 
   if (input.monitor_ids !== undefined) {
     const monitorIds = normalizeIdList(input.monitor_ids);
-    await ensureMonitorsExist(c.env.DB, monitorIds);
 
     const statements: D1PreparedStatement[] = [];
     statements.push(
@@ -1991,3 +2038,6 @@ adminRoutes.delete('/maintenance-windows/:id', async (c) => {
 
   return c.json({ deleted: true });
 });
+
+// Build Hono's lazy matcher during isolate startup; this runs no handlers or I/O.
+adminRoutes.router.match('GET', '/monitors');

@@ -2,8 +2,26 @@ import { describe, expect, it } from 'vitest';
 
 import { acquireLease, releaseLease } from '../src/scheduler/lock';
 import { createFakeD1Database, type FakeD1QueryHandler } from './helpers/fake-d1';
+import { createSqliteD1 } from './helpers/sqlite-d1';
 
 describe('scheduler/lock', () => {
+  it('reuses a stable lock row without releasing a newer owner', async () => {
+    const { db, sqlite } = createSqliteD1();
+    expect(await acquireLease(db, 'scheduler:tick', 100, 135)).toBe(true);
+    await releaseLease(db, 'scheduler:tick', 235, true);
+    expect(await acquireLease(db, 'scheduler:tick', 101, 135)).toBe(true);
+    await releaseLease(db, 'scheduler:tick', 235, true);
+    expect(
+      sqlite.prepare("SELECT expires_at FROM locks WHERE name='scheduler:tick'").get()?.expires_at,
+    ).toBe(236);
+    expect(await acquireLease(db, 'scheduler:tick', 102, 135)).toBe(false);
+    await releaseLease(db, 'scheduler:tick', 236, true);
+    expect(
+      sqlite.prepare("SELECT expires_at FROM locks WHERE name='scheduler:tick'").get()?.expires_at,
+    ).toBe(0);
+    expect(await acquireLease(db, 'scheduler:tick', 103, 135)).toBe(true);
+    sqlite.close();
+  });
   it('returns true when the lease row is inserted or updated', async () => {
     let boundArgs: unknown[] | null = null;
     const handlers: FakeD1QueryHandler[] = [

@@ -1,4 +1,8 @@
+import { z } from 'zod';
+import type { PublicStatusGenerationContext } from '../public/status';
 import type { Env } from '../env';
+import { usesBoundedPublicSeeds, usesCombinedPublicSeeds } from '../public/refresh-profile';
+import { batchSnapshotReads } from '../public/batched-reads';
 import type { PublicHomepageResponse } from '../schemas/public-homepage';
 import type { PublicStatusResponse } from '../schemas/public-status';
 import {
@@ -16,7 +20,48 @@ import {
   readHomepageSnapshotFragments,
   readStatusSnapshotBodyJsonFromFragments,
   readStatusSnapshotFragments,
+  parseStatusEnvelopeFragmentRows,
 } from '../snapshots/public-monitor-fragments';
+
+const seedContextSchema = z.object({
+  source_maintenance_monitor_ids: z.array(z.number().int().positive()),
+  source_range_start_at: z.number().int().nonnegative().optional(),
+});
+const validatedGenerationContexts = new Map<string, PublicStatusGenerationContext>();
+
+async function readStatusGenerationContext(
+  env: Env,
+  now: number,
+): Promise<PublicStatusGenerationContext | undefined> {
+  const { readPublicSnapshotFragments } = await import('../snapshots/public-fragments');
+  const rows = await readPublicSnapshotFragments(env.DB, 'status:envelope', now);
+  const row = rows.find((row) => row.generated_at === now && row.fragment_key === 'envelope');
+  if (!row) return undefined;
+  const cached = validatedGenerationContexts.get(row.body_json);
+  if (cached?.envelope.generated_at === now) return cached;
+  const parsed = parseStatusEnvelopeFragmentRows(rows);
+  if (!parsed || parsed.generatedAt !== now) return undefined;
+  let source: unknown;
+  try {
+    source = JSON.parse(row.body_json);
+  } catch {
+    return undefined;
+  }
+  const context = seedContextSchema.safeParse(source);
+  if (!context.success || (context.data.source_range_start_at ?? 0) > now) return undefined;
+  const { monitor_ids: _monitorIds, ...envelope } = parsed.data;
+  const result = {
+    envelope,
+    maintenanceMonitorIds: context.data.source_maintenance_monitor_ids,
+    ...(context.data.source_range_start_at !== undefined
+      ? { monitorIds: parsed.data.monitor_ids, rangeStart: context.data.source_range_start_at }
+      : {}),
+  };
+  if (validatedGenerationContexts.size >= 8)
+    validatedGenerationContexts.delete(validatedGenerationContexts.keys().next().value!);
+  validatedGenerationContexts.set(row.body_json, result);
+  return result;
+}
 
 export type ShardedPublicSnapshotKind = 'homepage' | 'status';
 export type ShardedPublicSnapshotAssemblyMode = 'validated' | 'json';
@@ -147,13 +192,6 @@ const READ_RAW_PUBLIC_SNAPSHOT_GENERATED_AT_SQL = `
   FROM public_snapshots
   WHERE key = ?1
 `;
-const TOUCH_RAW_PUBLIC_SNAPSHOT_UPDATED_AT_SQL = `
-  UPDATE public_snapshots
-  SET updated_at = ?3
-  WHERE key = ?1
-    AND generated_at = ?2
-    AND updated_at < ?3
-`;
 const UPSERT_RAW_PUBLIC_SNAPSHOT_SQL = `
   INSERT INTO public_snapshots (key, generated_at, body_json, updated_at)
   VALUES (?1, ?2, ?3, ?4)
@@ -161,13 +199,14 @@ const UPSERT_RAW_PUBLIC_SNAPSHOT_SQL = `
     generated_at = excluded.generated_at,
     body_json = excluded.body_json,
     updated_at = excluded.updated_at
-  WHERE excluded.generated_at >= public_snapshots.generated_at
+  WHERE (excluded.generated_at >= public_snapshots.generated_at
+    AND (excluded.generated_at != public_snapshots.generated_at
+      OR excluded.body_json != public_snapshots.body_json))
     OR public_snapshots.generated_at > ?5
 `;
 type PublicSnapshotPublishKey = 'homepage' | 'homepage:artifact' | 'status';
 const rawPublicSnapshotReadStatementByDb = new WeakMap<D1Database, D1PreparedStatement>();
 const rawPublicSnapshotGeneratedAtStatementByDb = new WeakMap<D1Database, D1PreparedStatement>();
-const rawPublicSnapshotTouchStatementByDb = new WeakMap<D1Database, D1PreparedStatement>();
 const rawPublicSnapshotUpsertStatementByDb = new WeakMap<D1Database, D1PreparedStatement>();
 
 function publicSnapshotKeyForKind(kind: ShardedPublicSnapshotKind): 'homepage' | 'status' {
@@ -196,20 +235,6 @@ function rawPublicSnapshotGeneratedAtStatement(
     rawPublicSnapshotGeneratedAtStatementByDb.set(db, statement);
   }
   return statement.bind(key);
-}
-
-function rawPublicSnapshotTouchStatement(
-  db: D1Database,
-  key: PublicSnapshotPublishKey,
-  generatedAt: number,
-  updatedAt: number,
-): D1PreparedStatement {
-  const cached = rawPublicSnapshotTouchStatementByDb.get(db);
-  const statement = cached ?? db.prepare(TOUCH_RAW_PUBLIC_SNAPSHOT_UPDATED_AT_SQL);
-  if (!cached) {
-    rawPublicSnapshotTouchStatementByDb.set(db, statement);
-  }
-  return statement.bind(key, generatedAt, updatedAt);
 }
 
 function rawPublicSnapshotUpsertStatement(
@@ -262,21 +287,6 @@ async function readRawPublicSnapshotGeneratedAt(
   return row && Number.isFinite(row.generated_at) ? row.generated_at : null;
 }
 
-async function touchRawPublicSnapshotUpdatedAt(opts: {
-  env: Env;
-  key: PublicSnapshotPublishKey;
-  generatedAt: number;
-  updatedAt: number;
-}): Promise<boolean> {
-  const result = await rawPublicSnapshotTouchStatement(
-    opts.env.DB,
-    opts.key,
-    opts.generatedAt,
-    opts.updatedAt,
-  ).run();
-  return didApplySnapshotWrite(result);
-}
-
 async function publishRawPublicSnapshot(opts: {
   env: Env;
   kind: ShardedPublicSnapshotKind;
@@ -316,17 +326,17 @@ async function publishRawHomepageArtifactSnapshot(opts: {
   }
 
   const [
-    { publicHomepageResponseSchema },
+    { storedPublicHomepageResponseSchema },
     {
       HOMEPAGE_ARTIFACT_MONITOR_FRAGMENTS_KEY,
       buildHomepageRenderArtifact,
       buildHomepageRenderArtifactFromMonitorFragments,
     },
   ] = await Promise.all([
-    import('../schemas/public-homepage'),
+    import('../schemas/public-homepage-stored'),
     import('../snapshots/public-homepage'),
   ]);
-  const parsed = publicHomepageResponseSchema.safeParse(raw);
+  const parsed = storedPublicHomepageResponseSchema.safeParse(raw);
   if (!parsed.success || parsed.data.generated_at !== opts.generatedAt) {
     return {
       ok: true,
@@ -344,8 +354,15 @@ async function publishRawHomepageArtifactSnapshot(opts: {
     const rows = await readPublicSnapshotFragments(
       opts.env.DB,
       HOMEPAGE_ARTIFACT_MONITOR_FRAGMENTS_KEY,
+      opts.generatedAt,
     );
-    const preRendered = buildHomepageRenderArtifactFromMonitorFragments(parsed.data, rows);
+    // Earlier layouts and page sizes remain readable during an upgrade. Only
+    // fragments belonging to this publication can satisfy its card set.
+    const monitorKeys = new Set(parsed.data.monitors.map((m) => `monitor:${m.id}`));
+    const currentRows = rows.filter(
+      (row) => row.generated_at === parsed.data.generated_at && monitorKeys.has(row.fragment_key),
+    );
+    const preRendered = buildHomepageRenderArtifactFromMonitorFragments(parsed.data, currentRows);
     artifact = preRendered.artifact;
     if (!artifact) {
       return {
@@ -361,12 +378,19 @@ async function publishRawHomepageArtifactSnapshot(opts: {
   } else {
     artifact = buildHomepageRenderArtifact(parsed.data);
   }
+  // The canonical full snapshot has already passed runtime validation above.
+  // Keep its JSON text rather than serializing every heartbeat/day a second time.
+  const artifactJson =
+    parsed.data.bootstrap_mode === 'full' &&
+    parsed.data.monitor_count_total === parsed.data.monitors.length
+      ? `${JSON.stringify({ generated_at: artifact.generated_at, preload_html: artifact.preload_html }).slice(0, -1)},"snapshot":${opts.bodyJson},${JSON.stringify({ meta_title: artifact.meta_title, meta_description: artifact.meta_description }).slice(1)}`
+      : JSON.stringify(artifact);
   const updatedAt = Math.max(opts.now, Math.floor(Date.now() / 1000));
   const result = await rawPublicSnapshotUpsertStatement(
     opts.env.DB,
     'homepage:artifact',
     artifact.generated_at,
-    JSON.stringify(artifact),
+    artifactJson,
     updatedAt,
   ).run();
   const published = didApplySnapshotWrite(result);
@@ -413,20 +437,13 @@ export async function publishHomepageArtifactSnapshotFromPublishedHomepage(opts:
       'homepage:artifact',
     );
     if (artifactGeneratedAt !== null && artifactGeneratedAt >= homepageGeneratedAt) {
-      const updatedAt = Math.max(opts.now, Math.floor(Date.now() / 1000));
-      const touched = await touchRawPublicSnapshotUpdatedAt({
-        env: opts.env,
-        key: 'homepage:artifact',
-        generatedAt: artifactGeneratedAt,
-        updatedAt,
-      });
       return {
         ok: true,
         published: false,
         artifactPublished: false,
         generatedAt: artifactGeneratedAt,
         monitorCount: 0,
-        writeCount: touched ? 1 : 0,
+        writeCount: 0,
         skip: 'current_artifact',
       };
     }
@@ -527,12 +544,13 @@ function buildSeedWrites(opts: {
   payload: PublicHomepageResponse | PublicStatusResponse;
   monitorIds: number[];
   now: number;
+  allMonitorIds?: number[];
 }): PublicSnapshotFragmentWrite[] {
   if (opts.kind === 'homepage') {
     const payload = opts.payload as PublicHomepageResponse;
     return [
       ...(opts.part === 'envelope' || opts.part === 'all'
-        ? [buildHomepageEnvelopeFragmentWrite(payload, opts.now)]
+        ? [buildHomepageEnvelopeFragmentWrite(payload, opts.now, opts.allMonitorIds)]
         : []),
       ...(opts.part === 'monitors' || opts.part === 'all'
         ? buildHomepageMonitorFragmentWrites(payload, opts.now, opts.monitorIds)
@@ -543,7 +561,7 @@ function buildSeedWrites(opts: {
   const payload = opts.payload as PublicStatusResponse;
   return [
     ...(opts.part === 'envelope' || opts.part === 'all'
-      ? [buildStatusEnvelopeFragmentWrite(payload, opts.now)]
+      ? [buildStatusEnvelopeFragmentWrite(payload, opts.now, opts.allMonitorIds)]
       : []),
     ...(opts.part === 'monitors' || opts.part === 'all'
       ? buildStatusMonitorFragmentWrites(payload, opts.now, opts.monitorIds)
@@ -556,8 +574,61 @@ export async function seedShardedPublicSnapshotFragments(
 ): Promise<ShardedPublicSnapshotSeedResult> {
   const { offset, limit } = normalizeSliceBounds(opts.offset, opts.limit);
   try {
-    const payload =
-      opts.kind === 'homepage'
+    // With the normal refresh disabled, static snapshots are outputs, never inputs.
+    // Calculate history for only this page; summary/config still cover all visible monitors.
+    const boundedRefresh = usesBoundedPublicSeeds(opts.env);
+    const combined = usesCombinedPublicSeeds(opts.env) && opts.kind === 'homepage';
+    let combinedStatus: PublicStatusResponse | undefined;
+    let allMonitorIds: number[] | undefined;
+    let maintenanceMonitorIds: number[] | undefined;
+    let rangeStart: number | undefined;
+    const seedOptions = {
+      runtimeSnapshot: null,
+      monitorSlice: { offset, limit: opts.part === 'envelope' ? 0 : limit },
+      onMaintenanceMonitorIds: (ids: number[]) => {
+        maintenanceMonitorIds = ids;
+      },
+      onMonitorIds: (ids: number[]) => {
+        allMonitorIds = ids;
+      },
+      onRangeStart: (at: number) => {
+        rangeStart = at;
+      },
+    };
+    const payload = boundedRefresh
+      ? combined
+        ? await (async () => {
+            const [
+              { computePublicStatusPayload },
+              { homepageFromStatusPayload, readHomepageHistoryPreviews },
+            ] = await Promise.all([import('../public/status'), import('../public/homepage')]);
+            const generationContext =
+              opts.part === 'monitors'
+                ? await readStatusGenerationContext(opts.env, opts.now)
+                : undefined;
+            const db = batchSnapshotReads(opts.env.DB);
+            const [status, previews] = await Promise.all([
+              computePublicStatusPayload(db, opts.now, {
+                ...seedOptions,
+                ...(generationContext ? { generationContext } : {}),
+              }),
+              opts.part === 'envelope' || opts.part === 'all'
+                ? readHomepageHistoryPreviews(db, opts.now)
+                : Promise.resolve({}),
+            ]);
+            combinedStatus = status;
+            const homepage = homepageFromStatusPayload(combinedStatus, previews);
+            homepage.monitor_count_total = allMonitorIds?.length ?? combinedStatus.monitors.length;
+            return homepage;
+          })()
+        : opts.kind === 'homepage'
+          ? await (
+              await import('../public/homepage')
+            ).computePublicHomepagePayload(opts.env.DB, opts.now, seedOptions)
+          : await (
+              await import('../public/status')
+            ).computePublicStatusPayload(opts.env.DB, opts.now, seedOptions)
+      : opts.kind === 'homepage'
         ? await readHomepageSeedPayload(opts.env, opts.now)
         : await readStatusSeedPayload(opts.env, opts.now);
     if (!payload) {
@@ -574,7 +645,10 @@ export async function seedShardedPublicSnapshotFragments(
       };
     }
 
-    const monitorIds = selectMonitorIds(payload, offset, limit);
+    const monitorIds = boundedRefresh
+      ? payload.monitors.map((monitor) => monitor.id)
+      : selectMonitorIds(payload, offset, limit);
+    const monitorCount = allMonitorIds?.length ?? payload.monitors.length;
     if ((opts.part === 'monitors' || opts.part === 'all') && monitorIds.length === 0) {
       return {
         ok: true,
@@ -582,7 +656,7 @@ export async function seedShardedPublicSnapshotFragments(
         kind: opts.kind,
         part: opts.part,
         generatedAt: payload.generated_at,
-        monitorCount: payload.monitors.length,
+        monitorCount,
         monitorOffset: offset,
         monitorLimit: limit,
         writeCount: 0,
@@ -596,7 +670,33 @@ export async function seedShardedPublicSnapshotFragments(
       payload,
       monitorIds,
       now: opts.now,
+      ...(allMonitorIds ? { allMonitorIds } : {}),
     });
+    if (combinedStatus) {
+      writes.push(
+        ...buildSeedWrites({
+          kind: 'status',
+          part: opts.part,
+          payload: combinedStatus,
+          monitorIds,
+          now: opts.now,
+          ...(allMonitorIds ? { allMonitorIds } : {}),
+        }),
+      );
+    }
+    if (
+      (combinedStatus || opts.kind === 'status') &&
+      maintenanceMonitorIds &&
+      (opts.part === 'envelope' || opts.part === 'all')
+    ) {
+      const envelope = writes.find((write) => write.snapshotKey === 'status:envelope');
+      if (envelope)
+        envelope.bodyJson = JSON.stringify({
+          ...JSON.parse(envelope.bodyJson),
+          source_maintenance_monitor_ids: maintenanceMonitorIds,
+          ...(rangeStart !== undefined ? { source_range_start_at: rangeStart } : {}),
+        });
+    }
     if (
       opts.kind === 'homepage' &&
       (opts.part === 'monitors' || opts.part === 'all') &&
@@ -619,7 +719,7 @@ export async function seedShardedPublicSnapshotFragments(
         kind: opts.kind,
         part: opts.part,
         generatedAt: payload.generated_at,
-        monitorCount: payload.monitors.length,
+        monitorCount,
         monitorOffset: offset,
         monitorLimit: limit,
         writeCount: 0,
@@ -627,17 +727,22 @@ export async function seedShardedPublicSnapshotFragments(
       };
     }
 
-    await writePublicSnapshotFragments(opts.env.DB, writes);
+    const results = await writePublicSnapshotFragments(
+      opts.env.DB,
+      writes,
+      boundedRefresh ? offset : undefined,
+      combined,
+    );
     return {
       ok: true,
       seeded: true,
       kind: opts.kind,
       part: opts.part,
       generatedAt: payload.generated_at,
-      monitorCount: payload.monitors.length,
+      monitorCount,
       monitorOffset: offset,
       monitorLimit: limit,
-      writeCount: writes.length,
+      writeCount: results.reduce((total, result) => total + (result.meta.changes ?? 0), 0),
     };
   } catch (err) {
     console.warn('internal sharded public snapshot fragment seed failed', err);

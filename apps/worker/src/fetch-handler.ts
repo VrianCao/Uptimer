@@ -1,4 +1,5 @@
 import type { Env } from './env';
+import { getSiteCoordinator } from './coordinator-binding';
 import { AppError } from './middleware/errors';
 import type { Trace } from './observability/trace';
 
@@ -238,17 +239,22 @@ function isPublicUiPath(url: URL): boolean {
   );
 }
 
+// Simple API segments are already canonical in URL.pathname. Escapes, dot
+// segments, controls and repeated/trailing separators retain the full normalizer.
+function isCanonicalVersionedApiPathname(pathname: string): boolean {
+  return /^\/api\/v1(?:\/[A-Za-z0-9_-]+)+$/.test(pathname);
+}
 function canonicalHotPublicPathname(pathname: string): string {
-  return canonicalizeApiPathname(pathname);
+  return HOT_PUBLIC_CACHE_PATHS.has(pathname) || isCanonicalVersionedApiPathname(pathname)
+    ? pathname
+    : canonicalizeApiPathname(pathname);
 }
 
-const HOT_PUBLIC_CACHE_NAME = 'uptimer-public-hot-v1';
+const HOT_PUBLIC_CACHE_NAME = 'uptimer-public-hot-v2';
 const HOT_PUBLIC_ORIGIN_CACHE_KEY_PARAM = '__uptimer_origin_cache_key';
-const HOT_PUBLIC_STALE_CACHE_KEY_PARAM = '__uptimer_stale_cache_key';
 const HOT_PUBLIC_CACHED_AT_HEADER = 'X-Uptimer-Hot-Cached-At';
 const HOT_PUBLIC_ORIGINAL_CACHE_CONTROL_HEADER = 'X-Uptimer-Hot-Original-Cache-Control';
-const HOT_PUBLIC_STALE_MAX_AGE_SECONDS = 60;
-const HOT_PUBLIC_STALE_STORAGE_TTL_SECONDS = 120;
+const HOT_PUBLIC_CACHE_MAX_SECONDS = 15;
 const PUBLIC_STATIC_STALE_MAX_SECONDS = 10 * 60;
 const HOT_PUBLIC_CACHE_PATHS = new Set([
   '/api/v1/public/homepage',
@@ -282,73 +288,39 @@ function openHotPublicCache(): Promise<Cache> | null {
   return opened;
 }
 
-function buildHotPublicCacheKey(
-  req: Request,
-  origin: string | null,
-  variant: 'fresh' | 'stale' = 'fresh',
-): Request {
+function buildHotPublicCacheKey(req: Request, origin: string | null): Request {
+  if (!origin) return new Request(req.url, { method: 'GET' });
   const url = new URL(req.url);
   if (origin) {
     url.searchParams.set(HOT_PUBLIC_ORIGIN_CACHE_KEY_PARAM, origin);
   }
-  if (variant === 'stale') {
-    url.searchParams.set(HOT_PUBLIC_STALE_CACHE_KEY_PARAM, '1');
-  }
   return new Request(url.toString(), { method: 'GET' });
 }
 
-function stripHotPublicCacheInternalHeaders(res: Response): Response {
-  if (
-    !res.headers.has(HOT_PUBLIC_CACHED_AT_HEADER) &&
-    !res.headers.has(HOT_PUBLIC_ORIGINAL_CACHE_CONTROL_HEADER)
-  ) {
-    return res;
-  }
-  const out = new Response(res.body, res);
-  const originalCacheControl = out.headers.get(HOT_PUBLIC_ORIGINAL_CACHE_CONTROL_HEADER);
-  out.headers.delete(HOT_PUBLIC_CACHED_AT_HEADER);
-  out.headers.delete(HOT_PUBLIC_ORIGINAL_CACHE_CONTROL_HEADER);
-  if (originalCacheControl) {
-    out.headers.set('Cache-Control', originalCacheControl);
-  }
-  return out;
-}
-
-function toHotPublicStaleResponse(res: Response): Response | null {
-  const cachedAtRaw = res.headers.get(HOT_PUBLIC_CACHED_AT_HEADER);
-  const cachedAt = cachedAtRaw ? Number.parseInt(cachedAtRaw, 10) : NaN;
-  if (!Number.isFinite(cachedAt)) {
-    return null;
-  }
-  const now = Math.floor(Date.now() / 1000);
-  if (now - cachedAt > HOT_PUBLIC_STALE_MAX_AGE_SECONDS) {
-    return null;
-  }
-
-  const out = new Response(res.body, res);
-  out.headers.delete(HOT_PUBLIC_CACHED_AT_HEADER);
-  out.headers.set(
-    'Cache-Control',
-    'public, max-age=0, stale-while-revalidate=30, stale-if-error=30',
-  );
-  return out;
+function cacheLifetime(res: Response): number {
+  const policy = res.headers.get('Cache-Control') ?? '';
+  const shared = /(?:^|,\s*)s-maxage=(\d+)/i.exec(policy);
+  const browser = /(?:^|,\s*)max-age=(\d+)/i.exec(policy);
+  return Math.min(HOT_PUBLIC_CACHE_MAX_SECONDS, Number(shared?.[1] ?? browser?.[1] ?? 0));
 }
 
 async function matchHotPublicCache(req: Request, origin: string | null): Promise<Response | null> {
   const cachePromise = openHotPublicCache();
-  if (!cachePromise) {
-    return null;
-  }
-
+  if (!cachePromise) return null;
   try {
     const cache = await cachePromise;
-    const fresh = await cache.match(buildHotPublicCacheKey(req, origin));
-    if (fresh) {
-      return stripHotPublicCacheInternalHeaders(fresh);
-    }
-
-    const stale = await cache.match(buildHotPublicCacheKey(req, origin, 'stale'));
-    return stale ? toHotPublicStaleResponse(stale) : null;
+    const cached = await cache.match(buildHotPublicCacheKey(req, origin));
+    if (!cached) return null;
+    const cachedAt = Number(cached.headers.get(HOT_PUBLIC_CACHED_AT_HEADER));
+    if (!cachedAt) return null;
+    const elapsed = Math.max(0, Math.floor(Date.now() / 1000) - cachedAt);
+    const remaining = cacheLifetime(cached) - elapsed;
+    if (remaining <= 0) return null;
+    const out = new Response(cached.body, cached);
+    out.headers.delete(HOT_PUBLIC_CACHED_AT_HEADER);
+    out.headers.delete(HOT_PUBLIC_ORIGINAL_CACHE_CONTROL_HEADER);
+    out.headers.set('Cache-Control', `public, max-age=0, s-maxage=${remaining}, must-revalidate`);
+    return out;
   } catch (err) {
     console.warn('public hot cache: match failed', err);
     return null;
@@ -361,42 +333,21 @@ function putHotPublicCache(
   origin: string | null,
   res: Response,
 ): void {
-  if (res.status !== 200) {
-    return;
-  }
-  const cacheControl = res.headers.get('Cache-Control') ?? '';
-  if (/(?:^|,\s*)(?:private|no-(?:store|cache))(?:\s*(?:=|,|$))/i.test(cacheControl)) {
-    return;
-  }
-
+  if (res.status !== 200) return;
+  const policy = res.headers.get('Cache-Control') ?? '';
+  if (/(?:^|,\s*)(?:private|no-(?:store|cache))(?:\s*(?:=|,|$))/i.test(policy)) return;
+  const lifetime = cacheLifetime(res);
+  // An expired snapshot may be useful during an outage but must not gain a new TTL.
+  if (lifetime <= 0) return;
   const cachePromise = openHotPublicCache();
-  if (!cachePromise) {
-    return;
-  }
-
-  const freshCacheKey = buildHotPublicCacheKey(req, origin);
-  const staleCacheKey = buildHotPublicCacheKey(req, origin, 'stale');
-  const freshResponse = new Response(res.clone().body, res);
-  freshResponse.headers.set(HOT_PUBLIC_ORIGINAL_CACHE_CONTROL_HEADER, cacheControl);
-  freshResponse.headers.set('Cache-Control', `public, max-age=${HOT_PUBLIC_STALE_MAX_AGE_SECONDS}`);
-  const staleResponse = new Response(res.clone().body, res);
-  staleResponse.headers.set(HOT_PUBLIC_CACHED_AT_HEADER, String(Math.floor(Date.now() / 1000)));
-  staleResponse.headers.set(
-    'Cache-Control',
-    `public, max-age=${HOT_PUBLIC_STALE_STORAGE_TTL_SECONDS}`,
-  );
-
+  if (!cachePromise) return;
+  const stored = new Response(res.clone().body, res);
+  stored.headers.set(HOT_PUBLIC_CACHED_AT_HEADER, String(Math.floor(Date.now() / 1000)));
+  stored.headers.set('Cache-Control', `public, max-age=${lifetime}`);
   ctx.waitUntil(
     cachePromise
-      .then(async (cache) => {
-        await Promise.all([
-          cache.put(freshCacheKey, freshResponse),
-          cache.put(staleCacheKey, staleResponse),
-        ]);
-      })
-      .catch((err) => {
-        console.warn('public hot cache: put failed', err);
-      }),
+      .then((cache) => cache.put(buildHotPublicCacheKey(req, origin), stored))
+      .catch((err) => console.warn('public hot cache: put failed', err)),
   );
 }
 
@@ -468,7 +419,7 @@ async function handlePublicHomepageArtifact(req: Request, env: Env): Promise<Res
       status: 200,
       headers: { 'Content-Type': 'application/json; charset=utf-8' },
     });
-    applyHomepageCacheHeaders(res, Math.min(60, stale.age));
+    applyHomepageCacheHeaders(res, stale.age);
     if (trace) {
       trace.setLabel('path', 'stale');
       trace.setLabel('age', stale.age);
@@ -503,7 +454,7 @@ async function handlePublicHomepage(
       status: 200,
       headers: { 'Content-Type': 'application/json; charset=utf-8' },
     });
-    applyHomepageCacheHeaders(res, Math.min(60, snapshot.age));
+    applyHomepageCacheHeaders(res, snapshot.age);
     if (trace) {
       trace.setLabel('path', 'snapshot');
       trace.setLabel('age', snapshot.age);
@@ -523,7 +474,7 @@ async function handlePublicHomepage(
       status: 200,
       headers: { 'Content-Type': 'application/json; charset=utf-8' },
     });
-    applyHomepageCacheHeaders(res, Math.min(60, stale.age));
+    applyHomepageCacheHeaders(res, stale.age);
     if (trace) {
       trace.setLabel('path', 'stale_snapshot');
       trace.setLabel('age', stale.age);
@@ -695,25 +646,45 @@ export async function handleFetch(
   request: Request,
   env: Env,
   ctx: ExecutionContext,
+  parsedUrl?: URL,
 ): Promise<Response> {
-  const originalUrl = new URL(request.url);
-  const normalizedRequest = normalizeApiRequestPath(request);
-  const url = new URL(normalizedRequest.url);
+  const originalUrl = parsedUrl ?? new URL(request.url);
+  // URL already supplies a canonical pathname for these exact endpoints.
+  // Encoded, repeated-slash and legacy paths still use the full normalizer.
+  const exactHotPath = HOT_PUBLIC_CACHE_PATHS.has(originalUrl.pathname);
+  const exactApiPath = exactHotPath || isCanonicalVersionedApiPathname(originalUrl.pathname);
+  const normalizedRequest = exactApiPath ? request : normalizeApiRequestPath(request);
+  const url = exactApiPath ? originalUrl : new URL(normalizedRequest.url);
   const origin = normalizedRequest.headers.get('Origin');
-  const hotPathname = canonicalHotPublicPathname(url.pathname);
-  const resolvedApiPath = resolveVersionedApiPathname(originalUrl.pathname);
+  const hotPathname = exactApiPath ? url.pathname : canonicalHotPublicPathname(url.pathname);
+  const resolvedApiPath = exactApiPath
+    ? { normalizedPathname: url.pathname, versionedPathname: url.pathname }
+    : resolveVersionedApiPathname(originalUrl.pathname);
   const fastMethodPathname = resolvedApiPath?.versionedPathname ?? url.pathname;
-  const fastGetOnlyPath = isGetOnlyPublicApiPath(fastMethodPathname);
-  const corsAllowedMethods = allowedMethodsForApiPath(fastMethodPathname);
+  const fastGetOnlyPath = exactHotPath || isGetOnlyPublicApiPath(fastMethodPathname);
+  const corsAllowedMethods = exactHotPath
+    ? 'GET, OPTIONS'
+    : allowedMethodsForApiPath(fastMethodPathname);
   const bypassPublicSharedCache = shouldBypassPublicSharedCaching(normalizedRequest, env);
   const shouldPrivatizePublicError =
     bypassPublicSharedCache && isVersionedPublicApiPath(fastMethodPathname);
+  const requestCacheControl = normalizedRequest.headers.get('Cache-Control') ?? '';
+  const noStoreRequested = /(?:^|,)\s*no-store(?:\s*(?:,|$))/i.test(requestCacheControl);
+  const revalidationRequested =
+    noStoreRequested ||
+    /(?:^|,)\s*(?:no-cache|max-age\s*=\s*0)(?:\s*(?:,|$))/i.test(requestCacheControl);
+  const compactLatencyPath =
+    !normalizedRequest.headers.has('X-Uptimer-Trace') &&
+    url.searchParams.has('format') &&
+    /^\/api\/v1\/public\/monitors\/[^/]+\/latency$/.test(hotPathname);
   const canUseHotPublicCache =
     normalizedRequest.method === 'GET' &&
+    !revalidationRequested &&
+    !hasAuthorizationHeaderValue(normalizedRequest) &&
     !bypassPublicSharedCache &&
-    isHotPublicCachePath(hotPathname);
+    (exactHotPath || compactLatencyPath || isHotPublicCachePath(hotPathname));
 
-  if (canUseHotPublicCache) {
+  if (canUseHotPublicCache && !revalidationRequested) {
     const cached = await matchHotPublicCache(normalizedRequest, origin);
     if (cached) {
       return cached;
@@ -748,6 +719,22 @@ export async function handleFetch(
   }
 
   try {
+    // All dynamic API work shares the site's coordinator CPU budget. Keep
+    // redirects, method/CORS handling and edge-cache hits at the public edge.
+    const coordinator = /^\/api\/v1\/(public|admin)(?:\/|$)/.test(hotPathname)
+      ? getSiteCoordinator(env)
+      : undefined;
+    if (coordinator) {
+      try {
+        const response = await coordinator.fetch(normalizedRequest);
+        if (canUseHotPublicCache) putHotPublicCache(ctx, normalizedRequest, origin, response);
+        return response;
+      } catch (error) {
+        if (normalizedRequest.method !== 'GET' && normalizedRequest.method !== 'HEAD')
+          throw new AppError(503, 'UNAVAILABLE', 'Coordinator unavailable');
+        console.warn('public coordinator read failed; reading D1', error);
+      }
+    }
     if (hotPathname === '/api/v1/public/homepage-artifact') {
       const routeRes = await handlePublicHomepageArtifact(normalizedRequest, env);
       const res = bypassPublicSharedCache
@@ -776,6 +763,24 @@ export async function handleFetch(
       if (canUseHotPublicCache) {
         putHotPublicCache(ctx, normalizedRequest, origin, response);
       }
+      return response;
+    }
+    if (compactLatencyPath) {
+      const { compactLatencyResponse } = await import('./routes/public-ui');
+      const routeRes = await compactLatencyResponse({
+        db: env.DB,
+        monitorId: hotPathname.split('/')[5],
+        range: url.searchParams.get('range') ?? undefined,
+        format: url.searchParams.get('format'),
+        includeHiddenMonitors: hasValidAdminToken(normalizedRequest, env),
+      });
+      if (!routeRes.headers.has('Cache-Control'))
+        routeRes.headers.set('Cache-Control', 'public, max-age=0, s-maxage=15, must-revalidate');
+      const res = bypassPublicSharedCache
+        ? applyPrivateNoStore(routeRes, normalizedRequest)
+        : routeRes;
+      const response = applyCorsHeaders(res, origin, 'GET, OPTIONS');
+      if (canUseHotPublicCache) putHotPublicCache(ctx, normalizedRequest, origin, response);
       return response;
     }
     if (hotPathname === '/api/v1/public/analytics/uptime') {

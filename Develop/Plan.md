@@ -6,6 +6,14 @@ Phased delivery plan from MVP to production. Each phase includes acceptance crit
 
 ---
 
+## Free Plan 性能重构（2026-11-03，Dev 后端与交互已验证）
+
+当前分支重建有界的新鲜数据发布、完整样本小时桶和浏览器缓存链路。实现、额度来源、测量与验收状态见 [Performance-Refactor.md](Performance-Refactor.md)。下方 Issue #24 是历史发布记录；其 CPU 结果不能代替本轮验收。
+
+验收同时要求：数据持续前进、完整历史与告警语义保持、弱网交互、普通 Worker 每次 CPU <10ms / DO <30s、D1 日读写和完整调用树预算。Main/Production 尚未发布此重构。
+
+---
+
 ## Post-release baseline — Issue #24 CPU closeout（2026-04-29）
 
 状态：已发布到 Main，并已同步 Dev。

@@ -1,5 +1,7 @@
 # API-Reference.md: Uptimer (Cloudflare Runtime + D1 + HTTP Calls)
 
+> 当前性能重构与 Free Plan 额度核对见 [Performance-Refactor.md](Performance-Refactor.md)；其中明确区分官方限制、本地证据与云端验收。
+
 目的：把 Uptimer 可能用到的「平台运行时 API / 数据库 API / 出站 HTTP/TCP 调用 / 内部 HTTP API」集中整理成一份可查阅的参考。
 
 来源说明：
@@ -15,7 +17,7 @@
 - 2. fetch：出站 HTTP 调用（监控 + webhook + 工具请求）
 - 3. TCP sockets：`cloudflare:sockets`（TCP 端口探测）
 - 4. D1：Workers Binding API（SQLite 语义）
-- 5. Durable Objects（可选，用于未来多地域探测）
+- 5. Durable Objects（站点协调；多地域探测仍为未来扩展）
 - 6. Web Crypto：Webhook 签名（HMAC-SHA256，可选）
 - 7. Workers Cache API：`caches.default`（可选，用于公共接口加速）
 - 8. Uptimer 内部 HTTP API（供前端调用；摘要）
@@ -469,7 +471,8 @@ Key conventions:
 
 - `public_snapshots.key`: `homepage` / `status` / `homepage:artifact`。
 - `public_snapshot_fragments.snapshot_key`: `homepage:envelope`、`homepage:monitors`、`status:envelope`、`status:monitors`、`homepage:artifact:monitors`、`monitor-runtime:updates`。
-- artifact rows use `updated_at` for public freshness, while the body/snapshot still validates against stored `generated_at`。
+- public freshness uses source `generated_at`; changing `updated_at` does not make old data fresh。
+- migration `0020` adds a SQLite-managed `body_revision` for the three public keys; readers compare it with timestamps so same-second body corrections cannot reuse stale isolate data。
 
 ### 4.8 Retention 清理（删除过期 check_results）
 
@@ -480,9 +483,11 @@ await env.DB.prepare('DELETE FROM check_results WHERE checked_at < ?').bind(cuto
 
 ---
 
-## 5) Durable Objects（可选，用于未来多地域探测）
+## 5) Durable Objects（站点协调；多地域探测仍为未来扩展）
 
-一种可选方案是使用 DO 做“指定 locationHint 的远程探测”，核心 API 点：
+本轮重构用一个 SQLite-backed `SiteCoordinator` 表示站点调度/发布单元，调用 `env.COORDINATOR.getByName('site')`；`scheduled()`、`refresh()` 为 RPC，现有 HTTP API 通过 stub fetch 保持请求/响应语义。普通 Worker 与 DO 的 CPU 预算分别验收，不在共享配置中设置 10ms CPU。理由与额度见 [Performance-Refactor.md](Performance-Refactor.md)。
+
+下方是未来“指定 locationHint 的远程探测”示意，不是当前实现：
 
 ```ts
 import { DurableObject } from 'cloudflare:workers';
@@ -509,7 +514,7 @@ const resp = await stub.getLocationAndStatus(monitorConfig);
 
 注意：
 
-- DO 属于 v1+ 扩展点；v0.1 不引入（避免复杂度）。
+- 多地域远程探测属于 v1+ 扩展点；当前单站点协调不改变探测地域产品语义。
 - 具体需要的 compatibility flags / RPC 形态以 Cloudflare DO 文档为准。
 
 ---
@@ -586,7 +591,9 @@ Public（无需鉴权）：
 - `GET /api/v1/public/homepage-artifact`
 - `GET /api/v1/public/status`
 - `GET /api/v1/public/monitors/:id/latency?range=24h`
+- 延迟接口的 `range_end_at` 为请求当前 unix 秒；普通及 compact 格式均覆盖至该秒，避免截去当前分钟的已完成记录。Cron 的探测时间仍按分钟对齐。公开 API 的内层缓存尊重请求 `no-cache` / `max-age=0` 重验证与 `no-store` 禁止共享缓存读写。
 - `GET /api/v1/public/monitors/:id/uptime?range=24h|7d|30d`
+- `GET /api/v1/public/monitors/:id/outages?day_start_at=<UTC unix seconds>&limit=200`：按完整 UTC 日期读取重叠故障，支持最近 90 个 UTC 日期和 `cursor` 分页。日期必须对齐 UTC 零点，不能在未来；省略日期时保留原来的最近 30 天行为。指定日期后以响应的 `range_start_at` / `range_end_at` 为准，`range` 字段保留兼容值。前端日期明细读取该日全部分页，不将 60 天界面的历史误限于最近 30 天或前 200 个故障。
 - `GET /api/v1/public/incidents?limit=20`
 - `GET /api/v1/public/maintenance-windows?limit=20`
 

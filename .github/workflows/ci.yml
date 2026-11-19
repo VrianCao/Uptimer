@@ -4,6 +4,7 @@ on:
   push:
     branches: ['**']
   pull_request:
+  workflow_call:
 
 permissions:
   contents: read
@@ -18,6 +19,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       # actions/setup-node with `cache: pnpm` expects pnpm to be on PATH.
       - uses: pnpm/action-setup@v4
@@ -34,6 +37,20 @@ jobs:
 
       - name: Lint
         run: pnpm -r lint
+
+      - name: Release operations tests
+        run: pnpm test:release
+
+      - name: Generated bindings
+        run: pnpm --filter @uptimer/worker types:check
+
+      - name: Immutable published migrations
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          base="$BASE_SHA"
+          if [[ -z "$base" || "$base" =~ ^0+$ ]]; then base="$(git rev-parse HEAD^)"; fi
+          node apps/worker/scripts/release-check.mjs migrations "$base"
 
       - name: Typecheck
         run: pnpm -r typecheck
@@ -134,3 +151,52 @@ jobs:
             apps/worker/coverage-cron
           if-no-files-found: ignore
           retention-days: 7
+
+  release-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: [free, paid]
+        hosting: [pages, single_worker]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '10.8.1'
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.node-version'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build frontend and validate bundled Worker without cloud access
+        run: node apps/worker/scripts/release-check.mjs '${{ matrix.profile }}' '${{ matrix.hosting }}'
+
+  migration-rehearsal:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '10.8.1'
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.node-version'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Rehearse legacy migrations, interruption and cold recovery locally
+        id: drill
+        run: node apps/worker/scripts/verify-migration-recovery.mjs full
+      - name: Rehearse guarded Apply batches and delayed legacy writers
+        run: node apps/worker/scripts/release-legacy-rehearsal.mjs
+      - name: Upload sanitized local recovery evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: migration-recovery-evidence
+          path: |
+            ${{ steps.drill.outputs.evidence_directory }}/summary.json
+            ${{ steps.drill.outputs.evidence_directory }}/runtime-summary.json
+          if-no-files-found: error
+          retention-days: 30

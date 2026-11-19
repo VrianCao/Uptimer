@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { memo, useMemo } from 'react';
 
 import type {
   HomepageHeartbeatStrip,
@@ -58,6 +58,7 @@ export interface MonitorCardProps {
   ratingLevel: UptimeRatingLevel;
   timeZone: string;
   onSelect: () => void;
+  onPrepare?: () => void;
   onDayClick: (dayStartAt: number) => void;
 }
 
@@ -115,10 +116,11 @@ function getHeartbeatLatencyStats(
   return { fastestMs, avgMs, slowestMs };
 }
 
-export function MonitorCard({
+export const MonitorCard = memo(function MonitorCard({
   monitor,
   ratingLevel,
   onSelect,
+  onPrepare,
   onDayClick,
   timeZone,
 }: MonitorCardProps) {
@@ -141,7 +143,7 @@ export function MonitorCard({
   const tier = uptime30d ? getUptimeTier(uptime30d.uptime_pct, ratingLevel) : null;
 
   return (
-    <Card hover onClick={onSelect} className="p-3 sm:p-4">
+    <Card hover onClick={onSelect} onPrepare={onPrepare} className="p-3 sm:p-4">
       {/* Header */}
       <div className="mb-2.5 sm:mb-3 flex items-start justify-between gap-2">
         <div className="min-w-0 flex items-center gap-2.5">
@@ -183,7 +185,7 @@ export function MonitorCard({
               {formatPct(uptime30d.uptime_pct)}
             </span>
           ) : (
-            <span className="text-xs text-slate-400 dark:text-slate-500">-</span>
+            <span className="text-xs text-slate-500 dark:text-slate-400">-</span>
           )}
           <Badge variant={monitor.status}>{statusLabel(monitor.status, t)}</Badge>
         </div>
@@ -191,7 +193,7 @@ export function MonitorCard({
 
       {/* Availability (60d) */}
       <div>
-        <div className="mb-2 text-[11px] text-slate-400 dark:text-slate-500">
+        <div className="mb-2 text-[11px] text-slate-500 dark:text-slate-400">
           {t('monitor_card.availability_30d')}
         </div>
         <UptimeBar30d
@@ -207,7 +209,7 @@ export function MonitorCard({
 
       {/* Heartbeat */}
       <div className="mt-2">
-        <div className="mb-2 text-[11px] text-slate-400 dark:text-slate-500">
+        <div className="mb-2 text-[11px] text-slate-500 dark:text-slate-400">
           {t('monitor_card.last_checks', { count: HEARTBEAT_BARS })}
         </div>
         <HeartbeatBar
@@ -222,22 +224,22 @@ export function MonitorCard({
       <div className="mt-2 sm:mt-2.5 flex flex-wrap items-baseline justify-between gap-y-1 text-xs text-slate-500 dark:text-slate-400">
         <div className="flex items-baseline gap-2 sm:gap-3 tabular-nums">
           <span>
-            <span className="text-slate-400 dark:text-slate-500">{t('monitor_card.fast')}</span>{' '}
+            <span className="text-slate-500 dark:text-slate-400">{t('monitor_card.fast')}</span>{' '}
             {formatLatency(latencyStats.fastestMs)}
           </span>
           <span>
-            <span className="text-slate-400 dark:text-slate-500">{t('monitor_card.avg')}</span>{' '}
+            <span className="text-slate-500 dark:text-slate-400">{t('monitor_card.avg')}</span>{' '}
             {formatLatency(latencyStats.avgMs)}
           </span>
           <span>
-            <span className="text-slate-400 dark:text-slate-500">{t('monitor_card.slow')}</span>{' '}
+            <span className="text-slate-500 dark:text-slate-400">{t('monitor_card.slow')}</span>{' '}
             {formatLatency(latencyStats.slowestMs)}
           </span>
         </div>
-        <span className="text-[11px] text-slate-400 dark:text-slate-500">
+        <span className="text-[11px] text-slate-500 dark:text-slate-400">
           {monitor.last_checked_at ? checkedAt : t('monitor_card.never_checked')}
         </span>
       </div>
     </Card>
   );
-}
+});

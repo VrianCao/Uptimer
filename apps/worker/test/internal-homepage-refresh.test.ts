@@ -141,7 +141,8 @@ function createEnv(
   return {
     DB: createFakeD1Database([
       {
-        match: 'select key, generated_at, updated_at, body_json from public_snapshots',
+        match:
+          /select key, generated_at, updated_at(?:, body_revision)?, body_json from public_snapshots/,
         all: () => [
           {
             key: 'homepage',
@@ -162,7 +163,8 @@ function createEnv(
         ],
       },
       {
-        match: 'select generated_at, updated_at, body_json from public_snapshots',
+        match:
+          /select generated_at, updated_at(?:, body_revision)?, body_json from public_snapshots/,
         first: () =>
           statusSnapshot
             ? {
@@ -470,7 +472,8 @@ describe('internal homepage refresh route', () => {
           ],
         },
         {
-          match: 'select key, generated_at, updated_at, body_json from public_snapshots',
+          match:
+            /select key, generated_at, updated_at(?:, body_revision)?, body_json from public_snapshots/,
           all: () => [
             {
               key: 'homepage',
@@ -481,7 +484,8 @@ describe('internal homepage refresh route', () => {
           ],
         },
         {
-          match: 'select generated_at, updated_at, body_json from public_snapshots',
+          match:
+            /select generated_at, updated_at(?:, body_revision)?, body_json from public_snapshots/,
           first: (args) => {
             const [key] = args as [string];
             if (key !== 'homepage') {
@@ -574,7 +578,8 @@ describe('internal homepage refresh route', () => {
           ],
         },
         {
-          match: 'select generated_at, updated_at, body_json from public_snapshots',
+          match:
+            /select generated_at, updated_at(?:, body_revision)?, body_json from public_snapshots/,
           first: (args) => {
             const [key] = args as [string];
             if (key !== 'homepage') {
@@ -1006,7 +1011,8 @@ describe('internal homepage refresh route', () => {
     const env = {
       DB: createFakeD1Database([
         {
-          match: 'select key, generated_at, updated_at, body_json from public_snapshots',
+          match:
+            /select key, generated_at, updated_at(?:, body_revision)?, body_json from public_snapshots/,
           all: () => [
             {
               key: 'homepage',
@@ -1017,7 +1023,8 @@ describe('internal homepage refresh route', () => {
           ],
         },
         {
-          match: 'select generated_at, updated_at, body_json from public_snapshots',
+          match:
+            /select generated_at, updated_at(?:, body_revision)?, body_json from public_snapshots/,
           first: (args) =>
             args[0] === 'monitor-runtime'
               ? {
@@ -1095,7 +1102,8 @@ describe('internal homepage refresh route', () => {
     const env = {
       DB: createFakeD1Database([
         {
-          match: 'select key, generated_at, updated_at, body_json from public_snapshots',
+          match:
+            /select key, generated_at, updated_at(?:, body_revision)?, body_json from public_snapshots/,
           all: () => [
             {
               key: 'homepage',
@@ -1106,7 +1114,8 @@ describe('internal homepage refresh route', () => {
           ],
         },
         {
-          match: 'select generated_at, updated_at, body_json from public_snapshots',
+          match:
+            /select generated_at, updated_at(?:, body_revision)?, body_json from public_snapshots/,
           first: () => null,
         },
       ]),
@@ -1154,7 +1163,8 @@ describe('internal homepage refresh route', () => {
     const env = {
       DB: createFakeD1Database([
         {
-          match: 'select key, generated_at, updated_at, body_json from public_snapshots',
+          match:
+            /select key, generated_at, updated_at(?:, body_revision)?, body_json from public_snapshots/,
           all: () => [
             {
               key: 'homepage',
@@ -1165,7 +1175,8 @@ describe('internal homepage refresh route', () => {
           ],
         },
         {
-          match: 'select generated_at, updated_at, body_json from public_snapshots',
+          match:
+            /select generated_at, updated_at(?:, body_revision)?, body_json from public_snapshots/,
           first: () => null,
         },
       ]),
@@ -1246,7 +1257,8 @@ describe('internal homepage refresh route', () => {
           ],
         },
         {
-          match: 'select key, generated_at, updated_at, body_json from public_snapshots',
+          match:
+            /select key, generated_at, updated_at(?:, body_revision)?, body_json from public_snapshots/,
           all: () => [
             {
               key: 'homepage',
@@ -1257,7 +1269,8 @@ describe('internal homepage refresh route', () => {
           ],
         },
         {
-          match: 'select generated_at, updated_at, body_json from public_snapshots',
+          match:
+            /select generated_at, updated_at(?:, body_revision)?, body_json from public_snapshots/,
           first: () => null,
         },
       ]),
@@ -1303,7 +1316,8 @@ describe('internal homepage refresh route', () => {
     const env = {
       DB: createFakeD1Database([
         {
-          match: 'select key, generated_at, updated_at, body_json from public_snapshots',
+          match:
+            /select key, generated_at, updated_at(?:, body_revision)?, body_json from public_snapshots/,
           all: () => [
             {
               key: 'homepage',
@@ -1324,7 +1338,8 @@ describe('internal homepage refresh route', () => {
           ],
         },
         {
-          match: 'select generated_at, updated_at, body_json from public_snapshots',
+          match:
+            /select generated_at, updated_at(?:, body_revision)?, body_json from public_snapshots/,
           first: () => null,
         },
       ]),

@@ -6,5 +6,16 @@
   "scripts": {
     "lint": "pnpm -w exec eslint --config eslint.config.mjs packages/shared",
     "typecheck": "pnpm -w exec tsc -p packages/shared/tsconfig.json --noEmit"
+  },
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./public-homepage": "./src/public-homepage.ts",
+    "./public-homepage-stored": "./src/public-homepage-stored.ts",
+    "./public-status": "./src/public-status.ts",
+    "./public-status-stored": "./src/public-status-stored.ts"
+  },
+  "dependencies": {
+    "zod": "3.25.76"
   }
 }

@@ -215,6 +215,11 @@ describe('pages homepage worker', () => {
     expect(html).toContain('__UPTIMER_INITIAL_HOMEPAGE__');
     expect(html).not.toContain('__UPTIMER_INITIAL_STATUS__');
     expect(html).toContain('artifact preload');
+    const head = html.slice(0, html.indexOf('</head>'));
+    expect(head).toContain('<title>Status Hub</title>');
+    expect(head).toContain('name="description" content="Production"');
+    expect(head).toContain('property="og:url" content="https://status.example.com/"');
+
     expect(put).toHaveBeenCalledTimes(1);
   });
 
@@ -248,6 +253,40 @@ describe('pages homepage worker', () => {
     expect(html).toContain('__UPTIMER_INITIAL_HOMEPAGE__');
     expect(html).toContain('\\u003c/script>\\u003cscript>globalThis.pwned=1\\u003c/script>');
     expect(html).not.toContain('</script><script>globalThis.pwned=1</script>');
+  });
+
+  it('keeps dollar sequences literal in both the browser and cache HTML', async () => {
+    const { put } = installDefaultCacheMock(() => undefined);
+    const env = makeEnv(
+      '<!doctype html><html><head><title>Old title</title></head><body><div id="root"></div></body></html>',
+    );
+    const title = 'Status $$ $& $\x60 $\x27';
+    const snapshot = { site_title: title };
+    const markup = '<div id="uptimer-preload"><main>$$ $&amp; $&#96; $&#39;</main></div>';
+    globalThis.fetch = vi.fn(async () =>
+      Response.json({
+        generated_at: Math.floor(Date.now() / 1000),
+        preload_html: markup,
+        snapshot_json: JSON.stringify(snapshot),
+        meta_title: title,
+        meta_description: title,
+      }),
+    ) as never;
+
+    const response = await pageWorker.fetch(
+      new Request('https://status.example.com/', { headers: { Accept: 'text/html' } }),
+      env,
+      { waitUntil: vi.fn() },
+    );
+    const cached = put.mock.calls[0]?.[1];
+    expect(cached).toBeDefined();
+    const html = await response.text();
+    expect(await cached?.text()).toBe(html);
+    expect(cached?.headers.get('Cache-Control')).not.toBe(response.headers.get('Cache-Control'));
+    expect(html).toContain('<title>Status $$ $&amp; $\x60 $&#39;</title>');
+    expect(html).toContain('content="Status $$ $&amp; $\x60 $&#39;"');
+    expect(html).toContain(markup + '<div id="root"></div>');
+    expect(html).toContain(`globalThis.__UPTIMER_INITIAL_HOMEPAGE__=${JSON.stringify(snapshot)};`);
   });
 
   it('rejects homepage artifacts whose preload_html contains executable markup', async () => {

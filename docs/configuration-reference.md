@@ -6,31 +6,33 @@ All configurable parameters for Uptimer, organized by context: deployment, runti
 
 ## 1. GitHub Actions (Deployment)
 
-Source: `.github/workflows/deploy.yml`
+[Deployment guide](deploy-github-actions.md)
 
 ### Secrets
 
-| Name                    | Required         | Description                                                                       |
-| ----------------------- | ---------------- | --------------------------------------------------------------------------------- |
-| `CLOUDFLARE_API_TOKEN`  | Yes              | Cloudflare API authentication (deploy Worker, manage D1; Pages when `pages` mode) |
-| `CLOUDFLARE_ACCOUNT_ID` | No (recommended) | Cloudflare Account ID; auto-resolved if not provided                              |
-| `UPTIMER_ADMIN_TOKEN`   | Yes              | Admin dashboard access key; written to Worker Secret `ADMIN_TOKEN` automatically  |
-| `VITE_ADMIN_PATH`       | No               | Override admin dashboard path (takes priority over variable)                      |
+| Name                   | Required | Description                                                                                             |
+| ---------------------- | -------- | ------------------------------------------------------------------------------------------------------- |
+| `CLOUDFLARE_API_TOKEN` | Yes      | Cloudflare API authentication (deploy Worker, manage D1; Pages when `pages` mode)                       |
+| `UPTIMER_ADMIN_TOKEN`  | Yes      | Admin key. Initializes the Worker secret `ADMIN_TOKEN` on first install. Upgrades use the existing key. |
+| `VITE_ADMIN_PATH`      | No       | Override admin dashboard path (takes priority over variable)                                            |
 
 ### Variables
 
-| Name                    | Default                   | Description                                                                                                                            |
-| ----------------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `UPTIMER_PREFIX`        | Repository name slug      | Unified resource name prefix                                                                                                           |
-| `UPTIMER_WORKER_NAME`   | `${UPTIMER_PREFIX}`       | Worker name                                                                                                                            |
-| `UPTIMER_PAGES_PROJECT` | `${UPTIMER_PREFIX}`       | Pages project name (`pages` mode only)                                                                                                 |
-| `UPTIMER_D1_NAME`       | `${UPTIMER_PREFIX}`       | D1 database name                                                                                                                       |
-| `UPTIMER_D1_BINDING`    | `DB`                      | D1 binding name in Worker                                                                                                              |
-| `UPTIMER_DEPLOY_MODE`   | `pages`                   | `pages` (Pages + Workers) or `single_worker` (SPA on Worker assets); `workflow_dispatch` input `deploy_mode` overrides for manual runs |
-| `UPTIMER_API_BASE`      | Auto-derived or `/api/v1` | API address (e.g. `https://my-worker.example.com/api/v1` or `/api/v1`); `pages` mode only                                              |
-| `UPTIMER_API_ORIGIN`    | Auto-derived              | API origin (e.g. `https://my-worker.example.com`); `/api/v1` appended automatically; `pages` mode only                                 |
-| `VITE_ADMIN_PATH`       | —                         | Admin dashboard path (overridden by Secret if set)                                                                                     |
-| `UPTIMER_ADMIN_PATH`    | —                         | Fallback variable for `VITE_ADMIN_PATH`                                                                                                |
+| Name                      | Default                                 | Description                                                                                                                            |
+| ------------------------- | --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `CLOUDFLARE_ACCOUNT_ID`   | Detected                                | Set when the API cannot identify a unique account. Also accepted as a secret.                                                          |
+| `UPTIMER_PREFIX`          | Repository name slug                    | Unified resource name prefix                                                                                                           |
+| `UPTIMER_WORKER_NAME`     | `${UPTIMER_PREFIX}`                     | Worker name                                                                                                                            |
+| `UPTIMER_PAGES_PROJECT`   | `${UPTIMER_PREFIX}`                     | Pages project name (`pages` mode only)                                                                                                 |
+| `UPTIMER_D1_NAME`         | Bound database name or resource prefix  | Choose the first-install name or verify the detected name during an upgrade.                                                           |
+| `UPTIMER_D1_ID`           | From the existing Worker’s `DB` binding | Required to resume an install with D1 but no Worker. Also accepted to assert a specific UUID.                                          |
+| `UPTIMER_WORKER_URL`      | Detected                                | Worker HTTPS origin. Set for a custom domain or when workers.dev is disabled.                                                          |
+| `UPTIMER_DEPLOY_MODE`     | `pages`                                 | `pages` (Pages + Workers) or `single_worker` (SPA on Worker assets); `workflow_dispatch` input `deploy_mode` overrides for manual runs |
+| `UPTIMER_RUNTIME_PROFILE` | `free`                                  | `free`: site DO + D1; `paid`: direct Worker + D1 with 30s CPU. See [profiles](../Develop/Runtime-Profiles.md); independent of hosting. |
+| `UPTIMER_API_BASE`        | Auto-derived or `/api/v1`               | API address (e.g. `https://my-worker.example.com/api/v1` or `/api/v1`); `pages` mode only                                              |
+| `UPTIMER_API_ORIGIN`      | Auto-derived                            | API origin (e.g. `https://my-worker.example.com`); `/api/v1` appended automatically; `pages` mode only                                 |
+| `VITE_ADMIN_PATH`         | —                                       | Admin dashboard path (overridden by Secret if set)                                                                                     |
+| `UPTIMER_ADMIN_PATH`      | —                                       | Fallback variable for `VITE_ADMIN_PATH`                                                                                                |
 
 > **API address (`pages` mode)**: Usually no configuration needed — the workflow detects the Worker URL automatically. Set `UPTIMER_API_BASE` or `UPTIMER_API_ORIGIN` only if the API is on a custom domain. Both accept the same information in different formats; setting one is enough. Pages also proxies `/api/*` via `apps/web/public/_worker.js`.
 >
@@ -46,7 +48,7 @@ Source: `.github/workflows/deploy.yml`
 
 ### Environment Variables
 
-Source: `apps/worker/wrangler.toml` and `apps/worker/src/env.ts`
+[Deployment guide](deploy-github-actions.md)
 
 | Name                          | Default | Description                                    |
 | ----------------------------- | ------- | ---------------------------------------------- |
@@ -62,7 +64,7 @@ Base `apps/worker/wrangler.toml` does not include an `[assets]` block so local `
 
 ## 3. Web Build
 
-Source: `apps/web/.env.example`
+[Deployment guide](deploy-github-actions.md)
 
 | Name              | Default   | Description                        |
 | ----------------- | --------- | ---------------------------------- |
@@ -73,7 +75,7 @@ Source: `apps/web/.env.example`
 
 ## 4. Runtime Settings (D1)
 
-Source: `apps/worker/src/schemas/settings.ts`
+[Deployment guide](deploy-github-actions.md)
 
 Configurable via Admin API: `PATCH /api/v1/admin/settings`
 

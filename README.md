@@ -22,7 +22,7 @@ English | **[中文](README.zh-CN.md)**
 
 - **Zero ops** — No servers, containers, or databases to manage. Runs entirely on Cloudflare's free/paid tiers.
 - **Edge-native** — Monitoring probes run from Cloudflare Workers; your status page is served from the CDN edge.
-- **One-click deploy** — Push to `main` and GitHub Actions handles everything: D1 migrations, Worker API, and the Pages frontend (optional single-Worker mode available).
+- **Reviewed deploy** — GitHub Actions runs CI and builds a package first; manual plan/apply deploys the same reviewed package to Workers + Pages or Workers Assets.
 - **Full-featured** — HTTP/TCP checks, incident management, maintenance windows, webhook notifications, admin dashboard.
 
 ## Features
@@ -102,71 +102,35 @@ Admin ─────────►│  Workers (Hono API)                     
 | CI/CD           | GitHub Actions                                                      |
 | Package Manager | pnpm (monorepo)                                                     |
 
-## Quick Deploy (5 Steps)
+## Deploy Uptimer
 
-Deploy your own Uptimer instance without touching any code or config files:
+1. Fork this repository and enable workflows in your fork’s **Actions** tab.
+2. Add `CLOUDFLARE_API_TOKEN` and `UPTIMER_ADMIN_TOKEN` as repository secrets.
+3. In **Actions → Deploy to Cloudflare**, run `plan`. Review the summary, then run `apply` at the same commit. Open your status page from the completed run.
 
-### Step 1 — Fork
+[v0.2.0 deployment and upgrade guide](docs/v0.2.0-upgrade.md) · [General deployment guide](docs/deploy-github-actions.md) · [Upgrade and recovery](docs/upgrade-and-recovery.md)
 
-Click the **Fork** button at the top-right of this repository to create your own copy.
+Use **Sync fork** to update your code. Cloudflare deployment remains manual.
 
-### Step 2 — Create a Cloudflare API Token
+---
 
-1. Go to [Cloudflare Dashboard → API Tokens](https://dash.cloudflare.com/profile/api-tokens)
-2. Click **Create Token** → use the **Edit Cloudflare Workers** template
-3. Add the following permissions:
-   - `Account / Cloudflare Pages / Edit`
-   - `Account / D1 / Edit`
-   - `Account / Account Settings / Read`
-4. Copy the generated token
+## Upgrade to v0.2.0 with an agent
 
-> `Cloudflare Pages / Edit` is only required for the default `pages` deploy mode. Single-worker mode (`UPTIMER_DEPLOY_MODE=single_worker`) does not need Pages permission.
+Copy this prompt into an agent that can access your GitHub repository. The agent can check your setup or run the workflow with your approval.
 
-### Step 3 — Add GitHub Secrets
+<details>
+<summary>Copy the upgrade prompt</summary>
 
-Go to your forked repo → **Settings** → **Secrets and variables** → **Actions** → **New repository secret**, and add:
+```text
+Help me upgrade my own Uptimer site to v0.2.0. Use plain, concise language. Tell me what is running now, what comes next, and what my site may experience. Ask one question at a time when the answer affects the next step. Look up anything you can verify yourself.
 
-| Secret Name             | Value                                                                                                         |  Required   |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------- | :---------: |
-| `CLOUDFLARE_API_TOKEN`  | Token from Step 2                                                                                             |     Yes     |
-| `UPTIMER_ADMIN_TOKEN`   | Any strong string (this is your admin dashboard password)                                                     |     Yes     |
-| `CLOUDFLARE_ACCOUNT_ID` | Your [Cloudflare Account ID](https://developers.cloudflare.com/fundamentals/setup/find-account-and-zone-ids/) | Recommended |
+1. Start with read-only checks. Identify my fork, target branch and commit, the published upstream version, Actions status, custom deployment triggers, and the latest deployment outcome. Read docs/v0.2.0-upgrade.md at the target version and inspect the actual deploy.yml. Determine whether this is a first install, an existing upgrade, an interrupted Apply, or a source sync awaiting deployment. Use available configuration and Plan to verify the Worker, D1, hosting mode, and free/paid runtime profile. Label unknowns.
+2. Give me the shortest path. If a sync is needed, tell me whether custom workflows could deploy on push or whether there is a conflict. Keep the current hosting mode and runtime profile for an upgrade. Free is the default and Plan usually detects the account and D1. Ask only for missing settings or permissions and tell me where to fix them. Direct me to GitHub Secrets for credentials and keep their values out of chat and logs.
+3. Act only on the steps I authorize, in my fork on the agreed branch. Use GitHub's Deploy to Cloudflare Action. Run the read-only Plan first and give me the source commit, account, Worker, D1, Pages project if applicable, pending migrations, and expected maintenance impact. After I authorize Apply for that plan, dispatch it at the same commit with plan_run and plan_hash. Recheck any changed commit or target. Stop at BLOCKED and explain the reason.
+4. If the target version is already live and healthy, tell me. If you start the Action, watch it through completion. Give me a one-line result, the run link, and the live site link. If Apply stopped during maintenance, resume the original run within the authorization I gave you. Explain the impact and obtain authorization for conflict resolution, configuration changes, database resets, or restores. If you lack access to act, give me the GitHub clicks and the values to enter for the current step.
+```
 
-Optional repository **variable** (not secret): `UPTIMER_DEPLOY_MODE` = `pages` (default) or `single_worker`.
-
-### Step 4 — Run GitHub Actions
-
-Go to **Actions** → **Deploy to Cloudflare** → **Run workflow** (or simply push a commit to `main`/`master`).
-
-The workflow automatically:
-
-- Creates the D1 database and runs migrations
-- Deploys the Worker (API + cron-based monitoring)
-- Default mode: builds the frontend (Vite) and deploys it to Cloudflare Pages
-- Single-worker mode: builds the frontend and uploads it with the Worker as static assets
-- Injects the admin token as a Worker secret
-
-### Step 5 — Visit Your Status Page
-
-Once the workflow succeeds (usually ~2 min for first deploy):
-
-**Default (`pages` mode):**
-
-- **Status page** → `https://<your-pages-project>.pages.dev`
-- **Admin dashboard** → `https://<your-pages-project>.pages.dev/admin`
-- **API** → `https://<your-worker-name>.workers.dev/api/v1/public/status`
-
-**Optional (`single_worker` mode):**
-
-- **Status page** → `https://<your-worker-name>.workers.dev`
-- **Admin dashboard** → `https://<your-worker-name>.workers.dev/admin`
-- **API** → `https://<your-worker-name>.workers.dev/api/v1/public/status`
-
-Log in to the admin dashboard with the `UPTIMER_ADMIN_TOKEN` you set, and start adding monitors.
-
-> **Staying up to date** — Since you deploy from your own fork, you can [sync with upstream](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/working-with-forks/syncing-a-fork) at any time. The deploy workflow will run automatically after each sync.
-
-> For advanced options (custom domain, resource naming, admin path), see the [Deployment Guide](docs/deploy-github-actions.md).
+</details>
 
 ---
 
@@ -210,6 +174,7 @@ Default addresses:
 
 | Document                                                                                                   | Description                                                |
 | ---------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| [v0.2.0 deployment and upgrade guide](docs/v0.2.0-upgrade.md) ([中文](docs/v0.2.0-upgrade.zh-CN.md))       | Release overview, installation, upgrades, and recovery     |
 | [Deployment Guide](docs/deploy-github-actions.md) ([中文](docs/deploy-github-actions.zh-CN.md))            | Full GitHub Actions deployment walkthrough                 |
 | [Configuration Reference](docs/configuration-reference.md) ([中文](docs/configuration-reference.zh-CN.md)) | All configurable parameters (secrets, variables, settings) |
 | [Notification System](docs/notifications.md) ([中文](docs/notifications.zh-CN.md))                         | Webhook setup, templates, signatures, troubleshooting      |

@@ -14,7 +14,13 @@ import { runRetention } from '../src/scheduler/retention';
 import { createFakeD1Database, type FakeD1QueryHandler } from './helpers/fake-d1';
 
 function createEnv(handlers: FakeD1QueryHandler[]): Env {
-  return { DB: createFakeD1Database(handlers) } as unknown as Env;
+  return {
+    DB: createFakeD1Database([
+      ...handlers,
+      { match: 'check_result_buckets', run: () => 0 },
+      { match: 'update monitor_state', run: () => 0 },
+    ]),
+  } as unknown as Env;
 }
 
 describe('scheduler/retention', () => {

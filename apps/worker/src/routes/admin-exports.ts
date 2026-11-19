@@ -126,6 +126,8 @@ adminExportsRoutes.get('/monitors/:id/check-results.csv', async (c) => {
       SELECT checked_at, status, latency_ms, http_status, error, location, attempt
       FROM check_results
       WHERE monitor_id = ?1
+        AND storage_shard = CAST((?1 - 1) / 4 AS INTEGER)
+        AND bucket_start_at >= (?2) - 3599
         AND checked_at >= ?2
         AND checked_at < ?3
       ORDER BY checked_at
@@ -216,16 +218,15 @@ adminExportsRoutes.get('/incidents.csv', async (c) => {
 
   const monitorIdsByIncidentId = new Map<number, number[]>();
   if (incidentIds.length > 0) {
-    const placeholders = incidentIds.map((_, idx) => `?${idx + 1}`).join(', ');
     const { results: linkRows } = await c.env.DB.prepare(
       `
         SELECT incident_id, monitor_id
         FROM incident_monitors
-        WHERE incident_id IN (${placeholders})
+        WHERE incident_id IN (SELECT value FROM json_each(?1))
         ORDER BY incident_id, monitor_id
       `,
     )
-      .bind(...incidentIds)
+      .bind(JSON.stringify(incidentIds))
       .all<{ incident_id: number; monitor_id: number }>();
 
     for (const r of linkRows ?? []) {

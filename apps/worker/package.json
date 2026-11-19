@@ -9,19 +9,23 @@
     "lint": "pnpm -w exec eslint --config eslint.config.mjs apps/worker",
     "typecheck": "pnpm -w exec tsc -p apps/worker/tsconfig.json --noEmit",
     "test": "vitest run --config vitest.config.ts --coverage",
-    "test:cron": "vitest run --config vitest.config.ts test/scheduled.test.ts --coverage --coverage.include=src/scheduler/scheduled.ts --coverage.reportsDirectory=coverage-cron --coverage.thresholds.lines=80 --coverage.thresholds.functions=100 --coverage.thresholds.statements=80 --coverage.thresholds.branches=55",
+    "test:cron": "vitest run --config vitest.config.ts test/scheduled.test.ts test/free-plan-scheduler-integration.test.ts test/paid-scheduler-lanes.test.ts --coverage --coverage.include=src/scheduler/scheduled.ts --coverage.reportsDirectory=coverage-cron --coverage.thresholds.lines=80 --coverage.thresholds.functions=100 --coverage.thresholds.statements=80 --coverage.thresholds.branches=55",
     "test:watch": "vitest --config vitest.config.ts",
     "bench:scheduler": "node ./scripts/bench-scheduler.mjs",
     "bench:homepage": "node ./node_modules/vitest/vitest.mjs run --config vitest.bench.config.ts test/homepage-snapshot.bench.ts --reporter=dot",
     "migrate:local": "CI=1 wrangler d1 migrations apply uptimer --local",
     "init:local": "pnpm migrate:local && pnpm seed:local",
-    "seed:local": "wrangler d1 execute uptimer --local --file ./scripts/seed-local.sql"
+    "seed:local": "wrangler d1 execute uptimer --local --file ./scripts/seed-local.sql",
+    "types": "wrangler types src/worker-configuration.d.ts --env-interface WorkerBindings --include-runtime false --strict-vars false --env-file bindings.env",
+    "types:check": "node scripts/check-bindings.mjs",
+    "config:paid": "node scripts/configure-runtime-profile.mjs paid wrangler.toml wrangler.paid.toml"
   },
   "dependencies": {
     "@uptimer/db": "workspace:*",
     "hono": "^4.0.0",
     "p-limit": "^6.0.0",
-    "zod": "^3.0.0"
+    "zod": "^3.0.0",
+    "@uptimer/shared": "workspace:*"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.0.0",

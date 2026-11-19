@@ -1,187 +1,36 @@
-# Deployment Guide (GitHub Actions)
+# Deploy Uptimer with GitHub Actions
 
 English | [中文](deploy-github-actions.zh-CN.md)
 
-Deploy Uptimer to Cloudflare using the built-in GitHub Actions workflow.
+Fork Uptimer on GitHub and enable workflows in your fork's **Actions** tab. Use **Sync fork** to receive updates. Start each deployment yourself under **Actions → Deploy to Cloudflare**.
 
-## Prerequisites
+## 1. Add two secrets
 
-- A GitHub repository (default branch: `master` or `main`)
-- A Cloudflare account
-- A Cloudflare API Token with deployment permissions
-- Access to repository Settings > Secrets and Variables
+In your fork, open **Settings → Secrets and variables → Actions → New repository secret**.
 
-## Workflow Overview
+| Secret                 | What to enter                                                                                                                                                                                                                                      |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CLOUDFLARE_API_TOKEN` | In [Cloudflare API Tokens](https://dash.cloudflare.com/profile/api-tokens), use the **Edit Cloudflare Workers** template, scope it to the deployment account, and add **D1 / Edit**. Default Pages hosting also needs **Cloudflare Pages / Edit**. |
+| `UPTIMER_ADMIN_TOKEN`  | For a new site, generate a strong random key. For an upgrade, enter the existing admin key. Deployment preserves the Worker secret that is already configured.                                                                                     |
 
-**Trigger**: Push to `main`/`master`, or manual `workflow_dispatch`
+Workers + Pages is the default. To host the frontend and API on one Worker, set the repository variable `UPTIMER_DEPLOY_MODE=single_worker` before your first install. For upgrades, keep the current hosting mode.
 
-**File**: `.github/workflows/deploy.yml`
+The runtime profile defaults to `free` when the repository variable is unset. If you have Cloudflare Workers Paid and want the `paid` runtime profile, set `UPTIMER_RUNTIME_PROFILE=paid`. Keep your current profile when upgrading and retain the variable if your site already uses `paid`. See the [configuration reference](configuration-reference.md) for custom names, domains, and admin paths.
 
-**Deploy modes** (repository variable `UPTIMER_DEPLOY_MODE`, or `workflow_dispatch` input `deploy_mode`):
+## 2. Generate a plan
 
-| Mode            | Default | What gets deployed                                            |
-| --------------- | ------- | ------------------------------------------------------------- |
-| `pages`         | Yes     | Worker (API + cron) + Cloudflare Pages SPA                    |
-| `single_worker` | No      | One Worker serving SPA static assets + API (no Pages project) |
+Go to **Actions → Deploy to Cloudflare → Run workflow**, choose the branch to deploy, and select `release_action=plan`. Choose `operation=install` for a new site or `upgrade` for an existing site. The workflow provisions resources on first install.
 
-Priority for manual runs: `workflow_dispatch` input `deploy_mode` > repository variable `UPTIMER_DEPLOY_MODE` > default `pages`. The input defaults to `auto`, which defers to the repository variable.
+In the completed plan's **Summary**, check the account, Worker, database, Pages project if applicable, and pending migrations. The plan only reads cloud data. If it reports **BLOCKED**, follow the reason in the summary. Upgrading a supported `0014` database temporarily pauses probes and admin writes. The Action handles the maintenance window and recovery. See [upgrade and recovery](upgrade-and-recovery.md).
 
-> **Deploy mode notes**:
->
-> - **Preload behavior**: In `pages` mode, the Pages proxy (`apps/web/public/_worker.js`) preloads and injects homepage snapshot data into the initial HTML for faster initial render. In `single_worker` mode, there is no HTML preload injection; the status page renders after the SPA fetches `/api/v1/public/homepage` on load.
-> - **Switching modes**: If switching an existing deployment from `pages` to `single_worker`, the existing Pages project remains live in Cloudflare and must be deleted or redirected manually to avoid serving outdated versions.
+## 3. Apply and open the site
 
-**Steps (in order)**:
+Run the workflow again at the same source commit with `release_action=apply`. Keep the same `operation` and hosting mode. Copy **Plan run ID** and **Plan SHA-256** from the plan summary into `plan_run` and `plan_hash`. Generate a new plan if the commit changes. Apply deploys the reviewed build.
 
-1. Install Node + pnpm + dependencies
-2. Resolve Cloudflare Account ID (reads from config, falls back to API query)
-3. Compute resource names (Worker / Pages / D1) and validate `UPTIMER_DEPLOY_MODE`
-4. Check or create D1 database, inject real `database_id` into temp `wrangler.ci.toml`
-5. Inject Worker `[assets]` into temp `wrangler.ci.toml` if `single_worker` mode
-6. Run remote D1 migrations
-7. Deploy the Worker
-   - `pages`: API-only Worker (default base config without `[assets]`)
-   - `single_worker`: SPA + API uploaded together via injected `[assets]`
-8. (Optional) Write Worker Secret: `ADMIN_TOKEN`
-9. **pages mode only**: resolve API base/origin, build Vite SPA, create/deploy Pages project, set Pages secret `UPTIMER_API_ORIGIN`
-
-## Configuration
-
-### Required Secrets
-
-| Name                   | Required | Description                                                              |
-| ---------------------- | -------- | ------------------------------------------------------------------------ |
-| `CLOUDFLARE_API_TOKEN` | Yes      | Cloudflare API authentication                                            |
-| `UPTIMER_ADMIN_TOKEN`  | Yes      | Admin dashboard access key; auto-injected as Worker `ADMIN_TOKEN` secret |
-
-> Token needs `Account / Cloudflare Pages / Edit` for the default `pages` mode. Single-worker mode does not require Pages permissions.
-
-### Recommended Secrets
-
-| Name                    | Description                     |
-| ----------------------- | ------------------------------- |
-| `CLOUDFLARE_ACCOUNT_ID` | Avoids auto-resolution failures |
-
-### Optional Variables
-
-Override default naming or switch deploy mode:
-
-| Name                                     | Default                   | Description                                                                                            |
-| ---------------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `UPTIMER_PREFIX`                         | Repository name slug      | Unified resource name prefix                                                                           |
-| `UPTIMER_WORKER_NAME`                    | `${UPTIMER_PREFIX}`       | Worker name                                                                                            |
-| `UPTIMER_PAGES_PROJECT`                  | `${UPTIMER_PREFIX}`       | Pages project name (`pages` mode only)                                                                 |
-| `UPTIMER_D1_NAME`                        | `${UPTIMER_PREFIX}`       | D1 database name                                                                                       |
-| `UPTIMER_D1_BINDING`                     | `DB`                      | D1 binding name in Worker                                                                              |
-| `UPTIMER_DEPLOY_MODE`                    | `pages`                   | `pages` or `single_worker`; also available as `workflow_dispatch` input `deploy_mode`                  |
-| `UPTIMER_API_BASE`                       | Auto-derived or `/api/v1` | API address (e.g. `https://my-worker.example.com/api/v1` or `/api/v1`); `pages` mode only              |
-| `UPTIMER_API_ORIGIN`                     | Auto-derived              | API origin (e.g. `https://my-worker.example.com`); `/api/v1` appended automatically; `pages` mode only |
-| `VITE_ADMIN_PATH` / `UPTIMER_ADMIN_PATH` | —                         | Custom admin dashboard path                                                                            |
-
-> If no naming variables are set, the workflow uses the repository name slug as the default prefix. This keeps names stable across forks.
->
-> **API address (`pages` mode)**: the SPA is built with `VITE_API_BASE` (defaults to `<worker>/api/v1`). The Pages advanced-mode worker also proxies `/api/*` to the Worker when `UPTIMER_API_ORIGIN` is set.
->
-> **API address (`single_worker` mode)**: no configuration needed — frontend and API share the Worker origin; the SPA calls `/api/v1` relatively.
-
-## Cloudflare Token Permissions
-
-The workflow creates and updates multiple resources. Your token needs:
-
-- Workers Scripts: deploy and manage secrets
-- Cloudflare Pages: create projects and deploy (default `pages` mode)
-- D1: query, create, and migrate databases
-- Account: read account info (for account ID resolution)
-
-## First Deployment
-
-1. Add `CLOUDFLARE_API_TOKEN` to repository secrets
-2. Add `UPTIMER_ADMIN_TOKEN` (admin dashboard access key)
-3. Add `CLOUDFLARE_ACCOUNT_ID` (recommended)
-4. (Optional) Set `UPTIMER_PREFIX` to avoid name collisions
-5. (Optional) Set variable `UPTIMER_DEPLOY_MODE=single_worker`, or choose `deploy_mode` when running the workflow manually
-6. Push to `master`/`main`, or manually trigger "Deploy to Cloudflare"
-7. Once the workflow succeeds, note the URLs from the logs:
-   - `pages`: status page on `*.pages.dev`, API on `*.workers.dev`
-   - `single_worker`: status page, admin, and API on the Worker URL
-
-> **Manual `wrangler deploy`**: `apps/worker/wrangler.toml` contains no `[assets]` block, so a direct `wrangler deploy` deploys an API-only Worker. For `single_worker` deployments, use GitHub Actions (which injects `[assets]` into `wrangler.ci.toml`) or add `[assets]` manually.
-
-## Post-deployment Verification
-
-### Check the Status Page
-
-- `pages`: visit `https://<pages-project>.pages.dev` (admin at `/admin`)
-- `single_worker`: visit `https://<worker-name>.workers.dev` (admin at `/admin`)
-
-### Test the API
-
-```bash
-# Public API (single_worker: use the same host as the status page)
-curl https://<worker-url>/api/v1/public/status
-
-# Admin API
-curl https://<worker-url>/api/v1/admin/monitors \
-  -H "Authorization: Bearer <YOUR_ADMIN_TOKEN>"
-```
-
-### Verify the Database (Optional)
-
-Use Wrangler to check that key tables exist in D1:
-
-```
-monitors, monitor_state, check_results, outages, settings
-```
+Once deployment and verification pass, open your status page from the **Summary**, go to `/admin` (or your custom path), and sign in with `UPTIMER_ADMIN_TOKEN`.
 
 ## Troubleshooting
 
-### "Resolve Cloudflare Account ID" fails
-
-- Verify `CLOUDFLARE_API_TOKEN` is set and valid
-- Confirm the token has account read permissions
-- Set `CLOUDFLARE_ACCOUNT_ID` explicitly to skip auto-resolution
-
-### D1 migration fails
-
-- Check that `UPTIMER_D1_BINDING` matches the binding in `apps/worker/wrangler.toml`
-- Verify migration SQL is idempotent and syntactically correct
-
-### Static assets or SPA routes return 404 (`single_worker` mode)
-
-- Confirm the `Build Web (Vite, single_worker)` step produced `apps/web/dist` before `Deploy Worker`
-- Confirm the CI-generated `wrangler.ci.toml` still has the `[assets]` block (CI injects it when `UPTIMER_DEPLOY_MODE=single_worker`)
-- Deep links like `/admin` rely on SPA fallback; in local dev use the Vite server on `:5173`
-
-### Status page loads but API calls fail (`pages` mode)
-
-- Confirm the Pages project exists and `Deploy Pages` ran after the Worker deploy
-- Check that Pages secret `UPTIMER_API_ORIGIN` points at the Worker origin (workflow sets this best-effort)
-- Confirm `apps/web/public/_worker.js` is present in the built Pages output (Vite copies `public/`)
-
-### Admin returns 401
-
-- Confirm `UPTIMER_ADMIN_TOKEN` was written to the Worker Secret
-- Check that the token in the browser's localStorage matches the secret
-
-## Rollback
-
-Prefer redeploying the last known-good commit:
-
-1. Find the last green deployment commit
-2. Re-trigger "Deploy to Cloudflare" from that commit
-3. If schema changes are involved, add a new forward-compatible migration rather than rolling back
-
-> D1 migrations should not be rolled back destructively. If a remote migration was already applied, fix forward with a new migration.
-
-## Relationship to CI
-
-| Workflow     | Purpose                             |
-| ------------ | ----------------------------------- |
-| `ci.yml`     | Quality gate: lint, typecheck, test |
-| `deploy.yml` | Production release                  |
-
-Recommended branch strategy:
-
-- PRs must pass CI before merging
-- `master`/`main` only receives reviewed changes
-- Releases are triggered automatically on push — no manual drift
+- **Cloudflare account could not be identified.** If the API cannot list accounts or returns multiple accounts, add the [`CLOUDFLARE_ACCOUNT_ID`](https://developers.cloudflare.com/fundamentals/setup/find-account-and-zone-ids/) repository variable and plan again. A single account returned by the API is used automatically.
+- **Existing Worker could not be found.** Check your branch and `UPTIMER_WORKER_NAME`. The live Worker's `DB` binding identifies its database. If a first install created D1 before the Worker deployed, verify the database UUID against the receipt, set `UPTIMER_D1_ID`, and generate an `upgrade` plan.
+- **Pages failed after Worker deployed, or verification failed.** Check the failed run's **`uptimer-release-receipt`** and follow [upgrade and recovery](upgrade-and-recovery.md). Plan artifacts are kept for 30 days. Teams can add reviewers to the **`cloudflare-release`** environment for an approval step after manually starting apply.

@@ -6,31 +6,33 @@ Uptimer 所有可配置参数，按部署时、运行时、本地开发分类。
 
 ## 1. GitHub Actions（部署时）
 
-来源：`.github/workflows/deploy.yml`
+[部署指南](deploy-github-actions.zh-CN.md)
 
 ### Secrets
 
-| 名称                    | 必需       | 说明                                                              |
-| ----------------------- | ---------- | ----------------------------------------------------------------- |
-| `CLOUDFLARE_API_TOKEN`  | 是         | Cloudflare API 认证（部署 Worker、管理 D1；pages 模式还需 Pages） |
-| `CLOUDFLARE_ACCOUNT_ID` | 否（推荐） | Cloudflare Account ID；未提供时工作流尝试自动解析                 |
-| `UPTIMER_ADMIN_TOKEN`   | 是         | 管理面板访问密钥；自动写入 Worker Secret `ADMIN_TOKEN`            |
-| `VITE_ADMIN_PATH`       | 否         | 覆盖管理后台路径（优先级高于 Variable）                           |
+| 名称                   | 必需 | 说明                                                                 |
+| ---------------------- | ---- | -------------------------------------------------------------------- |
+| `CLOUDFLARE_API_TOKEN` | 是   | Cloudflare API 认证（部署 Worker、管理 D1；pages 模式还需 Pages）    |
+| `UPTIMER_ADMIN_TOKEN`  | 是   | 管理密钥。首装初始化 Worker Secret `ADMIN_TOKEN`，升级沿用现有密钥。 |
+| `VITE_ADMIN_PATH`      | 否   | 覆盖管理后台路径（优先级高于 Variable）                              |
 
 ### Variables
 
-| 名称                    | 默认值               | 说明                                                                                                        |
-| ----------------------- | -------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `UPTIMER_PREFIX`        | 仓库名 slug          | 统一资源名前缀                                                                                              |
-| `UPTIMER_WORKER_NAME`   | `${UPTIMER_PREFIX}`  | Worker 名称                                                                                                 |
-| `UPTIMER_PAGES_PROJECT` | `${UPTIMER_PREFIX}`  | Pages 项目名（仅 `pages` 模式）                                                                             |
-| `UPTIMER_D1_NAME`       | `${UPTIMER_PREFIX}`  | D1 数据库名                                                                                                 |
-| `UPTIMER_D1_BINDING`    | `DB`                 | Worker 中 D1 binding 名称                                                                                   |
-| `UPTIMER_DEPLOY_MODE`   | `pages`              | `pages`（Pages + Workers）或 `single_worker`（SPA 挂 Worker assets）；手动触发可用输入项 `deploy_mode` 覆盖 |
-| `UPTIMER_API_BASE`      | 自动推导或 `/api/v1` | 完整 API 地址（如 `https://my-worker.example.com/api/v1` 或 `/api/v1`）；仅 `pages` 模式                    |
-| `UPTIMER_API_ORIGIN`    | 自动推导             | API 域名来源（如 `https://my-worker.example.com`，自动追加 `/api/v1`）；仅 `pages` 模式                     |
-| `VITE_ADMIN_PATH`       | —                    | 管理后台路径（可被 Secret 覆盖）                                                                            |
-| `UPTIMER_ADMIN_PATH`    | —                    | 兼容变量名（`VITE_ADMIN_PATH` 的 fallback）                                                                 |
+| 名称                      | 默认值                       | 说明                                                                                                                    |
+| ------------------------- | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `CLOUDFLARE_ACCOUNT_ID`   | 自动识别                     | API 无法返回唯一账户时设置；也接受同名 Secret。                                                                         |
+| `UPTIMER_PREFIX`          | 仓库名 slug                  | 统一资源名前缀                                                                                                          |
+| `UPTIMER_WORKER_NAME`     | `${UPTIMER_PREFIX}`          | Worker 名称                                                                                                             |
+| `UPTIMER_PAGES_PROJECT`   | `${UPTIMER_PREFIX}`          | Pages 项目名（仅 `pages` 模式）                                                                                         |
+| `UPTIMER_D1_NAME`         | 已绑定的数据库名或资源前缀   | 选择首装名称，或校验升级时识别到的名称。                                                                                |
+| `UPTIMER_D1_ID`           | 来自现有 Worker 的 `DB` 绑定 | 仅在 Worker 尚未部署、需要续跑时手填，也可用于校验指定 UUID。                                                           |
+| `UPTIMER_WORKER_URL`      | 自动推导                     | Worker 的 HTTPS 地址。使用自定义域名或未启用 workers.dev 时设置。                                                       |
+| `UPTIMER_DEPLOY_MODE`     | `pages`                      | `pages`（Pages + Workers）或 `single_worker`（SPA 挂 Worker assets）；手动触发可用输入项 `deploy_mode` 覆盖             |
+| `UPTIMER_RUNTIME_PROFILE` | `free`                       | `free`：站点 DO + D1；`paid`：直接 Worker + D1、30s CPU。独立于托管方式，见[运行配置](../Develop/Runtime-Profiles.md)。 |
+| `UPTIMER_API_BASE`        | 自动推导或 `/api/v1`         | 完整 API 地址（如 `https://my-worker.example.com/api/v1` 或 `/api/v1`）；仅 `pages` 模式                                |
+| `UPTIMER_API_ORIGIN`      | 自动推导                     | API 域名来源（如 `https://my-worker.example.com`，自动追加 `/api/v1`）；仅 `pages` 模式                                 |
+| `VITE_ADMIN_PATH`         | —                            | 管理后台路径（可被 Secret 覆盖）                                                                                        |
+| `UPTIMER_ADMIN_PATH`      | —                            | 兼容变量名（`VITE_ADMIN_PATH` 的 fallback）                                                                             |
 
 > **API 地址（`pages` 模式）**：通常无需配置——工作流会自动检测 Worker URL。仅当 API 使用自定义域名时才需设置 `UPTIMER_API_BASE` 或 `UPTIMER_API_ORIGIN`。两者接受不同格式的同类信息，设置任意一个即可。Pages 还会通过 `apps/web/public/_worker.js` 代理 `/api/*`。
 >
@@ -46,7 +48,7 @@ Uptimer 所有可配置参数，按部署时、运行时、本地开发分类。
 
 ### 环境变量
 
-来源：`apps/worker/wrangler.toml` 与 `apps/worker/src/env.ts`
+[部署指南](deploy-github-actions.zh-CN.md)
 
 | 名称                          | 默认值 | 说明                            |
 | ----------------------------- | ------ | ------------------------------- |
@@ -62,7 +64,7 @@ Uptimer 所有可配置参数，按部署时、运行时、本地开发分类。
 
 ## 3. Web 构建时
 
-来源：`apps/web/.env.example`
+[部署指南](deploy-github-actions.zh-CN.md)
 
 | 名称              | 默认值    | 说明                    |
 | ----------------- | --------- | ----------------------- |
@@ -73,7 +75,7 @@ Uptimer 所有可配置参数，按部署时、运行时、本地开发分类。
 
 ## 4. 运行时设置（D1）
 
-来源：`apps/worker/src/schemas/settings.ts`
+[部署指南](deploy-github-actions.zh-CN.md)
 
 可通过 Admin API `PATCH /api/v1/admin/settings` 更新。
 

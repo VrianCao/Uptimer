@@ -1,3 +1,5 @@
+import { publishCombinedPublicSnapshots } from './combined-publication';
+import { usesCombinedPublicSeeds } from '../public/refresh-profile';
 import type { Env } from '../env';
 import {
   refreshMonitorRuntimeSnapshotFromUpdateFragments,
@@ -259,14 +261,16 @@ function queueContinuation(
   env: Env,
   ctx: ExecutionContext,
   nextStep: ShardedPublicSnapshotContinuationStep | null,
+  generationAt: number,
 ): boolean {
-  return queueContinuations(env, ctx, nextStep ? [nextStep] : []) > 0;
+  return queueContinuations(env, ctx, nextStep ? [nextStep] : [], generationAt) > 0;
 }
 
 function queueContinuations(
   env: Env,
   ctx: ExecutionContext,
   nextSteps: readonly ShardedPublicSnapshotContinuationStep[],
+  generationAt: number,
 ): number {
   if (nextSteps.length === 0 || !env.SELF || !env.ADMIN_TOKEN) {
     return 0;
@@ -277,13 +281,13 @@ function queueContinuations(
     queued += 1;
     ctx.waitUntil(
       env.SELF.fetch(
-        new Request(`http://internal${CONTINUATION_PATH}`, {
+        new Request(`http://internal${CONTINUATION_PATH}?step=${diagnosticStepName(nextStep)}`, {
           method: 'POST',
           headers: {
             Authorization: `Bearer ${env.ADMIN_TOKEN}`,
             'Content-Type': 'application/json; charset=utf-8',
           },
-          body: JSON.stringify(toWireStep(nextStep)),
+          body: JSON.stringify({ ...toWireStep(nextStep), generation_at: generationAt }),
         }),
       )
         .then(async (res) => {
@@ -349,9 +353,12 @@ export async function runShardedPublicSnapshotContinuation(opts: {
               updateLimit: runtimeLimit,
             },
           ]
-        : firstSeedSteps(readBoundedMonitorLimit(opts.env));
+        : firstSeedSteps(readBoundedMonitorLimit(opts.env)).slice(
+            0,
+            usesCombinedPublicSeeds(opts.env) ? 1 : 2,
+          );
     const queueStartedAt = diagnostics ? Date.now() : 0;
-    const continuedCount = queueContinuations(opts.env, opts.ctx, nextSteps);
+    const continuedCount = queueContinuations(opts.env, opts.ctx, nextSteps, opts.now);
     const queueMs = diagnostics ? Date.now() - queueStartedAt : undefined;
     const continued = continuedCount > 0;
     const continuationResult: ShardedPublicSnapshotContinuationResult = {
@@ -423,7 +430,7 @@ export async function runShardedPublicSnapshotContinuation(opts: {
         })
       : null;
     const queueStartedAt = diagnostics ? Date.now() : 0;
-    const continued = queueContinuation(opts.env, opts.ctx, nextStep);
+    const continued = queueContinuation(opts.env, opts.ctx, nextStep, opts.now);
     const queueMs = diagnostics ? Date.now() - queueStartedAt : undefined;
     const continuationResult: ShardedPublicSnapshotContinuationResult = {
       ok: result.ok,
@@ -472,6 +479,9 @@ export async function runShardedPublicSnapshotContinuation(opts: {
       ...(opts.step.generatedAt !== undefined ? { generatedAt: opts.step.generatedAt } : {}),
     });
     const operationMs = diagnostics ? Date.now() - operationStartedAt : undefined;
+    const nextStep: ShardedPublicSnapshotContinuationStep | null =
+      usesCombinedPublicSeeds(opts.env) && result.ok ? { step: 'assemble', kind: 'status' } : null;
+    const continued = queueContinuation(opts.env, opts.ctx, nextStep, opts.now);
     const continuationResult: ShardedPublicSnapshotContinuationResult = {
       ok: result.ok,
       step: 'artifact',
@@ -481,7 +491,8 @@ export async function runShardedPublicSnapshotContinuation(opts: {
       published: result.published,
       artifactPublished: result.artifactPublished,
       writeCount: result.writeCount,
-      continued: false,
+      continued,
+      ...(continued && nextStep ? { nextStep } : {}),
       ...(result.skip ? { skipped: result.skip } : {}),
       ...(result.error ? { error: true } : {}),
       ...(result.errorName ? { errorName: result.errorName } : {}),
@@ -507,6 +518,40 @@ export async function runShardedPublicSnapshotContinuation(opts: {
     return skippedResult;
   }
   const publishShardedSnapshots = shouldPublishShardedSnapshots(opts.env);
+  if (
+    publishShardedSnapshots &&
+    opts.step.kind === 'homepage' &&
+    usesCombinedPublicSeeds(opts.env) &&
+    readAssemblyMode(opts.env) === 'json' &&
+    isTruthyEnvFlag(opts.env.UPTIMER_PUBLIC_HOMEPAGE_ARTIFACT_FRAGMENT_WRITES)
+  ) {
+    try {
+      const published = await publishCombinedPublicSnapshots(opts.env, opts.now);
+      return {
+        ok: published.ok,
+        step: 'assemble',
+        kind: 'homepage',
+        assembled: !published.skip,
+        published: published.published,
+        artifactPublished: published.published,
+        continued: false,
+        monitorCount: published.monitorCount,
+        writeCount: published.writeCount,
+        generatedAt: opts.now,
+        ...(published.skip ? { skipped: published.skip } : {}),
+      };
+    } catch (error) {
+      console.warn('combined public publication failed', error);
+      return {
+        ok: false,
+        step: 'assemble',
+        kind: 'homepage',
+        assembled: false,
+        continued: false,
+        error: true,
+      };
+    }
+  }
   const operationStartedAt = diagnostics ? Date.now() : 0;
   const result = await assembleShardedPublicSnapshot({
     env: opts.env,
@@ -526,7 +571,7 @@ export async function runShardedPublicSnapshotContinuation(opts: {
         }
       : null;
   const queueStartedAt = diagnostics ? Date.now() : 0;
-  const continued = queueContinuation(opts.env, opts.ctx, nextStep);
+  const continued = queueContinuation(opts.env, opts.ctx, nextStep, opts.now);
   const queueMs = diagnostics ? Date.now() - queueStartedAt : undefined;
   const continuationResult: ShardedPublicSnapshotContinuationResult = {
     ok: result.ok,

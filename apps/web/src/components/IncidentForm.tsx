@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import type { CreateIncidentInput, IncidentImpact, IncidentStatus } from '../api/types';
 import { useI18n } from '../app/I18nContext';
 import { incidentImpactLabel, incidentStatusLabel } from '../i18n/labels';
@@ -28,6 +28,7 @@ export function IncidentForm({
   onCancel: () => void;
   isLoading?: boolean;
 }) {
+  const fieldId = useId();
   const [title, setTitle] = useState('');
   const [impact, setImpact] = useState<IncidentImpact>('minor');
   const [status, setStatus] = useState<Exclude<IncidentStatus, 'resolved'>>('investigating');
@@ -90,8 +91,11 @@ export function IncidentForm({
       </div>
 
       <div>
-        <label className={labelClass}>{t('common.title_label')}</label>
+        <label htmlFor={fieldId + '-0'} className={labelClass}>
+          {t('common.title_label')}
+        </label>
         <input
+          id={fieldId + '-0'}
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           className={inputClass}
@@ -102,8 +106,11 @@ export function IncidentForm({
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
-          <label className={labelClass}>{t('common.impact')}</label>
+          <label htmlFor={fieldId + '-1'} className={labelClass}>
+            {t('common.impact')}
+          </label>
           <select
+            id={fieldId + '-1'}
             value={impact}
             onChange={(e) => setImpact(e.target.value as IncidentImpact)}
             className={selectClass}
@@ -116,8 +123,11 @@ export function IncidentForm({
           </select>
         </div>
         <div>
-          <label className={labelClass}>{t('incident_update.status')}</label>
+          <label htmlFor={fieldId + '-2'} className={labelClass}>
+            {t('incident_update.status')}
+          </label>
           <select
+            id={fieldId + '-2'}
             value={status}
             onChange={(e) => setStatus(e.target.value as Exclude<IncidentStatus, 'resolved'>)}
             className={selectClass}
@@ -132,8 +142,11 @@ export function IncidentForm({
       </div>
 
       <div>
-        <label className={labelClass}>{t('incident_form.message_markdown')}</label>
+        <label htmlFor={fieldId + '-3'} className={labelClass}>
+          {t('incident_form.message_markdown')}
+        </label>
         <textarea
+          id={fieldId + '-3'}
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           rows={5}

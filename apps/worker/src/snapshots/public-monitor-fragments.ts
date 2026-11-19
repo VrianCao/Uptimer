@@ -176,12 +176,16 @@ export function toHomepageEnvelopeFragment(
 export function buildStatusEnvelopeFragmentWrite(
   payload: PublicStatusResponse,
   updatedAt: number,
+  monitorIds?: number[],
 ): PublicSnapshotFragmentWrite {
   return buildMonitorFragmentWrite({
     snapshotKey: STATUS_ENVELOPE_FRAGMENT_KEY,
     fragmentKey: PUBLIC_SNAPSHOT_ENVELOPE_FRAGMENT_KEY,
     generatedAt: payload.generated_at,
-    bodyJson: JSON.stringify(toStatusEnvelopeFragment(payload)),
+    bodyJson: JSON.stringify({
+      ...toStatusEnvelopeFragment(payload),
+      ...(monitorIds ? { monitor_ids: monitorIds } : {}),
+    }),
     updatedAt,
   });
 }
@@ -189,12 +193,16 @@ export function buildStatusEnvelopeFragmentWrite(
 export function buildHomepageEnvelopeFragmentWrite(
   payload: PublicHomepageResponse,
   updatedAt: number,
+  monitorIds?: number[],
 ): PublicSnapshotFragmentWrite {
   return buildMonitorFragmentWrite({
     snapshotKey: HOMEPAGE_ENVELOPE_FRAGMENT_KEY,
     fragmentKey: PUBLIC_SNAPSHOT_ENVELOPE_FRAGMENT_KEY,
     generatedAt: payload.generated_at,
-    bodyJson: JSON.stringify(toHomepageEnvelopeFragment(payload)),
+    bodyJson: JSON.stringify({
+      ...toHomepageEnvelopeFragment(payload),
+      ...(monitorIds ? { monitor_ids: monitorIds } : {}),
+    }),
     updatedAt,
   });
 }
@@ -589,15 +597,13 @@ async function readSnapshotBodyJsonFromFragments<
     rows: readonly PublicSnapshotFragmentRow[],
   ) => PublicSnapshotEnvelopeReadResult<T> | null,
 ): Promise<PublicSnapshotBodyJsonFragmentReadResult | null> {
-  const [envelopeRows, monitorRows] = await Promise.all([
-    readPublicSnapshotFragments(db, envelopeSnapshotKey),
-    readPublicSnapshotFragments(db, monitorSnapshotKey),
-  ]);
-  const envelope = parseEnvelope(envelopeRows);
-  if (!envelope) {
-    return null;
-  }
-
+  const envelope = parseEnvelope(await readPublicSnapshotFragments(db, envelopeSnapshotKey));
+  if (!envelope) return null;
+  const monitorRows = await readPublicSnapshotFragments(
+    db,
+    monitorSnapshotKey,
+    envelope.generatedAt,
+  );
   const monitors = parseRawMonitorJsonFragmentRows(monitorRows, envelope.generatedAt);
   const bodyJson = assemblePublicSnapshotBodyJsonFromRawMonitorFragments(
     envelope.data,

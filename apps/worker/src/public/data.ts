@@ -1,3 +1,12 @@
+import {
+  decodeSummaryOutages,
+  parseCheckSummary,
+  recoverCheckSummary,
+  summaryUptime,
+  type CheckSummary,
+} from './check-summary';
+import { readPublicHistoryRows } from './history-cache';
+import { readPublicMonitorEnvelope } from './monitor-envelope';
 import type { PublicStatusResponse } from '../schemas/public-status';
 
 import {
@@ -12,6 +21,7 @@ import {
   runtimeEntryToHeartbeats,
   snapshotHasMonitorIds,
   toMonitorRuntimeEntryMap,
+  type PublicMonitorRuntimeSnapshot,
 } from './monitor-runtime';
 import { readSettings } from '../settings';
 import {
@@ -35,6 +45,10 @@ export type PublicStatusMonitorRow = {
   sort_order: number;
   interval_sec: number;
   created_at: number;
+  check_summary_json?: string | null;
+  history_generated_at?: number | null;
+  history_body_json?: string | null;
+  day_outages_json?: string | null;
   state_status: string | null;
   last_checked_at: number | null;
   last_latency_ms: number | null;
@@ -336,13 +350,32 @@ export async function listHeartbeatsByMonitorId(
   db: D1Database,
   monitorIds: number[],
   limitPerMonitor: number,
+  monitors?: readonly Pick<PublicStatusMonitorRow, 'id' | 'last_checked_at' | 'interval_sec'>[],
 ): Promise<Map<number, PublicStatusResponse['monitors'][number]['heartbeats']>> {
   const byMonitor = new Map<number, PublicStatusResponse['monitors'][number]['heartbeats']>();
 
   const ids = [...new Set(monitorIds)].filter((id) => Number.isFinite(id));
   if (ids.length === 0) return byMonitor;
+  if (ids.length > 90) {
+    for (const chunk of chunkPositiveIntegerIds(ids, 90)) {
+      const selected = monitors?.filter((m) => chunk.includes(m.id));
+      const page = await listHeartbeatsByMonitorId(db, chunk, limitPerMonitor, selected);
+      for (const [id, values] of page) byMonitor.set(id, values);
+    }
+    return byMonitor;
+  }
 
   const placeholders = ids.map((_, idx) => `?${idx + 2}`).join(', ');
+  const since = monitors?.length
+    ? Math.max(
+        0,
+        Math.min(
+          ...monitors.map((m) => (m.last_checked_at ?? 0) - m.interval_sec * limitPerMonitor * 2),
+        ),
+      )
+    : null;
+  const sinceParameter = `?${ids.length + 2}`;
+  const shards = [...new Set(ids.map((id) => Math.floor((id - 1) / 4)))];
   const sql = `
     SELECT monitor_id, checked_at, status, latency_ms
     FROM (
@@ -358,6 +391,8 @@ export async function listHeartbeatsByMonitorId(
         ) AS rn
       FROM check_results
       WHERE monitor_id IN (${placeholders})
+        AND storage_shard IN (SELECT value FROM json_each(?${ids.length + 2 + (since === null ? 0 : 1)}))
+        ${since === null ? '' : `AND bucket_start_at >= ${sinceParameter} - 3599 AND checked_at >= ${sinceParameter}`}
     )
     WHERE rn <= ?1
     ORDER BY monitor_id, checked_at DESC, id DESC
@@ -365,7 +400,7 @@ export async function listHeartbeatsByMonitorId(
 
   const { results } = await db
     .prepare(sql)
-    .bind(limitPerMonitor, ...ids)
+    .bind(limitPerMonitor, ...ids, ...(since === null ? [] : [since]), JSON.stringify(shards))
     .all<HeartbeatRow>();
   for (const r of results ?? []) {
     appendMapValue(byMonitor, r.monitor_id, {
@@ -375,6 +410,13 @@ export async function listHeartbeatsByMonitorId(
     });
   }
 
+  if (since !== null && since > 0) {
+    const incomplete = ids.filter((id) => (byMonitor.get(id)?.length ?? 0) < limitPerMonitor);
+    if (incomplete.length) {
+      const older = await listHeartbeatsByMonitorId(db, incomplete, limitPerMonitor);
+      for (const id of incomplete) byMonitor.set(id, older.get(id) ?? []);
+    }
+  }
   return byMonitor;
 }
 
@@ -594,7 +636,9 @@ async function computeTodayPartialUptimeBatchSql(
       first_checks AS (
         SELECT monitor_id, MIN(checked_at) AS first_check_at
         FROM check_results
-        WHERE monitor_id IN (SELECT monitor_id FROM input)
+        WHERE monitor_id IN (SELECT monitor_id FROM input WHERE created_at >= ?1)
+          AND storage_shard IN (SELECT CAST((monitor_id - 1) / 4 AS INTEGER) FROM input)
+          AND bucket_start_at >= (?1) - 3599
           AND checked_at >= ?1
           AND checked_at < ?2
         GROUP BY monitor_id
@@ -648,6 +692,8 @@ async function computeTodayPartialUptimeBatchSql(
         FROM check_results cr
         JOIN effective e ON e.monitor_id = cr.monitor_id
         WHERE e.start_at IS NOT NULL
+          AND cr.storage_shard IN (SELECT CAST((monitor_id - 1) / 4 AS INTEGER) FROM input)
+          AND cr.bucket_start_at >= (max(0, e.start_at - e.interval_sec * 2)) - 3599
           AND cr.checked_at >= max(0, e.start_at - e.interval_sec * 2)
           AND cr.checked_at < ?2
       ),
@@ -885,6 +931,7 @@ async function computeTodayPartialUptimeBatchLegacy(
       SELECT monitor_id, checked_at, status
       FROM check_results
       WHERE monitor_id IN (${checkPlaceholders})
+        AND bucket_start_at >= (?${ids.length + 1}) - 3599
         AND checked_at >= ?${ids.length + 1}
         AND checked_at < ?${ids.length + 2}
       ORDER BY monitor_id, checked_at
@@ -984,7 +1031,20 @@ export function toUptimePct(totalSec: number, uptimeSec: number): number | null 
 export async function buildPublicMonitorCards(
   db: D1Database,
   now: number,
-  opts: { includeHiddenMonitors?: boolean } = {},
+  opts: {
+    includeHiddenMonitors?: boolean;
+    monitorSlice?: { offset: number; limit: number };
+    onMonitorIds?: (ids: number[]) => void;
+    runtimeSnapshot?: PublicMonitorRuntimeSnapshot | null;
+    presentationContext?: {
+      maintenanceMonitorIds: readonly number[];
+      uptimeRatingLevel: 1 | 2 | 3 | 4 | 5;
+      monitorIds?: number[];
+      rangeStart?: number;
+    };
+    onMaintenanceMonitorIds?: (ids: number[]) => void;
+    onRangeStart?: (rangeStart: number) => void;
+  } = {},
 ): Promise<{
   monitors: PublicStatusResponse['monitors'];
   summary: PublicStatusResponse['summary'];
@@ -992,8 +1052,29 @@ export async function buildPublicMonitorCards(
   uptimeRatingLevel: 1 | 2 | 3 | 4 | 5;
 }> {
   const includeHiddenMonitors = opts.includeHiddenMonitors ?? false;
+  if (opts.monitorSlice?.limit === 0 && !opts.presentationContext) {
+    const envelope = await readPublicMonitorEnvelope(db, now, includeHiddenMonitors);
+    opts.onMonitorIds?.(envelope.monitorIds);
+    opts.onMaintenanceMonitorIds?.(envelope.maintenanceMonitorIds);
+    const windowStart = now - UPTIME_DAYS * 86400;
+    opts.onRangeStart?.(Math.max(windowStart, envelope.earliestCreatedAt ?? windowStart));
+    return {
+      monitors: [],
+      summary: envelope.summary,
+      overallStatus: envelope.overallStatus,
+      uptimeRatingLevel: envelope.uptimeRatingLevel,
+    };
+  }
   const rangeEndFullDays = utcDayStart(now);
   const rangeEnd = now;
+  const generationIds = opts.presentationContext?.monitorIds;
+  const selectedIds =
+    generationIds && opts.monitorSlice
+      ? generationIds.slice(
+          opts.monitorSlice.offset,
+          opts.monitorSlice.offset + opts.monitorSlice.limit,
+        )
+      : undefined;
   const { results } = await db
     .prepare(
       `
@@ -1010,10 +1091,30 @@ export async function buildPublicMonitorCards(
         s.status AS state_status,
         s.last_checked_at,
         s.last_latency_ms
+        ${
+          selectedIds
+            ? `, s.check_summary_json,
+          h.generated_at AS history_generated_at,h.body_json AS history_body_json,
+          (SELECT json_group_array(json_array(o.started_at,o.ended_at)) FROM (
+            SELECT started_at,ended_at FROM outages
+              WHERE monitor_id=m.id AND ended_at IS NULL AND started_at<?2
+            UNION ALL
+            SELECT started_at,ended_at FROM outages
+              WHERE monitor_id=m.id AND ended_at>?3 AND started_at<?2
+          ) o) AS day_outages_json`
+            : ''
+        }
       FROM monitors m
       LEFT JOIN monitor_state s ON s.monitor_id = m.id
+      ${
+        selectedIds
+          ? `LEFT JOIN public_snapshot_fragments h ON h.snapshot_key='monitor-history:rollups'
+        AND h.fragment_key='monitor:' || m.id AND h.generated_at=?4`
+          : ''
+      }
       WHERE m.is_active = 1
         AND ${monitorVisibilityPredicate(includeHiddenMonitors, 'm')}
+        ${selectedIds ? 'AND m.id IN (SELECT value FROM json_each(?1))' : ''}
       ORDER BY
         m.group_sort_order ASC,
         lower(
@@ -1026,23 +1127,42 @@ export async function buildPublicMonitorCards(
         m.id ASC
     `,
     )
-    .all<PublicStatusMonitorRow>();
+    .bind(
+      ...(selectedIds
+        ? [
+            JSON.stringify(selectedIds),
+            now,
+            Math.max(rangeEndFullDays, opts.presentationContext?.rangeStart ?? rangeEndFullDays),
+            rangeEndFullDays,
+          ]
+        : []),
+    )
+    .all<PublicStatusMonitorRow & { check_summary_json?: string | null }>();
 
   const rawMonitors = results ?? [];
   const earliestCreatedAt = rawMonitors.reduce(
     (acc, m) => Math.min(acc, m.created_at),
     Number.POSITIVE_INFINITY,
   );
-  const rangeStart = Number.isFinite(earliestCreatedAt)
-    ? Math.max(rangeEnd - UPTIME_DAYS * 86400, earliestCreatedAt)
-    : rangeEnd - UPTIME_DAYS * 86400;
+  const rangeStart =
+    opts.presentationContext?.rangeStart ??
+    (Number.isFinite(earliestCreatedAt)
+      ? Math.max(rangeEnd - UPTIME_DAYS * 86400, earliestCreatedAt)
+      : rangeEnd - UPTIME_DAYS * 86400);
+  opts.onRangeStart?.(rangeStart);
   const rawIds = rawMonitors.map((m) => m.id);
-  const [maintenanceMonitorIds, uptimeRatingLevel] = await Promise.all([
-    listActiveMaintenanceMonitorIds(db, now, rawIds),
-    readUptimeRatingLevel(db),
-  ]);
+  const [maintenanceMonitorIds, uptimeRatingLevel] = opts.presentationContext
+    ? ([
+        new Set(opts.presentationContext.maintenanceMonitorIds),
+        opts.presentationContext.uptimeRatingLevel,
+      ] as const)
+    : await Promise.all([
+        listActiveMaintenanceMonitorIds(db, now, rawIds),
+        readUptimeRatingLevel(db),
+      ]);
+  opts.onMaintenanceMonitorIds?.([...maintenanceMonitorIds]);
 
-  const monitorsList: PublicStatusResponse['monitors'] = rawMonitors.map((r) => {
+  const allMonitors: PublicStatusResponse['monitors'] = rawMonitors.map((r) => {
     const isInMaintenance = maintenanceMonitorIds.has(r.id);
     const stateStatus = toMonitorStatus(r.state_status);
 
@@ -1074,9 +1194,27 @@ export async function buildPublicMonitorCards(
     };
   });
 
+  opts.onMonitorIds?.(generationIds ?? allMonitors.map((m) => m.id));
+  const monitorsList =
+    opts.monitorSlice && !selectedIds
+      ? allMonitors.slice(
+          opts.monitorSlice.offset,
+          opts.monitorSlice.offset + opts.monitorSlice.limit,
+        )
+      : allMonitors;
+  const selectedRawMonitors =
+    opts.monitorSlice && !selectedIds
+      ? rawMonitors.slice(
+          opts.monitorSlice.offset,
+          opts.monitorSlice.offset + opts.monitorSlice.limit,
+        )
+      : rawMonitors;
   const ids = monitorsList.map((m) => m.id);
   if (ids.length > 0) {
-    const runtimeSnapshot = await readPublicMonitorRuntimeSnapshot(db, now);
+    const runtimeSnapshot =
+      opts.runtimeSnapshot !== undefined
+        ? opts.runtimeSnapshot
+        : await readPublicMonitorRuntimeSnapshot(db, now);
     const runtimeById =
       runtimeSnapshot && snapshotHasMonitorIds(runtimeSnapshot, ids)
         ? toMonitorRuntimeEntryMap(runtimeSnapshot)
@@ -1088,9 +1226,30 @@ export async function buildPublicMonitorCards(
     // showing empty uptime strips until the next daily rollup.
     const needsToday = rangeEnd > rangeEndFullDays;
 
-    const rollupsPromise = db
-      .prepare(
-        `
+    const rollupsPromise = opts.monitorSlice
+      ? readPublicHistoryRows(
+          db,
+          ids,
+          rangeStart,
+          rangeEndFullDays,
+          selectedIds
+            ? selectedRawMonitors.flatMap((monitor) =>
+                typeof monitor.history_body_json === 'string' &&
+                monitor.history_generated_at != null
+                  ? [
+                      {
+                        fragment_key: `monitor:${monitor.id}`,
+                        generated_at: monitor.history_generated_at,
+                        body_json: monitor.history_body_json,
+                      },
+                    ]
+                  : [],
+              )
+            : undefined,
+        )
+      : db
+          .prepare(
+            `
         SELECT monitor_id, day_start_at, total_sec, downtime_sec, unknown_sec, uptime_sec
         FROM monitor_daily_rollups
         WHERE monitor_id IN (${placeholders})
@@ -1098,44 +1257,123 @@ export async function buildPublicMonitorCards(
           AND day_start_at < ?${ids.length + 2}
         ORDER BY monitor_id, day_start_at
       `,
-      )
-      .bind(...ids, rangeStart, rangeEndFullDays)
-      .all<DailyRollupRow>()
-      .then(({ results }) => results ?? []);
+          )
+          .bind(...ids, rangeStart, rangeEndFullDays)
+          .all<DailyRollupRow>()
+          .then(({ results }) => results ?? []);
 
+    const checkSummaries = new Map<number, CheckSummary>();
+    try {
+      const summaryRows = selectedIds
+        ? selectedRawMonitors.map((monitor) => ({
+            monitor_id: monitor.id,
+            check_summary_json: monitor.check_summary_json ?? null,
+          }))
+        : (
+            await db
+              .prepare(
+                `
+        SELECT monitor_id,check_summary_json FROM monitor_state
+        WHERE monitor_id IN (SELECT value FROM json_each(?1))
+      `,
+              )
+              .bind(JSON.stringify(ids))
+              .all<{ monitor_id: number; check_summary_json: string | null }>()
+          ).results;
+      const rawById = new Map(selectedRawMonitors.map((m) => [m.id, m]));
+      for (const row of summaryRows ?? []) {
+        const monitor = rawById.get(row.monitor_id);
+        if (!monitor) continue;
+        monitor.check_summary_json = row.check_summary_json;
+        const summary = parseCheckSummary(
+          { ...monitor, check_summary_json: row.check_summary_json },
+          now,
+        );
+        if (summary) checkSummaries.set(monitor.id, summary);
+      }
+    } catch {
+      /* Derived summaries can always fall back to canonical samples. */
+    }
+    // A paused/imported monitor may never receive another probe to repair its
+    // summary. Warm a bounded number here, then fall back only for missing IDs.
+    // Five recoveries leave room within Free's per-event D1 query allowance.
+    let recoveries = 0;
+    for (const monitor of selectedRawMonitors) {
+      if (checkSummaries.has(monitor.id) || recoveries >= 5) continue;
+      recoveries++;
+      try {
+        checkSummaries.set(monitor.id, await recoverCheckSummary(db, monitor, now));
+      } catch {
+        /* Canonical fallback remains available when derived-cache repair fails. */
+      }
+    }
+    const summarizedMonitors = selectedRawMonitors.filter((m) => checkSummaries.has(m.id));
+    const missingMonitors = selectedRawMonitors.filter((m) => !checkSummaries.has(m.id));
+    const missingIds = missingMonitors.map((m) => m.id);
     const todayByMonitorIdPromise: Promise<Map<number, UptimeWindowTotals>> = needsToday
-      ? runtimeById
-        ? Promise.resolve(
-            new Map<number, UptimeWindowTotals>(
-              rawMonitors.map((monitor) => [
-                monitor.id,
-                materializeMonitorRuntimeTotals(runtimeById.get(monitor.id)!, rangeEnd),
-              ]),
-            ),
-          )
-        : computeTodayPartialUptimeBatch(
-            db,
-            rawMonitors.map((monitor) => ({
-              id: monitor.id,
-              interval_sec: monitor.interval_sec,
-              created_at: monitor.created_at,
-              last_checked_at: monitor.last_checked_at,
-            })),
-            Math.max(todayStartAt, rangeStart),
-            rangeEnd,
-          )
+      ? Promise.all([
+          summarizedMonitors.length
+            ? summaryUptime(
+                db,
+                summarizedMonitors,
+                checkSummaries,
+                Math.max(todayStartAt, rangeStart),
+                rangeEnd,
+                selectedIds ? decodeSummaryOutages(summarizedMonitors) : undefined,
+              )
+            : Promise.resolve(new Map<number, UptimeWindowTotals>()),
+          !missingIds.length
+            ? Promise.resolve(new Map<number, UptimeWindowTotals>())
+            : runtimeById
+              ? Promise.resolve(
+                  new Map<number, UptimeWindowTotals>(
+                    missingMonitors.map((monitor) => [
+                      monitor.id,
+                      materializeMonitorRuntimeTotals(runtimeById.get(monitor.id)!, rangeEnd),
+                    ]),
+                  ),
+                )
+              : computeTodayPartialUptimeBatch(
+                  db,
+                  missingMonitors.map((monitor) => ({
+                    id: monitor.id,
+                    interval_sec: monitor.interval_sec,
+                    created_at: monitor.created_at,
+                    last_checked_at: monitor.last_checked_at,
+                  })),
+                  Math.max(todayStartAt, rangeStart),
+                  rangeEnd,
+                ),
+        ]).then((maps) => new Map(maps.flatMap((map) => [...map])))
       : Promise.resolve(new Map<number, UptimeWindowTotals>());
 
     const [heartbeatsByMonitorId, rollupRows, todayByMonitorId] = await Promise.all([
-      runtimeById
-        ? Promise.resolve(
-            new Map(
-              ids.map((id) => [id, runtimeEntryToHeartbeats(runtimeById.get(id)!)]) as Array<
-                [number, PublicStatusResponse['monitors'][number]['heartbeats']]
-              >,
+      (!missingIds.length
+        ? Promise.resolve(new Map<number, PublicStatusResponse['monitors'][number]['heartbeats']>())
+        : runtimeById
+          ? Promise.resolve(
+              new Map(
+                missingIds.map((id) => [id, runtimeEntryToHeartbeats(runtimeById.get(id)!)]),
+              ) as Map<number, PublicStatusResponse['monitors'][number]['heartbeats']>,
+            )
+          : listHeartbeatsByMonitorId(db, missingIds, HEARTBEAT_POINTS, missingMonitors)
+      ).then(
+        (missing) =>
+          new Map([
+            ...missing,
+            ...summarizedMonitors.map(
+              ({ id }) =>
+                [
+                  id,
+                  checkSummaries.get(id)!.heartbeats.map(([checked_at, status, latency_ms]) => ({
+                    checked_at,
+                    status,
+                    latency_ms,
+                  })),
+                ] as [number, PublicStatusResponse['monitors'][number]['heartbeats']],
             ),
-          )
-        : listHeartbeatsByMonitorId(db, ids, HEARTBEAT_POINTS),
+          ]),
+      ),
       rollupsPromise,
       todayByMonitorIdPromise,
     ]);
@@ -1210,7 +1448,7 @@ export async function buildPublicMonitorCards(
     paused: 0,
     unknown: 0,
   };
-  for (const m of monitorsList) {
+  for (const m of allMonitors) {
     summary[m.status]++;
   }
 
@@ -1493,6 +1731,23 @@ export function buildPublicStatusBanner(opts: {
     };
   }
 
+  return buildMonitorStatusBanner({
+    counts,
+    monitorCount,
+    activeMaintenanceWindows: activeMaintenanceWindows.map((entry) => entry.row),
+  });
+}
+
+// Used again at publication, after the final monitor pages are available.
+// Incident banners retain their higher priority and their original selection.
+export function buildMonitorStatusBanner(opts: {
+  counts: PublicStatusResponse['summary'];
+  monitorCount: number;
+  activeMaintenanceWindows: Array<
+    Pick<MaintenanceWindowRow, 'id' | 'title' | 'starts_at' | 'ends_at'>
+  >;
+}): Banner {
+  const { counts, monitorCount, activeMaintenanceWindows } = opts;
   const total = monitorCount;
   const downRatio = total === 0 ? 0 : counts.down / total;
 
@@ -1510,7 +1765,7 @@ export function buildPublicStatusBanner(opts: {
     return { source: 'monitors', status: 'unknown', title: 'Status Unknown' };
   }
 
-  const maint = activeMaintenanceWindows.map((entry) => entry.row);
+  const maint = activeMaintenanceWindows;
   const hasMaintenance = maint.length > 0 || counts.maintenance > 0;
   if (hasMaintenance) {
     const top = maint[0];

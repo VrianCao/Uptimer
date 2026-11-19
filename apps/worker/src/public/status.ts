@@ -1,4 +1,6 @@
+import type { PublicMonitorRuntimeSnapshot } from './monitor-runtime';
 import type { PublicStatusResponse } from '../schemas/public-status';
+import { batchSnapshotReads } from './batched-reads';
 
 import {
   buildPublicMonitorCards,
@@ -11,15 +13,47 @@ import {
   readPublicSiteSettings,
 } from './data';
 
+export type PublicStatusGenerationContext = {
+  envelope: Omit<PublicStatusResponse, 'monitors'>;
+  maintenanceMonitorIds: number[];
+  monitorIds?: number[];
+  rangeStart?: number;
+};
+
 export async function computePublicStatusPayload(
   db: D1Database,
   now: number,
-  opts: { includeHiddenMonitors?: boolean } = {},
+  opts: {
+    includeHiddenMonitors?: boolean;
+    monitorSlice?: { offset: number; limit: number };
+    onMonitorIds?: (ids: number[]) => void;
+    runtimeSnapshot?: PublicMonitorRuntimeSnapshot | null;
+    onMaintenanceMonitorIds?: (ids: number[]) => void;
+    onRangeStart?: (rangeStart: number) => void;
+    generationContext?: PublicStatusGenerationContext;
+  } = {},
 ): Promise<PublicStatusResponse> {
+  if (opts.monitorSlice) db = batchSnapshotReads(db);
   const includeHiddenMonitors = opts.includeHiddenMonitors ?? false;
 
+  if (opts.generationContext) {
+    const context = opts.generationContext;
+    const monitorData = await buildPublicMonitorCards(db, now, {
+      ...opts,
+      includeHiddenMonitors,
+      presentationContext: {
+        maintenanceMonitorIds: context.maintenanceMonitorIds,
+        uptimeRatingLevel: context.envelope.uptime_rating_level as 1 | 2 | 3 | 4 | 5,
+        ...(context.monitorIds && context.rangeStart !== undefined
+          ? { monitorIds: context.monitorIds, rangeStart: context.rangeStart }
+          : {}),
+      },
+    });
+    return { ...context.envelope, generated_at: now, monitors: monitorData.monitors };
+  }
+
   const [monitorData, activeIncidentSummary, maintenanceWindows, settings] = await Promise.all([
-    buildPublicMonitorCards(db, now, { includeHiddenMonitors }),
+    buildPublicMonitorCards(db, now, { ...opts, includeHiddenMonitors }),
     readVisibleActiveIncidentSummary(db, includeHiddenMonitors),
     listVisibleMaintenanceWindows(db, now, includeHiddenMonitors),
     readPublicSiteSettings(db),
@@ -41,7 +75,7 @@ export async function computePublicStatusPayload(
     overall_status: monitorData.overallStatus,
     banner: buildPublicStatusBanner({
       counts: monitorData.summary,
-      monitorCount: monitorData.monitors.length,
+      monitorCount: Object.values(monitorData.summary).reduce((sum, count) => sum + count, 0),
       activeIncidents,
       activeMaintenanceWindows: maintenanceWindows.active,
       bannerIncident: activeIncidentSummary.bannerIncident,

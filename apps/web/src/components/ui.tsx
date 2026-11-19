@@ -123,9 +123,10 @@ interface CardProps {
   className?: string;
   hover?: boolean;
   onClick?: () => void;
+  onPrepare?: (() => void) | undefined;
 }
 
-export function Card({ children, className = '', hover = false, onClick }: CardProps) {
+export function Card({ children, className = '', hover = false, onClick, onPrepare }: CardProps) {
   const clickProps = onClick
     ? {
         onClick,
@@ -151,6 +152,10 @@ export function Card({ children, className = '', hover = false, onClick }: CardP
         className,
       )}
       {...clickProps}
+      onPointerEnter={onPrepare}
+      onFocus={(event) => {
+        if (event.target === event.currentTarget) onPrepare?.();
+      }}
     >
       {children}
     </div>

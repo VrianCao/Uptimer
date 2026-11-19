@@ -22,7 +22,7 @@
 
 - **零运维** — 无需管理服务器、容器或数据库。完全运行在 Cloudflare 的免费/付费套餐上。
 - **边缘原生** — 监控探针从 Cloudflare Workers 发起，状态页由 CDN 边缘节点分发。
-- **一键部署** — 推送到 `main` 分支，GitHub Actions 自动完成：D1 迁移、Worker API 与 Pages 前端（可选 single Worker 模式）。
+- **审阅后部署** — GitHub Actions 先完成 CI 和构建，通过手动 plan/apply 将同一份已审阅包部署到 Workers + Pages 或 Workers Assets。
 - **功能完整** — HTTP/TCP 探测、事件管理、维护窗口、Webhook 通知、管理后台。
 
 ## 功能特性
@@ -102,71 +102,35 @@ Admin ─────────►│  Workers (Hono API)                     
 | CI/CD  | GitHub Actions                                                     |
 | 包管理 | pnpm（monorepo）                                                   |
 
-## 快速部署（5 步完成）
+## 部署 Uptimer
 
-无需修改任何代码或配置文件，即可部署专属于你的 Uptimer 实例：
+1. Fork 本仓库，在 Fork 的 **Actions** 页面启用工作流。
+2. 添加仓库 Secrets `CLOUDFLARE_API_TOKEN` 和 `UPTIMER_ADMIN_TOKEN`。
+3. 在 **Actions → Deploy to Cloudflare** 运行 `plan`，核对摘要后在同一提交运行 `apply`。验收通过后，从运行摘要打开状态页。
 
-### 第 1 步 — Fork 仓库
+[v0.2.0 部署与升级指南](docs/v0.2.0-upgrade.zh-CN.md) · [通用部署指南](docs/deploy-github-actions.zh-CN.md) · [升级与恢复](docs/upgrade-and-recovery.md)
 
-点击本仓库右上角的 **Fork** 按钮，创建你自己的副本。
+通过 **Sync fork** 更新代码。Cloudflare 部署由你手动发起。
 
-### 第 2 步 — 创建 Cloudflare API Token
+---
 
-1. 前往 [Cloudflare Dashboard → API Tokens](https://dash.cloudflare.com/profile/api-tokens)
-2. 点击 **Create Token** → 使用 **Edit Cloudflare Workers** 模板
-3. 添加以下权限：
-   - `Account / Cloudflare Pages / Edit`
-   - `Account / D1 / Edit`
-   - `Account / Account Settings / Read`
-4. 复制生成的 Token
+## 让 Agent 协助升级到 v0.2.0
 
-> `Cloudflare Pages / Edit` 仅默认 `pages` 模式需要。若使用 `UPTIMER_DEPLOY_MODE=single_worker`，可不授予 Pages 权限。
+把下面的提示词复制给能访问你的 GitHub 仓库的 Agent。它可以帮你核对升级路径，或者在你授权后代你运行 Action。
 
-### 第 3 步 — 添加 GitHub Secrets
+<details>
+<summary>复制升级提示词</summary>
 
-进入你 Fork 的仓库 → **Settings** → **Secrets and variables** → **Actions** → **New repository secret**，添加：
+```text
+帮我把自己的 Uptimer 站点升级到 v0.2.0。请用中文直白、直观、简洁地和我沟通，优先说「现在是什么情况、下一步做什么、站点会受什么影响」。一次只问一个会影响下一步的问题。你能查到的信息就自己查。
 
-| Secret 名称             | 值                                                                                                            | 是否必填 |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------- | :------: |
-| `CLOUDFLARE_API_TOKEN`  | 第 2 步获取的 Token                                                                                           |   必填   |
-| `UPTIMER_ADMIN_TOKEN`   | 任意强密码字符串（用于登录管理后台）                                                                          |   必填   |
-| `CLOUDFLARE_ACCOUNT_ID` | 你的 [Cloudflare Account ID](https://developers.cloudflare.com/fundamentals/setup/find-account-and-zone-ids/) |   推荐   |
+1. 先做只读核对。识别我的 fork、目标分支和提交、上游已发布的目标版本、Actions 状态、自定义部署触发器和最近的部署结果。阅读目标版本的 docs/v0.2.0-upgrade.zh-CN.md 和实际 deploy.yml。判断是首装、已有站点升级、维护中续跑，还是只同步了代码。结合可用的配置和 Plan 核对现有 Worker、D1、托管方式与 free/paid 运行配置，分清已确认和未知的信息。
+2. 给我最短的操作路径。需要同步时，先说明自定义流程会不会自动部署，以及有无冲突。已有实例沿用原托管方式和运行配置。默认 free 可留空，通常由 Plan 查到账户和 D1。若缺少配置或权限，只告诉我具体缺哪一项和到哪里处理。请在 GitHub Secrets 页面引导我设置密钥，聊天和日志里都不要索取或显示密钥值。
+3. 我授权了哪一步，就在我的 fork 和指定分支执行哪一步。若获准代办，使用 GitHub 的 Deploy to Cloudflare Action。先运行只读 Plan，告诉我摘要中的目标提交、账户、Worker、D1、Pages（如有）、待迁移项和维护影响。得到对该 Plan 的 Apply 授权后，在同一提交填写 plan_run 和 plan_hash 触发 Apply。提交或目标变化时重新核对；有 BLOCKED 时停在 Plan 并解释原因。
+4. 若目标版本已上线且站点正常，直接告诉我。触发 Action 后跟踪到结束，再给我一句结果、运行链接和状态页链接。已经进入维护的 Apply 中断时，优先在授权范围内续跑原 Apply。对冲突、配置变更、数据库重置或恢复，先说明影响并征得对应授权。若你只能指导我操作，给我 GitHub 上的点击路径和这一步要填的值。
+```
 
-可选仓库 **变量**（非 Secret）：`UPTIMER_DEPLOY_MODE` = `pages`（默认）或 `single_worker`。
-
-### 第 4 步 — 运行 GitHub Actions
-
-进入 **Actions** → **Deploy to Cloudflare** → **Run workflow**（或直接向 `main`/`master` 推送一次提交）。
-
-工作流会自动完成：
-
-- 创建 D1 数据库并执行迁移
-- 部署 Worker（API + 定时探测）
-- 默认模式：构建前端（Vite）并部署到 Cloudflare Pages
-- single_worker 模式：构建前端，并作为静态资源与 Worker 一起上传
-- 注入管理密钥为 Worker Secret
-
-### 第 5 步 — 访问你的状态页
-
-工作流运行成功后（首次部署通常约 2 分钟）：
-
-**默认（`pages` 模式）：**
-
-- **状态页** → `https://<你的-pages-项目名>.pages.dev`
-- **管理后台** → `https://<你的-pages-项目名>.pages.dev/admin`
-- **API** → `https://<你的-worker-名>.workers.dev/api/v1/public/status`
-
-**可选（`single_worker` 模式）：**
-
-- **状态页** → `https://<你的-worker-名>.workers.dev`
-- **管理后台** → `https://<你的-worker-名>.workers.dev/admin`
-- **API** → `https://<你的-worker-名>.workers.dev/api/v1/public/status`
-
-使用你设置的 `UPTIMER_ADMIN_TOKEN` 登录管理后台，即可开始添加监控项。
-
-> **保持更新** — 由于你从自己的 Fork 部署，随时可以[同步上游仓库](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/working-with-forks/syncing-a-fork)获取最新功能。每次同步后，部署工作流会自动运行。
-
-> 高级选项（自定义域名、资源命名、管理路径等）请参阅[部署指南](docs/deploy-github-actions.zh-CN.md)。
+</details>
 
 ---
 
@@ -208,12 +172,13 @@ pnpm dev
 
 ## 文档
 
-| 文档                                              | 说明                               |
-| ------------------------------------------------- | ---------------------------------- |
-| [部署指南](docs/deploy-github-actions.zh-CN.md)   | GitHub Actions 部署完整流程        |
-| [配置参考](docs/configuration-reference.zh-CN.md) | 所有可配置参数（密钥、变量、设置） |
-| [通知系统](docs/notifications.zh-CN.md)           | Webhook 配置、模板、签名、故障排除 |
-| [本地开发](Develop/LOCAL-TESTING.md)              | 本地环境搭建、种子数据、测试流程   |
+| 文档                                                  | 说明                               |
+| ----------------------------------------------------- | ---------------------------------- |
+| [v0.2.0 部署与升级指南](docs/v0.2.0-upgrade.zh-CN.md) | 版本说明、首装、升级和续跑         |
+| [部署指南](docs/deploy-github-actions.zh-CN.md)       | GitHub Actions 部署完整流程        |
+| [配置参考](docs/configuration-reference.zh-CN.md)     | 所有可配置参数（密钥、变量、设置） |
+| [通知系统](docs/notifications.zh-CN.md)               | Webhook 配置、模板、签名、故障排除 |
+| [本地开发](Develop/LOCAL-TESTING.md)                  | 本地环境搭建、种子数据、测试流程   |
 
 ## 质量检查
 

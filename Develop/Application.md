@@ -1,5 +1,7 @@
 # Application.md: Uptimer
 
+> 当前性能重构与 Free Plan 额度核对见 [Performance-Refactor.md](Performance-Refactor.md)；其中明确区分官方限制、本地证据与云端验收。
+
 Version: 0.1.0 (Draft, revised)
 Type: Technical Specification & Application Architecture
 Platform: Cloudflare Native (Workers + Pages + D1; optional single-Worker hosting)
@@ -241,19 +243,13 @@ Cron 建议配置为每分钟触发一次（`* * * * *`），但并不意味着�
 
 可选：记录本轮执行位置（colo/region）用于展示“当前探针位置”与排障（例如通过请求 `https://cloudflare.com/cdn-cgi/trace` 解析 `colo=`）。
 
-### 6.9 Free Plan CPU Profile（当前发布基线）
+### 6.9 Free Plan CPU Profile（本轮重构，Dev 已验证）
 
-Issue #24 的最终发布基线针对 Cloudflare Free Plan `10ms CPU` 预算做了专项优化：
+默认 `free` 配置下，普通 Worker 负责入口与边缘缓存，单站点 `SiteCoordinator` 执行动态 API、调度与发布。D1 仍为 canonical storage，独立事件保留 D1 每事件查询上限，默认探测批次 5、发布页 10。完整样本与原有功能不变，详见 [Performance-Refactor.md](Performance-Refactor.md) 的服务选择理由、额度、测试和剩余限制。
 
-- scheduled wrapper 只做轻量编排；实际探测拆为 `POST /api/v1/internal/scheduled/check-batch` 子 invocation。
-- check-batch 在已持有 scheduler lease 且 chunk 唯一时使用 trusted scheduler lease 模式，避免重复 D1 batch/monitor lock 长尾。
-- monitor runtime updates 先收集为 compact updates，再由单个 bulk writer 写入 runtime update fragments。
-- public homepage/status 继续走 D1 静态预计算快照；不以 live compute 作为公共 API 主路径。
-- homepage/status 快照使用 D1 fragments 分片 seed、raw JSON assemble、continuation publish。
-- `homepage:artifact` 的 monitor preload card HTML 在 fragment seed 阶段预渲染，artifact publish 只拼接预渲染 fragments。
-- 正常 scheduled summary logs 默认关闭；warnings/errors 保留。
+`UPTIMER_RUNTIME_PROFILE=paid` 使用 Worker + D1，移除协调对象绑定并显式设置 30s CPU；同一 Worker 的 6 个独立 Cron 事件通过 D1 逐监控租约分摊到期批次，避免共享 service-binding 连接额度造成慢目标阻塞。Free 仍使用一个 Cron。两种模式的业务语义保持一致；配置、容量及安全切换见 [Runtime-Profiles.md](Runtime-Profiles.md)。
 
-发布验证证据见 `Develop/Worker-CPU-10ms-Release-Readiness.md`。被拒绝的 `UPTIMER_PUBLIC_SHARDED_HOMEPAGE_RUNTIME_SEED` 不属于发布基线。
+Issue #24 是历史发布基线；历史证据见 `Worker-CPU-10ms-Release-Readiness.md`，不能替代本轮验收。Main/Production 尚未部署本轮改动。
 
 ---
 
@@ -731,27 +727,40 @@ D1 存储形态：
 
 ```toml
 name = "uptimer"
-main = "src/index.ts"
+main = "src/worker-entry.ts"
 compatibility_date = "2026-01-28"
 minify = true
+upload_source_maps = true
+
+[observability]
+enabled = true
+
+  [observability.logs]
+  invocation_logs = true
+  head_sampling_rate = 1
 
 [triggers]
-crons = ["* * * * *", "0 0 * * *", "30 0 * * *"]
+crons = ["* * * * *"]
 
 [[d1_databases]]
 binding = "DB"
 database_name = "uptimer"
+# Replace with your real D1 database_id for remote/preview usage.
 database_id = "<uuid>"
 
+# Keep this table even if empty so `wrangler dev` loads secrets/vars from `.dev.vars`.
 [vars]
 ADMIN_RATE_LIMIT_MAX = "60"
 ADMIN_RATE_LIMIT_WINDOW_SEC = "60"
 UPTIMER_SCHEDULED_STATUS_REFRESH = "1"
 UPTIMER_TRUST_SCHEDULED_RUNTIME_UPDATES = "1"
-UPTIMER_INTERNAL_SCHEDULED_BATCH_SIZE = "2"
-# Free Plan CPU profile: see Develop/Worker-CPU-10ms-Release-Readiness.md
-UPTIMER_PUBLIC_MONITOR_UPDATE_FRAGMENT_WRITES = "1"
-UPTIMER_SCHEDULED_RUNTIME_FRAGMENT_REFRESH = "1"
+UPTIMER_INTERNAL_SCHEDULED_BATCH_SIZE = "5"
+
+# Bounded Free Plan profile: fresh pages read lossless check buckets directly.
+# Legacy runtime snapshot flags remain supported for older/custom profiles.
+# See Develop/Performance-Refactor.md for budgets and validation status.
+UPTIMER_PUBLIC_MONITOR_UPDATE_FRAGMENT_WRITES = "0"
+UPTIMER_SCHEDULED_RUNTIME_FRAGMENT_REFRESH = "0"
 UPTIMER_PUBLIC_SHARDED_FRAGMENT_SEED = "1"
 UPTIMER_SCHEDULED_SHARDED_FRAGMENT_SEED = "1"
 UPTIMER_PUBLIC_SHARDED_ASSEMBLER = "1"
@@ -762,12 +771,24 @@ UPTIMER_PUBLIC_HOMEPAGE_ARTIFACT_FRAGMENT_WRITES = "1"
 UPTIMER_SHARDED_ASSEMBLER_MODE = "json"
 UPTIMER_SCHEDULED_SHARDED_SKIP_HOMEPAGE_REFRESH = "1"
 UPTIMER_SCHEDULED_SHARDED_CONTINUATION = "1"
-UPTIMER_SHARDED_FRAGMENT_SEED_BATCH_SIZE = "4"
+UPTIMER_PUBLIC_COMBINED_SEED = "1"
+UPTIMER_SHARDED_FRAGMENT_SEED_BATCH_SIZE = "10"
 UPTIMER_SHARDED_RUNTIME_UPDATE_BATCH_SIZE = "5"
 UPTIMER_INTERNAL_SCHEDULED_CHECK_BATCH_TIMEOUT_MS = "75000"
-UPTIMER_INTERNAL_CHECK_BATCH_FRAGMENT_WRITE_SPLIT = "1"
+UPTIMER_INTERNAL_CHECK_BATCH_FRAGMENT_WRITE_SPLIT = "0"
 UPTIMER_INTERNAL_CHECK_BATCH_TRUST_SCHEDULER_LEASE = "1"
 UPTIMER_SCHEDULED_REFRESH_LOGS = "0"
+
+# One scheduling/publication unit per single-tenant site. D1 remains canonical.
+# Do not set limits.cpu_ms=10 here: it also lowers the DO's CPU allowance.
+# Workers Free supplies the ordinary Worker 10ms and the DO 30s defaults.
+[[durable_objects.bindings]]
+name = "COORDINATOR"
+class_name = "SiteCoordinator"
+
+[[migrations]]
+tag = "v1-site-coordinator"
+new_sqlite_classes = ["SiteCoordinator"]
 ```
 
 `UPTIMER_PUBLIC_SHARDED_HOMEPAGE_RUNTIME_SEED` 曾实测产生 continuation CPU outliers，不属于发布基线。
@@ -776,7 +797,7 @@ UPTIMER_SCHEDULED_REFRESH_LOGS = "0"
 
 ## 14. 可观测性 (Observability)
 
-- Scheduler 每轮输出结构化日志：轮次 id、处理 monitor 数、成功/失败、耗时、触发 colo。
+- Scheduler 正常轮次摘要默认关闭以节约 Logs 额度；按需启用结构化诊断，明确采样率。
 - 对关键异常（D1 写失败、通知失败、探测异常）输出 error logs。
 - v1 可接入 Workers Analytics Engine 做轻量指标（可选）。
 

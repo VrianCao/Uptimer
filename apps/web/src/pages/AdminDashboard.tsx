@@ -1,3 +1,5 @@
+import { Dialog } from '../components/Dialog';
+import { isValidTimeZone } from '@uptimer/shared';
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
@@ -48,16 +50,7 @@ import { MaintenanceWindowForm } from '../components/MaintenanceWindowForm';
 import { MonitorForm } from '../components/MonitorForm';
 import { NotificationChannelForm } from '../components/NotificationChannelForm';
 import { ResolveIncidentForm } from '../components/ResolveIncidentForm';
-import {
-  Badge,
-  Button,
-  Card,
-  MODAL_OVERLAY_CLASS,
-  MODAL_PANEL_CLASS,
-  TABLE_ACTION_BUTTON_CLASS,
-  ThemeToggle,
-  cn,
-} from '../components/ui';
+import { Badge, Button, Card, TABLE_ACTION_BUTTON_CLASS, ThemeToggle, cn } from '../components/ui';
 import { incidentImpactLabel, incidentStatusLabel, statusLabel } from '../i18n/labels';
 import { localeLabels, messages } from '../i18n/messages';
 import { formatDateTime } from '../utils/datetime';
@@ -315,7 +308,10 @@ export function AdminDashboard() {
 
   const monitorsQuery = useQuery({
     queryKey: ['admin-monitors'],
-    queryFn: () => fetchAdminMonitors(),
+    queryFn: ({ signal }) => fetchAdminMonitors(200, signal),
+    // Poll only while this view is active; TanStack also pauses in background tabs.
+    refetchInterval: tab === 'monitors' ? 30_000 : false,
+    refetchOnWindowFocus: true,
   });
   const channelsQuery = useQuery({
     queryKey: ['admin-channels'],
@@ -345,6 +341,7 @@ export function AdminDashboard() {
 
   const [settingsDraft, setSettingsDraft] = useState<AdminSettings | null>(null);
   const [focusedSetting, setFocusedSetting] = useState<keyof AdminSettings | null>(null);
+  const [timeZoneError, setTimeZoneError] = useState(false);
   const localeOptions: Array<{ value: AdminSettings['site_locale']; label: string }> = [
     { value: 'auto', label: t('admin_settings.locale.option.auto') },
     { value: 'en', label: localeLabels.en },
@@ -360,10 +357,13 @@ export function AdminDashboard() {
     // Keep draft in sync with server, but don't clobber the field the user is currently editing.
     setSettingsDraft((prev) => {
       if (!prev) return settings;
-      if (!focusedSetting) return settings;
-      return { ...settings, [focusedSetting]: prev[focusedSetting] };
+      return {
+        ...settings,
+        ...(focusedSetting ? { [focusedSetting]: prev[focusedSetting] } : {}),
+        ...(timeZoneError ? { site_timezone: prev.site_timezone } : {}),
+      };
     });
-  }, [settings, focusedSetting]);
+  }, [settings, focusedSetting, timeZoneError]);
 
   const applyLocaleLocally = (next: AdminSettings['site_locale']) => {
     setSettingsDraft((prev) => (prev ? { ...prev, site_locale: next } : prev));
@@ -961,6 +961,7 @@ export function AdminDashboard() {
             </Link>
             <button
               onClick={logout}
+              aria-label={t('common.logout')}
               className={cn(
                 navActionClass,
                 'text-red-500 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-900/20 dark:hover:text-red-300',
@@ -1638,8 +1639,9 @@ export function AdminDashboard() {
                                         </button>
                                         <button
                                           onClick={() =>
-                                            confirm(`${t('common.delete')}?`) &&
-                                            deleteMonitorMut.mutate(m.id)
+                                            confirm(
+                                              `${t('common.delete')} "${formatMonitorDisplayName(m)}"?`,
+                                            ) && deleteMonitorMut.mutate(m.id)
                                           }
                                           className={cn(
                                             TABLE_ACTION_BUTTON_CLASS,
@@ -1997,7 +1999,10 @@ export function AdminDashboard() {
                     <input
                       value={settingsDraft?.site_timezone ?? ''}
                       aria-label={t('admin_settings.branding.timezone')}
+                      aria-invalid={timeZoneError || undefined}
+                      aria-describedby={timeZoneError ? 'timezone-error' : undefined}
                       onChange={(e) => {
+                        setTimeZoneError(false);
                         const next = e.target.value.slice(0, 64);
                         setSettingsDraft((prev) =>
                           prev ? { ...prev, site_timezone: next } : prev,
@@ -2007,6 +2012,11 @@ export function AdminDashboard() {
                       onBlur={(e) => {
                         setFocusedSetting(null);
                         const next = e.currentTarget.value.trim().slice(0, 64) || 'UTC';
+                        if (!isValidTimeZone(next)) {
+                          setTimeZoneError(true);
+                          return;
+                        }
+                        setTimeZoneError(false);
                         setSettingsDraft((prev) =>
                           prev ? { ...prev, site_timezone: next } : prev,
                         );
@@ -2020,9 +2030,14 @@ export function AdminDashboard() {
                       placeholder="UTC"
                       className="w-full border dark:border-slate-600 rounded px-3 py-2 text-sm bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 disabled:opacity-50"
                     />
-                    <div className="text-xs text-slate-400 dark:text-slate-500 mt-1">
+                    <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                       {t('admin_settings.branding.timezone_help')}
                     </div>
+                    {timeZoneError && (
+                      <p id="timezone-error" role="alert" className="ui-error mt-1 text-sm">
+                        {t('admin_settings.branding.timezone_invalid')}
+                      </p>
+                    )}
                   </div>
                 </div>
 
@@ -2479,110 +2494,127 @@ export function AdminDashboard() {
       </main>
 
       {modal.type !== 'none' && (
-        <div className={MODAL_OVERLAY_CLASS}>
-          <div className={`${MODAL_PANEL_CLASS} sm:max-w-md p-5 sm:p-6`}>
-            <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100 mb-5">
-              {modal.type === 'create-monitor' && t('admin_dashboard.create_monitor')}
-              {modal.type === 'edit-monitor' && t('admin_dashboard.edit_monitor')}
-              {modal.type === 'create-channel' && t('admin_dashboard.create_channel')}
-              {modal.type === 'edit-channel' && t('admin_dashboard.edit_channel')}
-              {modal.type === 'create-incident' && t('admin_dashboard.create_incident')}
-              {modal.type === 'add-incident-update' && t('admin_dashboard.post_update')}
-              {modal.type === 'resolve-incident' && t('admin_dashboard.resolve_incident')}
-              {modal.type === 'create-maintenance' && t('admin_dashboard.create_maintenance')}
-              {modal.type === 'edit-maintenance' && t('admin_dashboard.edit_maintenance')}
-            </h2>
+        <Dialog
+          label={t(
+            (
+              {
+                'create-monitor': 'admin_dashboard.create_monitor',
+                'edit-monitor': 'admin_dashboard.edit_monitor',
+                'create-channel': 'admin_dashboard.create_channel',
+                'edit-channel': 'admin_dashboard.edit_channel',
+                'create-incident': 'admin_dashboard.create_incident',
+                'add-incident-update': 'admin_dashboard.post_update',
+                'resolve-incident': 'admin_dashboard.resolve_incident',
+                'create-maintenance': 'admin_dashboard.create_maintenance',
+                'edit-maintenance': 'admin_dashboard.edit_maintenance',
+              } as const
+            )[modal.type],
+          )}
+          onClose={closeModal}
+          dismissOnBackdrop={false}
+          className="sm:max-w-md p-5 sm:p-6"
+        >
+          <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100 mb-5">
+            {modal.type === 'create-monitor' && t('admin_dashboard.create_monitor')}
+            {modal.type === 'edit-monitor' && t('admin_dashboard.edit_monitor')}
+            {modal.type === 'create-channel' && t('admin_dashboard.create_channel')}
+            {modal.type === 'edit-channel' && t('admin_dashboard.edit_channel')}
+            {modal.type === 'create-incident' && t('admin_dashboard.create_incident')}
+            {modal.type === 'add-incident-update' && t('admin_dashboard.post_update')}
+            {modal.type === 'resolve-incident' && t('admin_dashboard.resolve_incident')}
+            {modal.type === 'create-maintenance' && t('admin_dashboard.create_maintenance')}
+            {modal.type === 'edit-maintenance' && t('admin_dashboard.edit_maintenance')}
+          </h2>
 
-            {(modal.type === 'create-monitor' || modal.type === 'edit-monitor') && (
-              <>
-                {modal.type === 'create-monitor' && (
-                  <MonitorForm
-                    onSubmit={(data) => createMonitorMut.mutate(data)}
-                    onCancel={closeModal}
-                    isLoading={createMonitorMut.isPending}
-                    error={formatError(createMonitorMut.error)}
-                    groupOptions={monitorGroupLabels.filter((label) => label !== UNGROUPED_LABEL)}
-                  />
-                )}
-                {modal.type === 'edit-monitor' && (
-                  <MonitorForm
-                    monitor={modal.monitor}
-                    onSubmit={(data) => updateMonitorMut.mutate({ id: modal.monitor.id, data })}
-                    onCancel={closeModal}
-                    isLoading={updateMonitorMut.isPending}
-                    error={formatError(updateMonitorMut.error)}
-                    groupOptions={monitorGroupLabels.filter((label) => label !== UNGROUPED_LABEL)}
-                  />
-                )}
-              </>
-            )}
-            {(modal.type === 'create-channel' || modal.type === 'edit-channel') && (
-              <NotificationChannelForm
-                channel={modal.type === 'edit-channel' ? modal.channel : undefined}
-                onSubmit={(data) =>
-                  modal.type === 'edit-channel'
-                    ? updateChannelMut.mutate({ id: modal.channel.id, data })
-                    : createChannelMut.mutate(data)
-                }
-                onCancel={closeModal}
-                isLoading={createChannelMut.isPending || updateChannelMut.isPending}
-                error={
-                  modal.type === 'edit-channel'
-                    ? formatError(updateChannelMut.error)
-                    : formatError(createChannelMut.error)
-                }
-              />
-            )}
-            {modal.type === 'create-incident' && (
-              <IncidentForm
-                monitors={(monitorsQuery.data?.monitors ?? []).map((m) => ({
-                  id: m.id,
-                  name: formatMonitorDisplayName(m),
-                }))}
-                onSubmit={(data) => createIncidentMut.mutate(data)}
-                onCancel={closeModal}
-                isLoading={createIncidentMut.isPending}
-              />
-            )}
-            {modal.type === 'add-incident-update' && (
-              <IncidentUpdateForm
-                onSubmit={(data) => addIncidentUpdateMut.mutate({ id: modal.incident.id, data })}
-                onCancel={closeModal}
-                isLoading={addIncidentUpdateMut.isPending}
-              />
-            )}
-            {modal.type === 'resolve-incident' && (
-              <ResolveIncidentForm
-                onSubmit={(data) => resolveIncidentMut.mutate({ id: modal.incident.id, data })}
-                onCancel={closeModal}
-                isLoading={resolveIncidentMut.isPending}
-              />
-            )}
-            {modal.type === 'create-maintenance' && (
-              <MaintenanceWindowForm
-                monitors={(monitorsQuery.data?.monitors ?? []).map((m) => ({
-                  id: m.id,
-                  name: formatMonitorDisplayName(m),
-                }))}
-                onSubmit={(data) => createMaintenanceMut.mutate(data)}
-                onCancel={closeModal}
-                isLoading={createMaintenanceMut.isPending}
-              />
-            )}
-            {modal.type === 'edit-maintenance' && (
-              <MaintenanceWindowForm
-                monitors={(monitorsQuery.data?.monitors ?? []).map((m) => ({
-                  id: m.id,
-                  name: formatMonitorDisplayName(m),
-                }))}
-                window={modal.window}
-                onSubmit={(data) => updateMaintenanceMut.mutate({ id: modal.window.id, data })}
-                onCancel={closeModal}
-                isLoading={updateMaintenanceMut.isPending}
-              />
-            )}
-          </div>
-        </div>
+          {(modal.type === 'create-monitor' || modal.type === 'edit-monitor') && (
+            <>
+              {modal.type === 'create-monitor' && (
+                <MonitorForm
+                  onSubmit={(data) => createMonitorMut.mutate(data)}
+                  onCancel={closeModal}
+                  isLoading={createMonitorMut.isPending}
+                  error={formatError(createMonitorMut.error)}
+                  groupOptions={monitorGroupLabels.filter((label) => label !== UNGROUPED_LABEL)}
+                />
+              )}
+              {modal.type === 'edit-monitor' && (
+                <MonitorForm
+                  monitor={modal.monitor}
+                  onSubmit={(data) => updateMonitorMut.mutate({ id: modal.monitor.id, data })}
+                  onCancel={closeModal}
+                  isLoading={updateMonitorMut.isPending}
+                  error={formatError(updateMonitorMut.error)}
+                  groupOptions={monitorGroupLabels.filter((label) => label !== UNGROUPED_LABEL)}
+                />
+              )}
+            </>
+          )}
+          {(modal.type === 'create-channel' || modal.type === 'edit-channel') && (
+            <NotificationChannelForm
+              channel={modal.type === 'edit-channel' ? modal.channel : undefined}
+              onSubmit={(data) =>
+                modal.type === 'edit-channel'
+                  ? updateChannelMut.mutate({ id: modal.channel.id, data })
+                  : createChannelMut.mutate(data)
+              }
+              onCancel={closeModal}
+              isLoading={createChannelMut.isPending || updateChannelMut.isPending}
+              error={
+                modal.type === 'edit-channel'
+                  ? formatError(updateChannelMut.error)
+                  : formatError(createChannelMut.error)
+              }
+            />
+          )}
+          {modal.type === 'create-incident' && (
+            <IncidentForm
+              monitors={(monitorsQuery.data?.monitors ?? []).map((m) => ({
+                id: m.id,
+                name: formatMonitorDisplayName(m),
+              }))}
+              onSubmit={(data) => createIncidentMut.mutate(data)}
+              onCancel={closeModal}
+              isLoading={createIncidentMut.isPending}
+            />
+          )}
+          {modal.type === 'add-incident-update' && (
+            <IncidentUpdateForm
+              onSubmit={(data) => addIncidentUpdateMut.mutate({ id: modal.incident.id, data })}
+              onCancel={closeModal}
+              isLoading={addIncidentUpdateMut.isPending}
+            />
+          )}
+          {modal.type === 'resolve-incident' && (
+            <ResolveIncidentForm
+              onSubmit={(data) => resolveIncidentMut.mutate({ id: modal.incident.id, data })}
+              onCancel={closeModal}
+              isLoading={resolveIncidentMut.isPending}
+            />
+          )}
+          {modal.type === 'create-maintenance' && (
+            <MaintenanceWindowForm
+              monitors={(monitorsQuery.data?.monitors ?? []).map((m) => ({
+                id: m.id,
+                name: formatMonitorDisplayName(m),
+              }))}
+              onSubmit={(data) => createMaintenanceMut.mutate(data)}
+              onCancel={closeModal}
+              isLoading={createMaintenanceMut.isPending}
+            />
+          )}
+          {modal.type === 'edit-maintenance' && (
+            <MaintenanceWindowForm
+              monitors={(monitorsQuery.data?.monitors ?? []).map((m) => ({
+                id: m.id,
+                name: formatMonitorDisplayName(m),
+              }))}
+              window={modal.window}
+              onSubmit={(data) => updateMaintenanceMut.mutate({ id: modal.window.id, data })}
+              onCancel={closeModal}
+              isLoading={updateMaintenanceMut.isPending}
+            />
+          )}
+        </Dialog>
       )}
     </div>
   );

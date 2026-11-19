@@ -85,7 +85,12 @@ export function cachePublic(opts: {
         : { enabled: false, id: '', mode: null };
     const trace = traceOptions.enabled ? new Trace(traceOptions) : null;
 
-    if (c.req.method !== 'GET' || hasAuthorizationHeader(c.req)) {
+    const requestCacheControl = c.req.header('Cache-Control') ?? '';
+    const noStore = /(?:^|,)\s*no-store(?:\s*(?:,|$))/i.test(requestCacheControl);
+    const revalidate = /(?:^|,)\s*(?:no-cache|max-age\s*=\s*0)(?:\s*(?:,|$))/i.test(
+      requestCacheControl,
+    );
+    if (c.req.method !== 'GET' || hasAuthorizationHeader(c.req) || noStore) {
       await next();
       return;
     }
@@ -102,7 +107,7 @@ export function cachePublic(opts: {
     const cache = await openNamedCache(opts.cacheName);
     const cacheKey = buildCacheKey(c.req.url, c.req.header('Origin'), opts.normalizeCacheKeyUrl);
 
-    const bypassCache = trace?.mode === 'bypass-cache';
+    const bypassCache = revalidate || trace?.mode === 'bypass-cache';
     if (!bypassCache) {
       const matchT0 = trace ? performance.now() : 0;
       const cached = await cache.match(cacheKey);

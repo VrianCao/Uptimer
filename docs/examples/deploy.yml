@@ -1,0 +1,44 @@
+# Public/fork caller template. Dev keeps its resource-guarded deploy.yml.
+name: Deploy to Cloudflare
+on:
+  workflow_dispatch:
+    inputs:
+      release_action:
+        description: 'Plan is read-only; apply deploys the reviewed package'
+        type: choice
+        options: [plan, apply]
+        default: plan
+      operation:
+        description: 'Existing instance: upgrade. New empty instance: install.'
+        type: choice
+        options: [upgrade, install]
+        default: upgrade
+      deploy_mode:
+        description: 'Keep existing hosting for upgrades; auto uses repository variable'
+        type: choice
+        options: [auto, pages, single_worker]
+        default: auto
+      plan_run:
+        description: 'Successful manual plan run ID at this exact source revision'
+        type: string
+        default: ''
+      plan_hash:
+        description: 'Reviewed plan SHA-256'
+        type: string
+        default: ''
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: cloudflare-${{ vars.UPTIMER_WORKER_NAME || vars.UPTIMER_PREFIX || github.event.repository.name }}
+  cancel-in-progress: false
+jobs:
+  release:
+    uses: ./.github/workflows/release.yml
+    with:
+      action: ${{ inputs.release_action }}
+      plan_run: ${{ inputs.plan_run }}
+      plan_hash: ${{ inputs.plan_hash }}
+      operation: ${{ inputs.operation }}
+      hosting: ${{ inputs.deploy_mode }}
+    secrets: inherit

@@ -136,9 +136,15 @@ export interface StatusResponse {
     source: 'incident' | 'maintenance' | 'monitors';
     status: 'operational' | 'partial_outage' | 'major_outage' | 'maintenance' | 'unknown';
     title: string;
-    incident?: { id: number; title: string; status: IncidentStatus; impact: IncidentImpact } | null;
-    maintenance_window?: { id: number; title: string; starts_at: number; ends_at: number } | null;
-    down_ratio?: number;
+    incident?:
+      | { id: number; title: string; status: IncidentStatus; impact: IncidentImpact }
+      | null
+      | undefined;
+    maintenance_window?:
+      | { id: number; title: string; starts_at: number; ends_at: number }
+      | null
+      | undefined;
+    down_ratio?: number | null | undefined;
   };
   summary: {
     up: number;

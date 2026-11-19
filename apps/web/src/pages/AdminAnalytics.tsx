@@ -114,7 +114,7 @@ export function AdminAnalytics() {
 
   const monitorsQuery = useQuery({
     queryKey: ['admin-monitors', 'for-analytics'],
-    queryFn: () => fetchAdminMonitors(200),
+    queryFn: ({ signal }) => fetchAdminMonitors(200, signal),
   });
 
   const monitors = useMemo(
@@ -231,6 +231,7 @@ export function AdminAnalytics() {
             </Link>
             <button
               onClick={logout}
+              aria-label={t('common.logout')}
               className="flex items-center justify-center h-10 text-base text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors px-3 rounded-lg"
             >
               <svg

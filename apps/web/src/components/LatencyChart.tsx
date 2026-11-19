@@ -2,6 +2,7 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'rec
 import type { LatencyPoint } from '../api/types';
 import { useI18n } from '../app/I18nContext';
 import { useTheme } from '../app/ThemeContext';
+import { useReducedMotion } from '../utils/useReducedMotion';
 import { suggestLatencyAxisCeiling } from '../utils/latencyScale';
 
 interface LatencyChartProps {
@@ -17,6 +18,7 @@ export function LatencyChart({ points, height = 200 }: LatencyChartProps) {
   const { t } = useI18n();
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme === 'dark';
+  const reducedMotion = useReducedMotion();
 
   const rawData = points
     .filter((p) => p.status === 'up' && p.latency_ms !== null)
@@ -83,6 +85,7 @@ export function LatencyChart({ points, height = 200 }: LatencyChartProps) {
           strokeWidth={2}
           dot={false}
           connectNulls
+          isAnimationActive={!reducedMotion}
         />
       </LineChart>
     </ResponsiveContainer>

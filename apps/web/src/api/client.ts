@@ -1,3 +1,9 @@
+import {
+  parseHomepageSnapshot,
+  readLegacyStatusSnapshot,
+  snapshotUpdatedAt,
+  writeHomepageSnapshot,
+} from './public-snapshot';
 import type {
   AdminMonitor,
   AdminSettings,
@@ -45,13 +51,7 @@ const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? '/api/
 const PUBLIC_CACHE_TTL_MS = 30_000;
 const publicCache = new Map<string, { at: number; value: unknown }>();
 
-const LS_PUBLIC_HOMEPAGE_KEY = 'uptimer_public_homepage_snapshot_v2';
 const LS_PUBLIC_STATUS_KEY = 'uptimer_public_status_snapshot_v1';
-
-type PersistedHomepageCache = {
-  at: number;
-  value: PublicHomepageResponse;
-};
 
 type PersistedStatusCache = {
   at: number;
@@ -106,56 +106,13 @@ function setCachedPublic(key: string, value: unknown) {
   publicCache.set(key, { at: Date.now(), value });
 }
 
-function readPersistedHomepageCache(maxAgeMs: number): PublicHomepageResponse | null {
-  try {
-    const raw = localStorage.getItem(LS_PUBLIC_HOMEPAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as unknown;
-    if (!parsed || typeof parsed !== 'object') return null;
-
-    const at = (parsed as { at?: unknown }).at;
-    const value = (parsed as { value?: unknown }).value;
-    if (typeof at !== 'number' || !Number.isFinite(at)) return null;
-    if (Date.now() - at > maxAgeMs) return null;
-    if (!value || typeof value !== 'object') return null;
-    return value as PublicHomepageResponse;
-  } catch {
-    return null;
-  }
-}
-
-function writePersistedHomepageCache(value: PublicHomepageResponse): void {
-  try {
-    const payload: PersistedHomepageCache = { at: Date.now(), value };
-    localStorage.setItem(LS_PUBLIC_HOMEPAGE_KEY, JSON.stringify(payload));
-  } catch {
-    // Best-effort only.
-  }
-}
-
 function readPersistedStatusCache(maxAgeMs: number): StatusResponse | null {
-  try {
-    const raw = localStorage.getItem(LS_PUBLIC_STATUS_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as unknown;
-    if (!parsed || typeof parsed !== 'object') return null;
-
-    const at = (parsed as { at?: unknown }).at;
-    const value = (parsed as { value?: unknown }).value;
-    if (typeof at !== 'number' || !Number.isFinite(at)) return null;
-    if (Date.now() - at > maxAgeMs) return null;
-
-    // Minimal shape check; full schema validation lives on the worker.
-    if (!value || typeof value !== 'object') return null;
-    return value as StatusResponse;
-  } catch {
-    return null;
-  }
+  return readLegacyStatusSnapshot(maxAgeMs);
 }
 
 function writePersistedStatusCache(value: StatusResponse): void {
   try {
-    const payload: PersistedStatusCache = { at: Date.now(), value };
+    const payload: PersistedStatusCache = { at: snapshotUpdatedAt(value), value };
     localStorage.setItem(LS_PUBLIC_STATUS_KEY, JSON.stringify(payload));
   } catch {
     // Best-effort only.
@@ -263,50 +220,32 @@ export async function fetchStatus(): Promise<StatusResponse> {
   }
 }
 
-export async function fetchHomepage(): Promise<PublicHomepageResponse> {
-  const url = `${API_BASE}/public/homepage`;
+export async function fetchHomepage(signal?: AbortSignal): Promise<PublicHomepageResponse> {
   const auth = getOptionalPublicAuth();
-  const cached = auth.shouldBypassCache ? null : getCachedPublic<PublicHomepageResponse>(url);
-  if (cached) return cached;
-
-  try {
-    const res = await fetch(url, auth.fetchInit);
-    const data = await handleResponse<PublicHomepageResponse>(res);
-    if (!auth.shouldBypassCache) {
-      setCachedPublic(url, data);
-      writePersistedHomepageCache(data);
-    }
-    return data;
-  } catch (err) {
-    const persisted = auth.shouldBypassCache ? null : readPersistedHomepageCache(10 * 60_000);
-    if (persisted) return persisted;
-
-    const stale = auth.shouldBypassCache ? null : getCachedPublic<PublicHomepageResponse>(url);
-    if (stale) return stale;
-
-    throw err;
-  }
+  const res = await fetch(`${API_BASE}/public/homepage`, {
+    ...auth.fetchInit,
+    // Revalidate against the bounded edge cache, never an extra browser TTL.
+    cache: auth.fetchInit.cache ?? 'no-cache',
+    signal: signal ?? null,
+  });
+  const data = parseHomepageSnapshot(await handleResponse<unknown>(res));
+  if (!data) throw new ApiError('INVALID_RESPONSE', 'Invalid homepage response', res.status);
+  if (!auth.shouldBypassCache) writeHomepageSnapshot(data);
+  return data;
 }
 
 export async function fetchLatency(
   monitorId: number,
   range: '24h' = '24h',
+  signal?: AbortSignal,
 ): Promise<LatencyResponse> {
-  const url = `${API_BASE}/public/monitors/${monitorId}/latency?range=${range}&format=compact-v1`;
   const auth = getOptionalPublicAuth();
-  const cached = auth.shouldBypassCache ? null : getCachedPublic<LatencyResponse>(url);
-  if (cached) return cached;
-  try {
-    const res = await fetch(url, auth.fetchInit);
-    const raw = await handleResponse<LatencyResponse | CompactLatencyResponse>(res);
-    const data = isCompactLatencyResponse(raw) ? decodeCompactLatencyResponse(raw) : raw;
-    if (!auth.shouldBypassCache) setCachedPublic(url, data);
-    return data;
-  } catch (err) {
-    const stale = auth.shouldBypassCache ? null : getCachedPublic<LatencyResponse>(url);
-    if (stale) return stale;
-    throw err;
-  }
+  const res = await fetch(
+    `${API_BASE}/public/monitors/${monitorId}/latency?range=${range}&format=compact-v1`,
+    { ...auth.fetchInit, cache: auth.fetchInit.cache ?? 'no-cache', signal: signal ?? null },
+  );
+  const raw = await handleResponse<LatencyResponse | CompactLatencyResponse>(res);
+  return isCompactLatencyResponse(raw) ? decodeCompactLatencyResponse(raw) : raw;
 }
 
 export async function fetchUptime(
@@ -352,17 +291,53 @@ export async function fetchPublicUptimeOverview(
 
 export async function fetchPublicMonitorOutages(
   monitorId: number,
-  opts: { range?: '30d'; limit?: number; cursor?: number } = {},
+  opts: {
+    range?: '30d';
+    limit?: number;
+    cursor?: number;
+    day_start_at?: number;
+    signal?: AbortSignal;
+  } = {},
 ): Promise<MonitorOutagesResponse> {
   const auth = getOptionalPublicAuth();
   const qs = new URLSearchParams();
   qs.set('range', opts.range ?? '30d');
   qs.set('limit', String(opts.limit ?? 200));
   if (opts.cursor !== undefined) qs.set('cursor', String(opts.cursor));
+  if (opts.day_start_at !== undefined) qs.set('day_start_at', String(opts.day_start_at));
 
   const url = `${API_BASE}/public/monitors/${monitorId}/outages?${qs.toString()}`;
-  const res = await fetch(url, auth.fetchInit);
+  const res = await fetch(url, {
+    ...auth.fetchInit,
+    ...(opts.signal ? { signal: opts.signal } : {}),
+  });
   return handleResponse<MonitorOutagesResponse>(res);
+}
+
+export async function fetchPublicDayOutages(
+  monitorId: number,
+  dayStartAt: number,
+  signal: AbortSignal,
+) {
+  const outages = new Map<number, MonitorOutagesResponse['outages'][number]>();
+  const seen = new Set<number>();
+  let cursor: number | undefined;
+  do {
+    const page = await fetchPublicMonitorOutages(monitorId, {
+      day_start_at: dayStartAt,
+      limit: 200,
+      ...(cursor ? { cursor } : {}),
+      signal,
+    });
+    for (const outage of page.outages) outages.set(outage.id, outage);
+    cursor = page.next_cursor ?? undefined;
+    if (cursor !== undefined) {
+      if (!Number.isSafeInteger(cursor) || cursor <= 0 || seen.has(cursor))
+        throw new Error('Invalid outage pagination');
+      seen.add(cursor);
+    }
+  } while (cursor !== undefined);
+  return { outages: [...outages.values()] };
 }
 
 export { ApiError };
@@ -376,11 +351,33 @@ export async function verifyAdminToken(token: string): Promise<void> {
 }
 
 // Admin API - Monitors
-export async function fetchAdminMonitors(limit = 50): Promise<{ monitors: AdminMonitor[] }> {
-  const res = await fetch(`${API_BASE}/admin/monitors?limit=${limit}`, {
-    headers: getAuthHeaders(),
-  });
-  return handleResponse<{ monitors: AdminMonitor[] }>(res);
+export async function fetchAdminMonitors(
+  limit = 50,
+  signal?: AbortSignal,
+): Promise<{ monitors: AdminMonitor[] }> {
+  const monitors = new Map<number, AdminMonitor>();
+  const seen = new Set<string>();
+  let cursor: string | undefined;
+  do {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (cursor) params.set('cursor', cursor);
+    const res = await fetch(`${API_BASE}/admin/monitors?${params}`, {
+      headers: getAuthHeaders(),
+      ...(signal ? { signal } : {}),
+    });
+    const page = await handleResponse<{
+      monitors: AdminMonitor[];
+      next_cursor?: string | null;
+    }>(res);
+    for (const monitor of page.monitors) monitors.set(monitor.id, monitor);
+    cursor = page.next_cursor ?? undefined;
+    if (cursor) {
+      if (typeof cursor !== 'string' || seen.has(cursor))
+        throw new Error('Invalid monitor pagination');
+      seen.add(cursor);
+    }
+  } while (cursor);
+  return { monitors: [...monitors.values()] };
 }
 
 export async function createMonitor(input: CreateMonitorInput): Promise<{ monitor: AdminMonitor }> {
