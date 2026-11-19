@@ -237,6 +237,12 @@ export class ReleaseCloud {
     const pages = project
       ? {
           projectId: z.string().min(1).parse(project.id),
+          origin:
+            'https://' +
+            z
+              .string()
+              .regex(/^[a-z0-9-]+\.pages\.dev$/)
+              .parse(project.subdomain),
           deploymentId: project.canonical_deployment?.id ?? null,
           sourceSha:
             project.canonical_deployment?.deployment_trigger?.metadata?.commit_hash ?? null,

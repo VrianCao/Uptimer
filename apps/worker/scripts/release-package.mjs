@@ -83,6 +83,7 @@ export function publicState(state) {
     pages: pages
       ? {
           projectId: pages.projectId,
+          origin: pages.origin,
           deploymentId: pages.deploymentId,
           sourceSha: pages.sourceSha,
           fingerprint: pages.fingerprint,
